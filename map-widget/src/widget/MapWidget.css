@@ -22,8 +22,20 @@
   inset: 0;
 }
 
-.mw-root canvas[data-mw-hover] {
+.mw-root canvas[data-mw-hover],
+.mw-root canvas[data-mw-region] {
   cursor: pointer;
+}
+
+.mw-region-tip .maplibregl-popup-content {
+  padding: 6px 10px;
+  font: 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #0f172a;
+  pointer-events: none;
+}
+
+.mw-region-tip {
+  pointer-events: none;
 }
 
 /* ---- Toolbar ---- */

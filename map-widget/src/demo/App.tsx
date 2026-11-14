@@ -1,18 +1,19 @@
 // Demo host page: plays the role of the "Hauptfrontend" and wires the widget to a simulated Data Loader.
 import { useRef, useState } from "react";
-import { MapWidget, type AreaFeature, type MapData, type MapWidgetHandle } from "../widget";
+import { MapWidget, type AreaFeature, type MapData, type MapWidgetHandle, type Region } from "../widget";
 import { MOCK_DATASETS, mockLoadData, type MockDataset } from "./mockDataLoader";
 import "./App.css";
 
 const INITIAL_AREA: AreaFeature = {
   type: "Feature",
-  bbox: [6, 50, 8, 52],
-  properties: { selectionId: "area-000", shape: "rectangle", crossesAntimeridian: false, areaKm2: 0 },
-  geometry: {
-    type: "Polygon",
-    coordinates: [[[6, 50], [8, 50], [8, 52], [6, 52], [6, 50]]],
-  },
+  bbox: [7, 51, 7, 51],
+  properties: { selectionId: "area-000", shape: "point", crossesAntimeridian: false, areaKm2: 0 },
+  geometry: { type: "Point", coordinates: [7, 51] },
 };
+
+const DEMO_REGIONS: Region[] = [
+  { id: "demo-ruhr", name: "Ruhr area", bbox: [6.5, 51.2, 7.8, 51.7], note: "demo region" },
+];
 
 export default function App() {
   const widget = useRef<MapWidgetHandle>(null);
@@ -49,7 +50,8 @@ export default function App() {
         <section className="demo-map">
           <MapWidget
             ref={widget}
-            initialArea={INITIAL_AREA}
+            initialArea={INITIAL_AREA as Parameters<typeof MapWidget>[0]["initialArea"]}
+            regions={DEMO_REGIONS}
             onAreaSelected={(a) => {
               setArea(a);
               addLog(`onAreaSelected ${a.properties.selectionId} (${a.properties.shape})`);

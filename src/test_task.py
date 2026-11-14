@@ -5,7 +5,7 @@ import unittest
 
 import torch
 
-from src.task import LinearRegression, _load_records_for_topic, get_available_tools, mann_kendall_test, process_user_request
+from src.task import LinearRegression, _load_records_for_topic, get_available_tools, mann_kendall_test, process_user_request, split_by_variable
 
 
 class MannKendallTests(unittest.TestCase):
@@ -86,6 +86,42 @@ class RequestProcessingTests(unittest.TestCase):
         load_records.assert_called_once_with(
             "temperature", 38.9, -77.0, start_date, date(2024, 1, 6)
         )
+
+    @patch("src.task._load_records_for_topic")
+    def test_each_noaa_code_gets_its_own_series(self, load_records):
+        load_records.return_value = [
+            {"date": f"2024-01-0{day}", "value": value, "description": code, "unit": "°C"}
+            for day in range(1, 5)
+            for code, value in (("tmax", 10.0 + day), ("tmin", -5.0 - day), ("tavg", 2.0))
+        ]
+        request = SimpleNamespace(
+            topics={"temperature": True},
+            tools={"Linear Regression": True},
+            timeintervall=(date(2024, 1, 1), date(2024, 1, 4)),
+            interval_length=(1.0, "Day"),
+            area={"geometry": {"type": "Point", "coordinates": [-77.0, 38.9]}},
+        )
+
+        topics = process_user_request(request)["topics"]
+
+        self.assertEqual(
+            sorted(topics),
+            [
+                "temperature · average (TAVG)",
+                "temperature · maximum (TMAX)",
+                "temperature · minimum (TMIN)",
+            ],
+        )
+        minimum = topics["temperature · minimum (TMIN)"]
+        self.assertEqual(minimum["values"], [-6, -7, -8, -9])
+        self.assertEqual(minimum["variables"], ["tmin"])
+        self.assertEqual(minimum["unit"], "°C")
+        self.assertAlmostEqual(minimum["tools"]["Linear Regression"]["slope"], -1.0)
+        self.assertEqual(topics["temperature · maximum (TMAX)"]["values"], [11, 12, 13, 14])
+
+    def test_split_by_variable_keeps_single_variable_topics_unchanged(self):
+        records = [{"date": "2024-01-01", "value": 1.0, "description": "prcp"}]
+        self.assertEqual(split_by_variable("precipitation", records), [("precipitation", records)])
 
     @patch("src.task.api_wrapper.fetch_data_single_topic_single_coordinate")
     def test_noaa_loader_consumes_each_measurement_iterator(self, fetch_data):

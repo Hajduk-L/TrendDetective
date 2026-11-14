@@ -337,6 +337,74 @@
             font-size: 0.82rem;
             overflow-x: auto;
         }
+        /* City / region search on the map */
+        .place-search {
+            position: absolute;
+            top: 10px;
+            right: 52px;
+            width: min(300px, calc(100% - 120px));
+            z-index: 5;
+            font-size: 0.85rem;
+        }
+        .place-search input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.5rem 2rem 0.5rem 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.97);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+            font: inherit;
+            color: #1f2933;
+        }
+        .place-search input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+        }
+        .place-search-status {
+            position: absolute;
+            right: 0.6rem;
+            top: 0.5rem;
+            color: #94a3b8;
+            pointer-events: none;
+        }
+        .place-results {
+            list-style: none;
+            margin: 4px 0 0;
+            padding: 4px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .place-results[hidden] { display: none; }
+        .place-results li {
+            padding: 0.45rem 0.6rem;
+            border-radius: 6px;
+            cursor: pointer;
+            line-height: 1.3;
+        }
+        .place-results li[aria-selected="true"],
+        .place-results li:hover { background: #eff6ff; }
+        .place-results .place-name { font-weight: 600; color: #1e293b; }
+        .place-results .place-kind {
+            margin-left: 0.4rem;
+            font-size: 0.72rem;
+            color: #64748b;
+            text-transform: capitalize;
+        }
+        .place-results .place-label {
+            display: block;
+            font-size: 0.75rem;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .place-results .place-empty { cursor: default; color: #64748b; }
+        .place-results .place-empty:hover { background: none; }
     </style>
 </head>
 <body>
@@ -420,6 +488,13 @@
     <main class="main-content">
         <div class="map-box" aria-label="TrendDetective World Map">
             <div id="map-widget"></div>
+            <div class="place-search" role="search">
+                <input id="place-search" type="search" placeholder="Search city or region…"
+                    autocomplete="off" aria-label="Search city or region"
+                    role="combobox" aria-expanded="false" aria-controls="place-results" aria-autocomplete="list">
+                <span class="place-search-status" id="place-search-status" aria-hidden="true"></span>
+                <ul class="place-results" id="place-results" role="listbox" hidden></ul>
+            </div>
         </div>
 
         <!-- Plot panel: timeline, years overlaid, period across years (static/plots/plots.js) -->
@@ -440,6 +515,152 @@
         </div>
     </main>
 
+    <script>
+        // City / region search: type a name, pick a result, the map zooms there.
+        (function () {
+            const input = document.getElementById('place-search');
+            const list = document.getElementById('place-results');
+            const status = document.getElementById('place-search-status');
+            if (!input || !list) return;
+            const base = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:8000';
+            let results = [];
+            let active = -1;
+            let timer = null;
+            let requestNo = 0;
+
+            const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+            function setOpen(open) {
+                list.hidden = !open;
+                input.setAttribute('aria-expanded', String(open));
+            }
+
+            function render(message) {
+                if (message) {
+                    list.innerHTML = `<li class="place-empty">${esc(message)}</li>`;
+                } else {
+                    list.innerHTML = results.map((p, i) => `
+                        <li role="option" id="place-opt-${i}" data-i="${i}" aria-selected="${i === active}">
+                            <span class="place-name">${esc(p.name)}</span><span class="place-kind">${esc(p.kind)}</span>
+                            <span class="place-label">${esc(p.label)}</span>
+                        </li>`).join('');
+                }
+                input.setAttribute('aria-activedescendant', active >= 0 ? `place-opt-${active}` : '');
+                setOpen(true);
+            }
+
+            // Nominatim boxes can include far-away islands (Tokyo reaches 20°N). When the
+            // place's centre sits near the edge of its box, zoom to the surroundings instead.
+            function viewBox(place) {
+                const [w, s, e, n] = place.bbox;
+                const width = e - w, height = n - s;
+                const fx = width > 0 ? (place.lon - w) / width : 0.5;
+                const fy = height > 0 ? (place.lat - s) / height : 0.5;
+                const lopsided = fx < 0.15 || fx > 0.85 || fy < 0.15 || fy > 0.85;
+                if (lopsided && (width > 2 || height > 2)) {
+                    return [place.lon - 0.5, place.lat - 0.35, place.lon + 0.5, place.lat + 0.35];
+                }
+                if (width < 0.02 && height < 0.02) {
+                    return [place.lon - 0.05, place.lat - 0.035, place.lon + 0.05, place.lat + 0.035];
+                }
+                return [w, s, e, n];
+            }
+
+            // Settlements become the evaluation point (their measuring station is found
+            // near it). Areas can only be the predefined regions, so for states, counties,
+            // countries etc. the map zooms there and shows the regions (Areas).
+            const POINT_KINDS = new Set(['city', 'town', 'village', 'hamlet', 'suburb', 'quarter',
+                'neighbourhood', 'borough', 'city district', 'municipality', 'locality']);
+
+            function placeArea(place) {
+                const properties = { placeName: place.name, placeLabel: place.label };
+                const [w, s, e, n] = viewBox(place);
+                if (POINT_KINDS.has(place.kind) || (e - w < 0.2 && n - s < 0.2)) {
+                    return { type: 'Feature', properties: { ...properties, shape: 'point' },
+                        geometry: { type: 'Point', coordinates: [place.lon, place.lat] } };
+                }
+                return null;
+            }
+
+            function choose(i) {
+                const place = results[i];
+                if (!place) return;
+                input.value = place.name;
+                setOpen(false);
+                const map = window.trendMap;
+                if (!map) return;
+                const area = placeArea(place);
+                if (area && typeof map.setArea === 'function') map.setArea(area);
+                if (!area && typeof map.showRegions === 'function') map.showRegions(true);
+                if (typeof map.fitToBounds === 'function') map.fitToBounds(viewBox(place));
+            }
+
+            async function search(query) {
+                const no = ++requestNo;
+                status.textContent = '…';
+                try {
+                    const res = await fetch(`${base}/api/places?q=${encodeURIComponent(query)}`);
+                    const data = await res.json().catch(() => ({}));
+                    if (no !== requestNo) return;
+                    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                    results = data.places || [];
+                    active = results.length ? 0 : -1;
+                    render(results.length ? '' : `No place found for "${query}".`);
+                } catch (err) {
+                    if (no !== requestNo) return;
+                    results = [];
+                    active = -1;
+                    render(err.message || 'Search failed.');
+                } finally {
+                    if (no === requestNo) status.textContent = '';
+                }
+            }
+
+            input.addEventListener('input', () => {
+                clearTimeout(timer);
+                const query = input.value.trim();
+                if (query.length < 2) {
+                    requestNo++;
+                    results = [];
+                    status.textContent = '';
+                    setOpen(false);
+                    return;
+                }
+                timer = setTimeout(() => search(query), 450);
+            });
+
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    if (!results.length) return;
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    active = (active + step + results.length) % results.length;
+                    render();
+                } else if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (!list.hidden && active >= 0) {
+                        choose(active);
+                    } else if (input.value.trim().length >= 2) {
+                        clearTimeout(timer);
+                        search(input.value.trim());
+                    }
+                } else if (event.key === 'Escape') {
+                    setOpen(false);
+                }
+            });
+
+            // mousedown (not click) so the choice lands before the input loses focus
+            list.addEventListener('mousedown', (event) => {
+                const item = event.target.closest('li[data-i]');
+                if (!item) return;
+                event.preventDefault();
+                choose(Number(item.dataset.i));
+            });
+            input.addEventListener('focus', () => { if (results.length) render(); });
+            input.addEventListener('blur', () => setOpen(false));
+        })();
+    </script>
     <script src="/static/plots/plots.js"></script>
     <script>
         if (window.TrendPlots) window.TrendPlots.mount(document.getElementById('plot-panel'));
@@ -458,6 +679,13 @@
             });
         }
         window.getSelectedArea = () => selectedArea;
+        // Regions with enough stations for an area evaluation (the map's Areas button).
+        if (window.trendMap) {
+            fetch('/api/regions')
+                .then((r) => (r.ok ? r.json() : { regions: [] }))
+                .then((d) => window.trendMap.setRegions(d.regions || []))
+                .catch(() => {});
+        }
     </script>
 
     <script>
@@ -919,6 +1147,9 @@
                     ? `<div class="station-line">📍 Measured at ${escapeText(st.name || st.id || 'station')}`
                       + `${st.id ? ` (${escapeText(st.id)})` : ''}: ${Number(st.latitude).toFixed(4)}, ${Number(st.longitude).toFixed(4)}`
                       + ` · ${st.distance_km} km from the selected point</div>`
+                    : info.region && !info.error
+                    ?`<div class="station-line">▦ Area mean of ${info.station_count ?? 'the'} stations in ${escapeText(info.region.name)}`
+                      + ' · each dot on the map is one station, coloured by its own trend</div>'
                     : '';
                 const trendLine = lr ? lr.trend_line : null;
                 const hasValues = values.some((v) => typeof v === 'number' && Number.isFinite(v));

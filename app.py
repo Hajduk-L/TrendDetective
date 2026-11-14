@@ -4,7 +4,7 @@ This module serves static frontend assets, provides alphabetically sorted topics
 from :func:`api_wrapper.get_all_topics_list` at ``GET /api/topics``, provides
 available analysis tools from :mod:`src.task` at ``GET /api/tools``, and routes
 button click events at ``POST /api/buttons/<button_id>`` to the single method
-bound to that button.
+bound to that button. ``GET /api/places?q=<name>`` looks up cities and regions.
 """
 
 from dataclasses import dataclass
@@ -13,9 +13,11 @@ import importlib
 import json
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
+import area_analysis
 import interface
+import places
 import plot_analysis
 
 BASE_DIR: Path = Path(__file__).resolve().parent
@@ -131,6 +133,21 @@ class WebAppHandler(SimpleHTTPRequestHandler):
 
         if self.path == "/api/topics":
             self._send_json(200, {"topics": app_interface.get_sorted_topics()})
+            return
+
+        url = urlsplit(self.path)
+        if url.path == "/api/places":
+            query = parse_qs(url.query).get("q", [""])[0]
+            try:
+                self._send_json(200, {"places": places.search_places(query)})
+            except ValueError as exc:
+                self._send_json(400, {"error": str(exc)})
+            except RuntimeError as exc:
+                self._send_json(502, {"error": str(exc)})
+            return
+
+        if self.path == "/api/regions":
+            self._send_json(200, {"regions": area_analysis.list_regions()})
             return
 
         if self.path == "/api/tools":

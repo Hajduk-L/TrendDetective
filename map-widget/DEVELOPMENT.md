@@ -151,32 +151,35 @@ The three modules don't know about each other. `MapWidget` connects them with ca
 ### Tools and modes
 | Tool | Terra Draw mode | Interaction |
 |---|---|---|
-| `select` ("Pan", default) | built-in `static` mode | Pan the map only. The selection is locked: clicking or dragging it moves the map, not the area |
-| `edit` ("Edit" toggle, needs a selection) | `TerraDrawSelectMode` | The area is pre-selected; drag it, drag corners or vertices; Delete key removes it. Esc or the toggle locks it again |
-| `rectangle` | `TerraDrawRectangleMode` (`click-move-or-drag`) | Drag, or click twice |
-| `polygon` | `TerraDrawPolygonMode` | Click corners; click the first point or press Enter to finish; Esc cancels |
-| `freehand` | `TerraDrawFreehandMode` | Click, move, click |
+| `select` ("Pan", default) | built-in `static` mode | Pan the map only. The point is locked: clicking or dragging it moves the map |
+| `edit` ("Edit" toggle, needs a point) | `TerraDrawSelectMode` | The point is pre-selected; drag it; Delete key removes it. Esc or the toggle locks it again |
 | `point` | `TerraDrawPointMode` | Click once |
 
-`terraMode()` maps tools to Terra Draw modes. Locking by default prevents moving the area by accident while panning.
+The rectangle, polygon and freehand tools were removed: an area is only evaluated where there are
+enough measuring stations, so areas are picked from predefined regions instead (see
+*RegionLayer* below). `terraMode()` maps tools to Terra Draw modes.
 
-Edit rules per shape (select-mode `flags`, edit tool only):
-- **rectangle**: move it, or resize it from the opposite corner.
-- **polygon**: move it, drag/add/delete vertices.
-- **freehand**: move it, drag/delete vertices.
-- **point**: drag it. Exported via `normalizePoint` (rounded, longitude wrapped, latitude clamped), `areaKm2: 0`, zero-size `bbox`; `fitToArea` zooms to it (capped at `maxZoom` 9).
-
-Polygon and freehand reject self-intersecting shapes (`ValidateNotSelfIntersecting`).
+The point is exported via `normalizePoint` (rounded, longitude wrapped, latitude clamped),
+`areaKm2: 0`, zero-size `bbox`; `fitToArea` zooms to it (capped at `maxZoom` 9).
 
 ### Behaviour
-- **One area at a time.** When a drawing finishes (`finish` with `action === "draw"`), all other areas are removed. Removal sets `suppressDelete`, so it doesn't fire "cleared".
-- After drawing, the tool switches back to `select` (Pan) with the new area locked. This runs in a `setTimeout(0)`, because Terra Draw is still handling its own event.
-- Deleting the area while editing switches back to `select` (nothing left to edit).
-- **Edits** (`finish` with any other action on the current feature) fire `onAreaSelected` again with the same `selectionId`.
+- **One point at a time.** When a point is placed (`finish` with `action === "draw"`), the old one is removed. Removal sets `suppressDelete`, so it doesn't fire "cleared".
+- After placing, the tool switches back to `select` (Pan) with the point locked. This runs in a `setTimeout(0)`, because Terra Draw is still handling its own event.
+- **Moves** (`finish` with any other action on the current feature) fire `onAreaSelected` again with the same `selectionId`.
 - **Delete** (`change` event of type `delete` for the current feature) fires `onAreaCleared`.
 - `selectionId` comes from a counter: `area-001`, `area-002`, … Terra Draw's own UUIDs stay internal.
-- **Basemap switch**: `detach()` saves the area features (properties stripped to `{ mode }`) and `attach()` adds them back with the same ids.
-- `setArea()` (used for `initialArea`) tries rectangle mode for axis-aligned rectangles, else polygon. It returns `false` if Terra Draw rejects the geometry.
+- **Basemap switch**: `detach()` saves the point (properties stripped to `{ mode }`) and `attach()` adds it back with the same id.
+- `setArea()` (used for `initialArea` and the controller's `setArea`) accepts a Point only.
+
+### RegionLayer (Areas button)
+- The host passes `regions` (`[{id, name, bbox, note?}]`, on the website from `GET /api/regions`).
+- The Areas button shows all of them: a box per region, plus a marker at its centre below zoom 6
+  (a 1° box is only a few pixels on the globe). Hovering shows `name` and `note`.
+- Clicking one selects it: the point is removed, the regions are hidden again, the map zooms to the
+  region and `onAreaSelected` gets a feature with `shape: "region"` and `regionId`. The selected
+  region stays outlined in orange. Placing a point removes the region again.
+- Region layers are inserted below the basemap labels and below the result data, so station dots
+  lie on top. They are re-added after a basemap switch (`suspend()` / `reapply()`).
 
 ### Export (`getArea` → `geo.normalizeRing`)
 1. Round to 6 decimals and clamp latitude to ±90.
@@ -226,16 +229,16 @@ Polygon and freehand reject self-intersecting shapes (`ValidateNotSelfIntersecti
 
 Run `npm run dev`, then in the demo:
 
-1. The map loads (no "Worker failed to load" in the console); the initial rectangle over NRW is visible.
-2. Draw a rectangle, a polygon (also a concave one) and a freehand shape → each fires `onAreaSelected`, the old area disappears, and data loads.
-3. In Pan: dragging over the area moves the map, not the area. Turn on Edit: drag a corner or the whole area → the event fires again with the same `selectionId`; Esc locks it again.
-4. Trash button → `onAreaCleared`, data disappears.
-5. Switch basemap (Streets → Blue Marble) → the area and data stay.
-6. Globe ↔ Flat; draw across 180° in both → `crossesAntimeridian: true`, `bbox` west > east.
-7. Mean trend dataset: the whole area is filled with one colour; clicking it shows the mean value.
-8. MODIS raster and stations datasets load; clicking a feature opens a popup.
-9. `npm run build:embed`, then `python3 app.py` and open http://127.0.0.1:8000: the globe renders in
-   the map box; draw an area, fill the sidebar, click Apply → the status card shows `area=area-…`.
+1. The map loads (no "Worker failed to load" in the console); the initial point in NRW is visible.
+2. Place a point → `onAreaSelected` fires, the old point disappears, and data loads.
+3. In Pan: dragging over the point moves the map. Turn on Edit: drag the point → the event fires again with the same `selectionId`; Esc locks it again.
+4. Press Areas → the demo region is shown; click it → `onAreaSelected` with `shape: "region"`; the point disappears.
+5. Trash button → `onAreaCleared`, data disappears.
+6. Switch basemap (Streets → Blue Marble) → the point or region and the data stay.
+7. MODIS raster and stations datasets load; clicking a feature opens a popup.
+8. `npm run build:embed`, then `python3 app.py` and open http://127.0.0.1:8000: the globe renders in
+   the map box; press Areas and pick a region (or place a point), fill the sidebar, click Apply →
+   one dot per station in the region, coloured by its trend.
 
 ## 13. Known limitations / ideas
 

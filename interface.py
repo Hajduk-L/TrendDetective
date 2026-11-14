@@ -15,6 +15,7 @@ from datetime import date, datetime
 from typing import Any
 
 import api_wrapper
+import area_analysis
 from src.task import get_available_tools, process_user_request
 
 DATE_FORMAT: str = "%d.%m.%Y"
@@ -356,5 +357,11 @@ class AppInterface:
             interval_length=self.interval_length,
             area=self.area,
         )
-        self.last_task_results = process_user_request(self.last_user_request)
+        region = area_analysis.region_for_area(self.area)
+        if region is not None:
+            self.last_task_results = area_analysis.process_region_request(
+                self.last_user_request, region
+            )
+        else:
+            self.last_task_results = process_user_request(self.last_user_request)
         print(f"Created UserRequest: {self.last_user_request}")

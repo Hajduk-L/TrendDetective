@@ -1,7 +1,7 @@
 # Interactive Map Widget
 
-React + TypeScript widget built on MapLibre GL JS and Terra Draw. Users select an area on a
-globe (rectangle, polygon, freehand); the widget hands it out as GeoJSON and shows the Data
+React + TypeScript widget built on MapLibre GL JS and Terra Draw. Users pick a point or one of
+the predefined regions with many measuring stations (Areas button); the widget hands it out as GeoJSON and shows the Data
 Loader's results (GeoJSON vectors, raster tiles, images) on the same map.
 
 - **[API.md](API.md)** – how to put the widget into the website: what it needs, what it delivers.

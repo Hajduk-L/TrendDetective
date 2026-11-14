@@ -1,24 +1,19 @@
-import type { Feature, Point, Polygon } from "geojson";
+import type { Feature, Point } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   TerraDraw,
-  TerraDrawFreehandMode,
   TerraDrawPointMode,
-  TerraDrawPolygonMode,
-  TerraDrawRectangleMode,
   TerraDrawSelectMode,
-  ValidateNotSelfIntersecting,
   type GeoJSONStoreFeatures,
   type TerraDrawEventListeners,
 } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
-import { geodesicAreaKm2, isAxisAlignedRectangle, normalizePoint, normalizeRing } from "./geo";
-import type { AreaFeature, DrawTool, SelectionShape } from "./types";
+import { normalizePoint } from "./geo";
+import type { AreaFeature, DrawTool } from "./types";
 
 /** Prefix of all MapLibre sources/layers created by Terra Draw. */
 export const SELECTION_LAYER_PREFIX = "mw-sel";
 
-const POLYGON_SHAPES: readonly SelectionShape[] = ["rectangle", "polygon", "freehand"];
 const ACCENT = "#ff6b2c";
 const WHITE = "#ffffff";
 
@@ -26,8 +21,8 @@ type FeatureId = string | number;
 
 /**
  * Terra Draw mode for a toolbar tool. "select" (Pan) uses Terra Draw's built-in passive
- * "static" mode, so the selection is locked and clicks/drags only move the map; only the
- * "edit" tool turns on Terra Draw's select mode, where the shape can be moved and reshaped.
+ * "static" mode, so the point is locked and clicks/drags only move the map; only the
+ * "edit" tool turns on Terra Draw's select mode, where the point can be moved.
  */
 function terraMode(tool: DrawTool): string {
   if (tool === "select") return "static";
@@ -60,25 +55,24 @@ class ContinuousLngAdapter extends TerraDrawMapLibreGLAdapter<MapLibreMap> {
 }
 
 export interface SelectionCallbacks {
-  /** User finished drawing/editing (area) or deleted the selection (null). */
+  /** User placed or moved the point (area) or deleted it (null). */
   onChange: (area: AreaFeature | null) => void;
   onToolChange: (tool: DrawTool) => void;
 }
 
-/** A selection drawn by one of our tools (polygon shapes or a single point). */
-const isAreaFeature = (f: GeoJSONStoreFeatures) =>
-  (f.geometry.type === "Polygon" && POLYGON_SHAPES.includes(f.properties.mode as SelectionShape)) ||
-  (f.geometry.type === "Point" && f.properties.mode === "point");
+/** The point placed with the Point tool. */
+const isAreaFeature = (f: GeoJSONStoreFeatures) => f.geometry.type === "Point" && f.properties.mode === "point";
 
 /**
- * Wraps Terra Draw: drawing tools, editing, single-selection policy and GeoJSON export.
+ * Wraps Terra Draw for the Point tool: placing and moving one point and its GeoJSON export.
+ * Areas are not drawn; they are picked from the predefined regions (see RegionLayer).
  * Survives basemap switches via detach() (before the style changes) and attach() (after).
  */
 export class SelectionManager {
   private draw: TerraDraw | null = null;
   private tool: DrawTool = "select";
   private parked: GeoJSONStoreFeatures[] = [];
-  private pendingArea: Feature<Polygon | Point> | null = null;
+  private pendingArea: Feature<Point> | null = null;
   private currentId: FeatureId | null = null;
   private selectionId: string | null = null;
   private counter = 0;
@@ -168,67 +162,30 @@ export class SelectionManager {
         geometry: { type: "Point", coordinates },
       };
     }
-    if (f.geometry.type !== "Polygon") return null;
-
-    const { ring, bbox, crossesAntimeridian } = normalizeRing(f.geometry.coordinates[0]);
-    return {
-      type: "Feature",
-      bbox,
-      properties: {
-        selectionId: this.selectionId,
-        shape: f.properties.mode as SelectionShape,
-        crossesAntimeridian,
-        areaKm2: Math.round(geodesicAreaKm2(ring) * 10) / 10,
-      },
-      geometry: { type: "Polygon", coordinates: [ring] },
-    };
+    return null;
   }
 
-  /** Programmatically sets the selection (does not fire onChange). Returns false if the geometry was rejected. */
-  setArea(feature: Feature<Polygon | Point>): boolean {
+  /** Programmatically sets the point (does not fire onChange). Returns false if it was rejected. */
+  setArea(feature: Feature<Point>): boolean {
     const draw = this.draw;
     if (!draw) {
       this.pendingArea = feature;
       return true;
     }
-    if (feature.geometry.type === "Point") {
-      const id = draw.getFeatureId();
-      const coordinates = normalizePoint(feature.geometry.coordinates);
-      const [result] = draw.addFeatures([
-        { id, type: "Feature", geometry: { type: "Point", coordinates }, properties: { mode: "point" } },
-      ]);
-      if (!result?.valid) {
-        console.warn("[MapWidget] initial point rejected:", result?.reason);
-        return false;
-      }
-      this.removeAreas((fid) => fid !== id);
-      this.currentId = id;
-      const given = feature.properties?.selectionId;
-      this.selectionId = typeof given === "string" ? given : this.nextSelectionId();
-      return true;
+    const id = draw.getFeatureId();
+    const coordinates = normalizePoint(feature.geometry.coordinates);
+    const [result] = draw.addFeatures([
+      { id, type: "Feature", geometry: { type: "Point", coordinates }, properties: { mode: "point" } },
+    ]);
+    if (!result?.valid) {
+      console.warn("[MapWidget] initial point rejected:", result?.reason);
+      return false;
     }
-    const ring = normalizeRing(feature.geometry.coordinates[0]).ring;
-    const requested = feature.properties?.shape as SelectionShape | undefined;
-    const candidates: SelectionShape[] =
-      requested === "rectangle" || (!requested && isAxisAlignedRectangle(ring))
-        ? ["rectangle", "polygon"]
-        : [requested === "freehand" ? "freehand" : "polygon"];
-
-    for (const mode of candidates) {
-      const id = draw.getFeatureId();
-      const [result] = draw.addFeatures([
-        { id, type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: { mode } },
-      ]);
-      if (result?.valid) {
-        this.removeAreas((fid) => fid !== id);
-        this.currentId = id;
-        const given = feature.properties?.selectionId;
-        this.selectionId = typeof given === "string" ? given : this.nextSelectionId();
-        return true;
-      }
-      console.warn(`[MapWidget] initial area rejected as ${mode}:`, result?.reason);
-    }
-    return false;
+    this.removeAreas((fid) => fid !== id);
+    this.currentId = id;
+    const given = feature.properties?.selectionId;
+    this.selectionId = typeof given === "string" ? given : this.nextSelectionId();
+    return true;
   }
 
   /** Removes the selection. `notify` fires onChange(null). */
@@ -297,59 +254,16 @@ export class SelectionManager {
 }
 
 function createModes() {
-  const shapeStyle = {
-    fillColor: ACCENT,
-    fillOpacity: 0.06,
-    outlineColor: ACCENT,
-    outlineWidth: 2,
-  } as const;
-  const notSelfIntersecting = (f: GeoJSONStoreFeatures) => ValidateNotSelfIntersecting(f);
-
   return [
     new TerraDrawSelectMode({
-      flags: {
-        rectangle: { feature: { draggable: true, coordinates: { resizable: "opposite" } } },
-        polygon: {
-          feature: {
-            draggable: true,
-            validation: notSelfIntersecting,
-            coordinates: { draggable: true, midpoints: true, deletable: true },
-          },
-        },
-        freehand: { feature: { draggable: true, coordinates: { draggable: true, deletable: true } } },
-        point: { feature: { draggable: true } },
-      },
+      flags: { point: { feature: { draggable: true } } },
       styles: {
-        selectedPolygonColor: ACCENT,
-        selectedPolygonFillOpacity: 0.05,
-        selectedPolygonOutlineColor: ACCENT,
-        selectedPolygonOutlineWidth: 3,
         selectedPointColor: ACCENT,
         selectedPointWidth: 7,
         selectedPointOutlineColor: WHITE,
         selectedPointOutlineWidth: 3,
-        selectionPointColor: WHITE,
-        selectionPointOutlineColor: ACCENT,
-        selectionPointWidth: 5,
-        selectionPointOutlineWidth: 2,
-        midPointColor: ACCENT,
-        midPointOutlineColor: WHITE,
-        midPointWidth: 3,
-        midPointOutlineWidth: 1,
       },
     }),
-    new TerraDrawRectangleMode({ drawInteraction: "click-move-or-drag", styles: shapeStyle }),
-    new TerraDrawPolygonMode({
-      validation: notSelfIntersecting,
-      styles: {
-        ...shapeStyle,
-        closingPointColor: WHITE,
-        closingPointOutlineColor: ACCENT,
-        closingPointWidth: 5,
-        closingPointOutlineWidth: 2,
-      },
-    }),
-    new TerraDrawFreehandMode({ styles: shapeStyle, validation: notSelfIntersecting }),
     new TerraDrawPointMode({
       styles: { pointColor: ACCENT, pointWidth: 6, pointOutlineColor: WHITE, pointOutlineWidth: 2 },
     }),

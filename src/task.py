@@ -372,6 +372,55 @@ def _load_records_for_topic(
     return records
 
 
+VARIABLE_NAMES: dict[str, str] = {
+    "tmax": "maximum",
+    "tmin": "minimum",
+    "tavg": "average",
+    "emxt": "extreme maximum",
+    "emnt": "extreme minimum",
+    "prcp": "precipitation",
+    "snow": "snowfall",
+    "snwd": "snow depth",
+    "awnd": "average wind speed",
+    "rhav": "average",
+    "rhmn": "minimum",
+    "rhmx": "maximum",
+    "mnpn": "minimum",
+    "mxpn": "maximum",
+    "air_temp": "air",
+    "sea_surf_temp": "sea surface",
+    "dew_pt_temp": "dew point",
+}
+"""Readable names of common NOAA codes, used in the per-variable result keys."""
+
+
+def variable_label(topic: str, description: str) -> str:
+    """Result key for one variable of a topic, e.g. ``temperature · minimum (TMIN)``."""
+    code = description.upper()
+    name = VARIABLE_NAMES.get(description.lower())
+    return f"{topic} · {name} ({code})" if name else f"{topic} · {code}"
+
+
+def split_by_variable(
+    topic: str, records: list[dict[str, Any]]
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Group a topic's records by NOAA code, one ``(result key, records)`` pair each.
+
+    A topic such as ``temperature`` delivers TMAX, TMIN and TAVG; their values
+    must not be averaged together. A topic with a single variable keeps the
+    plain topic name as its key.
+    """
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        groups.setdefault(str(record.get("description") or ""), []).append(record)
+    if len(groups) <= 1:
+        return [(topic, records)]
+    return [
+        (variable_label(topic, description) if description else topic, group)
+        for description, group in sorted(groups.items())
+    ]
+
+
 def _parse_observation_period(raw_date: str) -> tuple[date, date]:
     """Return the first and last day covered by a NOAA observation date.
 
@@ -530,7 +579,7 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
 
     for topic in selected_topics:
         try:
-            records = _load_records_for_topic(
+            topic_records = _load_records_for_topic(
                 topic, latitude, longitude, start_date, end_date
             )
         except (RuntimeError, ValueError) as error:
@@ -548,142 +597,144 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                 "tools": {},
             }
             continue
-        station = _station_from_records(records, latitude, longitude)
-        variables = sorted({str(r["description"]) for r in records if r.get("description")})
-        units = {r.get("unit") for r in records}
-        # Only label the axis when every merged variable shares one unit.
-        unit = units.pop() if len(units) == 1 else None
-        if station is not None:
-            station_key = str(station["id"] or f"{station['latitude']},{station['longitude']}")
-            feature = station_features.setdefault(
-                station_key,
-                {
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [station["longitude"], station["latitude"]],
+        # Each NOAA code (e.g. TMAX, TMIN, TAVG) is its own series; averaging
+        # them together would mix different quantities.
+        for result_key, records in split_by_variable(topic, topic_records):
+            station = _station_from_records(records, latitude, longitude)
+            variables = sorted({str(r["description"]) for r in records if r.get("description")})
+            units = {r.get("unit") for r in records}
+            unit = units.pop() if len(units) == 1 else None
+            if station is not None:
+                station_key = str(station["id"] or f"{station['latitude']},{station['longitude']}")
+                feature = station_features.setdefault(
+                    station_key,
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [station["longitude"], station["latitude"]],
+                        },
+                        "properties": {
+                            "kind": "Measuring station",
+                            "station": station["id"],
+                            "name": station["name"],
+                            "latitude": station["latitude"],
+                            "longitude": station["longitude"],
+                            "elevation_m": station["elevation"],
+                            "distance_km": station["distance_km"],
+                            "topics": [],
+                            "color": "#7c3aed",
+                        },
                     },
-                    "properties": {
-                        "kind": "Measuring station",
-                        "station": station["id"],
-                        "name": station["name"],
-                        "latitude": station["latitude"],
-                        "longitude": station["longitude"],
-                        "elevation_m": station["elevation"],
-                        "distance_km": station["distance_km"],
-                        "topics": [],
-                        "color": "#7c3aed",
-                    },
-                },
+                )
+                feature["properties"]["topics"].append(result_key)
+            labels, values = _bin_records(
+                records, start_date, end_date, interval_length
             )
-            feature["properties"]["topics"].append(topic)
-        labels, values = _bin_records(
-            records, start_date, end_date, interval_length
-        )
-        sample_count = len(values)
-        x = torch.arange(sample_count, dtype=torch.float32).unsqueeze(1)
-        y = torch.tensor(values, dtype=torch.float32).unsqueeze(1)
-        tool_results: dict[str, Any] = {}
-        slope_value = 0.0
+            sample_count = len(values)
+            x = torch.arange(sample_count, dtype=torch.float32).unsqueeze(1)
+            y = torch.tensor(values, dtype=torch.float32).unsqueeze(1)
+            tool_results: dict[str, Any] = {}
+            slope_value = 0.0
 
-        if "Linear Regression" in selected_tools:
-            slope, intercept = LinearRegression().process(x, y)
-            slope_value = float(slope[0].item()) if slope.numel() else 0.0
-            intercept_value = float(intercept[0].item()) if intercept.numel() else 0.0
-            trend_line = [
-                round(slope_value * index + intercept_value, 3)
-                for index in range(sample_count)
-            ]
-            tool_results["Linear Regression"] = {
-                "slope": _safe_float(slope_value),
-                "intercept": _safe_float(intercept_value),
-                "trend_line": trend_line,
-                "observations": sample_count,
+            if "Linear Regression" in selected_tools:
+                slope, intercept = LinearRegression().process(x, y)
+                slope_value = float(slope[0].item()) if slope.numel() else 0.0
+                intercept_value = float(intercept[0].item()) if intercept.numel() else 0.0
+                trend_line = [
+                    round(slope_value * index + intercept_value, 3)
+                    for index in range(sample_count)
+                ]
+                tool_results["Linear Regression"] = {
+                    "slope": _safe_float(slope_value),
+                    "intercept": _safe_float(intercept_value),
+                    "trend_line": trend_line,
+                    "observations": sample_count,
+                }
+
+            if "t-Test" in selected_tools:
+                if sample_count < 4:
+                    tool_results["t-Test"] = {
+                        "available": False,
+                        "error": "At least four intervals are required to compare two samples.",
+                        "observations": sample_count,
+                    }
+                else:
+                    statistic, p_value = TTest().process(x, y)
+                    statistic_value = float(statistic.item())
+                    p_value_value = float(p_value.item())
+                    tool_results["t-Test"] = {
+                        "available": True,
+                        "t_statistic": _safe_float(statistic_value),
+                        "p_value": _safe_float(p_value_value),
+                        "significant": bool(p_value_value < 0.05),
+                        "observations": sample_count,
+                    }
+
+            if "Mann-Kendall" in selected_tools:
+                if sample_count < 3:
+                    tool_results["Mann-Kendall"] = {
+                        "available": False,
+                        "error": "At least three intervals are required for the Mann-Kendall test.",
+                        "observations": sample_count,
+                    }
+                else:
+                    result = mann_kendall_test(x.flatten(), y.flatten())
+                    tool_results["Mann-Kendall"] = {
+                        "available": True,
+                        "s_statistic": result.s_statistic,
+                        "variance": _safe_float(result.variance),
+                        "z_statistic": _safe_float(result.z_statistic),
+                        "p_value": _safe_float(result.p_value),
+                        "tau": _safe_float(result.tau),
+                        "trend": result.trend,
+                        "observations": result.observations,
+                        "alpha": result.alpha,
+                    }
+
+            mean_value = round(sum(values) / sample_count, 3) if sample_count else None
+            topic_results[result_key] = {
+                "labels": labels,
+                "values": values,
+                "mean": mean_value,
+                "coordinates": [latitude, longitude],
+                "station": station,
+                "variables": variables,
+                "unit": unit,
+                "tools": tool_results,
             }
 
-        if "t-Test" in selected_tools:
-            if sample_count < 4:
-                tool_results["t-Test"] = {
-                    "available": False,
-                    "error": "At least four intervals are required to compare two samples.",
-                    "observations": sample_count,
-                }
-            else:
-                statistic, p_value = TTest().process(x, y)
-                statistic_value = float(statistic.item())
-                p_value_value = float(p_value.item())
-                tool_results["t-Test"] = {
-                    "available": True,
-                    "t_statistic": _safe_float(statistic_value),
-                    "p_value": _safe_float(p_value_value),
-                    "significant": bool(p_value_value < 0.05),
-                    "observations": sample_count,
-                }
-
-        if "Mann-Kendall" in selected_tools:
-            if sample_count < 3:
-                tool_results["Mann-Kendall"] = {
-                    "available": False,
-                    "error": "At least three intervals are required for the Mann-Kendall test.",
-                    "observations": sample_count,
-                }
-            else:
-                result = mann_kendall_test(x.flatten(), y.flatten())
-                tool_results["Mann-Kendall"] = {
-                    "available": True,
-                    "s_statistic": result.s_statistic,
-                    "variance": _safe_float(result.variance),
-                    "z_statistic": _safe_float(result.z_statistic),
-                    "p_value": _safe_float(result.p_value),
-                    "tau": _safe_float(result.tau),
-                    "trend": result.trend,
-                    "observations": result.observations,
-                    "alpha": result.alpha,
-                }
-
-        mean_value = round(sum(values) / sample_count, 3) if sample_count else None
-        topic_results[topic] = {
-            "labels": labels,
-            "values": values,
-            "mean": mean_value,
-            "coordinates": [latitude, longitude],
-            "station": station,
-            "variables": variables,
-            "unit": unit,
-            "tools": tool_results,
-        }
-
-        properties: dict[str, Any] = {
-            "topic": topic,
-            "mean": mean_value,
-            "samples": sample_count,
-            "color": "#dc2626" if slope_value > 0 else "#2563eb",
-        }
-        regression_result = tool_results.get("Linear Regression")
-        if regression_result is not None:
-            properties["slope"] = regression_result["slope"]
-            properties["intercept"] = regression_result["intercept"]
-        ttest_result = tool_results.get("t-Test")
-        if ttest_result is not None and ttest_result.get("available"):
-            properties["t_statistic"] = ttest_result["t_statistic"]
-            properties["p_value"] = ttest_result["p_value"]
-        mann_kendall_result = tool_results.get("Mann-Kendall")
-        if mann_kendall_result is not None and mann_kendall_result.get("available"):
-            properties["mann_kendall_trend"] = mann_kendall_result["trend"]
-            properties["mann_kendall_p_value"] = mann_kendall_result["p_value"]
-
-        if isinstance(user_request.area, dict) and isinstance(
-            user_request.area.get("geometry"), dict
-        ):
-            geometry = user_request.area["geometry"]
-        else:
-            geometry = {
-                "type": "Point",
-                "coordinates": [longitude, latitude],
+            properties: dict[str, Any] = {
+                "topic": result_key,
+                "mean": mean_value,
+                "samples": sample_count,
+                "color": "#dc2626" if slope_value > 0 else "#2563eb",
             }
-        map_features.append(
-            {"type": "Feature", "geometry": geometry, "properties": properties}
-        )
+            regression_result = tool_results.get("Linear Regression")
+            if regression_result is not None:
+                properties["slope"] = regression_result["slope"]
+                properties["intercept"] = regression_result["intercept"]
+            ttest_result = tool_results.get("t-Test")
+            if ttest_result is not None and ttest_result.get("available"):
+                properties["t_statistic"] = ttest_result["t_statistic"]
+                properties["p_value"] = ttest_result["p_value"]
+            mann_kendall_result = tool_results.get("Mann-Kendall")
+            if mann_kendall_result is not None and mann_kendall_result.get("available"):
+                properties["mann_kendall_trend"] = mann_kendall_result["trend"]
+                properties["mann_kendall_p_value"] = mann_kendall_result["p_value"]
+
+            if isinstance(user_request.area, dict) and isinstance(
+                user_request.area.get("geometry"), dict
+            ):
+                geometry = user_request.area["geometry"]
+            else:
+                geometry = {
+                    "type": "Point",
+                    "coordinates": [longitude, latitude],
+                }
+            map_features.append(
+                {"type": "Feature", "geometry": geometry, "properties": properties}
+            )
 
     map_layers: list[dict[str, Any]] = []
     if map_features:

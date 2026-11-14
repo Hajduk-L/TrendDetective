@@ -15,5 +15,6 @@ export type {
   MapWidgetProps,
   ProjectionType,
   RasterMapData,
+  Region,
   SelectionShape,
 } from "./types";

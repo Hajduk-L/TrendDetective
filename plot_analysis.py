@@ -143,6 +143,27 @@ _RUNNERS = {
 }
 
 
+def run_tools(
+    x: Sequence[Any],
+    values: Sequence[Any],
+    tools: Sequence[str],
+) -> dict[str, Any]:
+    """Run the named tools on a series without the size limit for posted data.
+
+    Used by :mod:`area_analysis` for series built on the server.
+
+    :raises AnalysisError: If a tool name is unknown or the input is malformed.
+    """
+    unknown = [name for name in tools if name not in _RUNNERS]
+    if unknown:
+        raise AnalysisError(f"Unknown tool(s): {', '.join(map(str, unknown))}.")
+    if len(x) != len(values):
+        raise AnalysisError("x and values must have the same length.")
+    xs = [float(v) for v, y in zip(x, values) if y is not None]
+    ys = [float(y) for y in values if y is not None]
+    return {name: _RUNNERS[name](xs, ys) for name in tools}
+
+
 def analyze_series(
     x: Sequence[Any],
     values: Sequence[Any],
@@ -208,4 +229,4 @@ def analyze_groups(
     return {"groups": results}
 
 
-__all__ = ["AnalysisError", "analyze_groups", "analyze_series"]
+__all__ = ["AnalysisError", "analyze_groups", "analyze_series", "run_tools"]

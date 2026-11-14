@@ -1,10 +1,12 @@
 # Map Widget – Integration Guide
 
-The widget is a React component. The user draws an area on a map; you get that area as GeoJSON.
+The widget is a React component. The user picks a point, or one of the predefined regions
+(Areas button), on a map; you get it as GeoJSON. There are no free drawing tools: an area is only
+evaluated where there are enough measuring stations, so areas come from a fixed list (`regions`).
 You send data back; the widget draws it on the same map.
 
 ```
-user draws ──► MapWidget ──onAreaSelected(area)──► your page ──► Data Loader
+user picks ──► MapWidget ──onAreaSelected(area)──► your page ──► Data Loader
                    ▲                                                  │
                    └──────────────── resultData ◄─────────────────────┘
 ```
@@ -26,6 +28,7 @@ The website (`index.html`, served by `python3 app.py`) uses the **pre-built bund
     onAreaSelected: (area) => { /* send area to the Data Loader */ },
     onAreaCleared: () => { /* forget the area */ },
   });
+  map.setRegions(regions);   // e.g. from GET /api/regions, see §3
 
   // later, when data arrives:
   map.setLoading(true);
@@ -44,7 +47,10 @@ and ends up in `UserRequest.area`.
 |---|---|
 | `setResultData(data)` | Show data (§4); `undefined` clears it. Same layers with new GeoJSON `data` (same `id`) are updated in place, which is smooth enough for animation |
 | `setLoading(bool)` | Show / hide "Loading data…" |
-| `getArea()` | Current area (§3) or `null` |
+| `getArea()` | Current point or region (§3) or `null` |
+| `setArea(pointFeature)` | Select a point as if the user placed it (fires `onAreaSelected`); `false` for anything but a Point |
+| `setRegions(regions)` | Regions offered by the Areas button: `[{id, name, bbox, note?}]` |
+| `showRegions(bool)` | Show / hide the regions (same as the Areas button) |
 | `clearArea()` | Remove the area |
 | `fitToArea()` | Zoom to the area |
 | `destroy()` | Remove the widget |
@@ -66,11 +72,12 @@ cd map-widget && npm install && npm run build:embed
 
 | Prop | Type | Required | What it is |
 |---|---|---|---|
-| `onAreaSelected` | `(area: AreaFeature) => void` | **yes** (React) | Called when the user finishes drawing or editing an area. |
-| `onAreaCleared` | `() => void` | no | Called when the user deletes the area. |
+| `onAreaSelected` | `(area: AreaFeature) => void` | **yes** (React) | Called when the user places or moves a point, or picks a region. |
+| `onAreaCleared` | `() => void` | no | Called when the user deletes the selection. |
+| `regions` | `Region[]` | no | Regions offered by the Areas button (bundle: `setRegions`). `{id, name, bbox, note?}`; `note` is shown on hover. |
 | `resultData` | `MapData` or `MapData[]` | no | React only (bundle: `setResultData`). The data to show (§4). |
 | `loading` | `boolean` | no | React only (bundle: `setLoading`). Shows "Loading data…". |
-| `initialArea` | GeoJSON polygon feature | no | An area to show when the page opens. |
+| `initialArea` | GeoJSON point feature | no | A point to show when the page opens. |
 | `basemap` | `"streets"`, `"light"`, `"dark"`, `"satellite"` | no | Start map. Default `"streets"`. |
 | `projection` | `"globe"` or `"mercator"` | no | Start view. Default `"globe"`. |
 
@@ -80,29 +87,37 @@ cd map-widget && npm install && npm run build:embed
 
 `onAreaSelected` receives a GeoJSON Feature:
 
+A picked **region**:
+
 ```json
 {
   "type": "Feature",
-  "bbox": [6.0, 50.0, 8.0, 52.0],
+  "bbox": [10.5, 47.5, 12.5, 49.5],
   "properties": {
-    "selectionId": "area-001",
-    "shape": "rectangle",
+    "selectionId": "bavaria",
+    "shape": "region",
+    "regionId": "bavaria",
+    "name": "Bavaria",
     "crossesAntimeridian": false,
-    "areaKm2": 31193.4
+    "areaKm2": 32843
   },
   "geometry": {
     "type": "Polygon",
-    "coordinates": [[[6.0, 50.0], [8.0, 50.0], [8.0, 52.0], [6.0, 52.0], [6.0, 50.0]]]
+    "coordinates": [[[10.5, 47.5], [12.5, 47.5], [12.5, 49.5], [10.5, 49.5], [10.5, 47.5]]]
   }
 }
 ```
 
+The website sends it with **Apply**; `interface.py` sees `shape: "region"` and evaluates every
+station in the region (`area_analysis.py`) instead of the station nearest to a point.
+
 | Field | Meaning |
 |---|---|
-| `geometry` | The drawn area (closed polygon, one ring), or a `Point` from the point tool. |
+| `geometry` | The region's box (closed polygon, one ring), or a `Point` from the point tool. |
 | `bbox` | `[west, south, east, north]`. Easiest input for most APIs. |
-| `selectionId` | Same id while the user edits the area; new id for a new area. |
-| `shape` | `"rectangle"`, `"polygon"`, `"freehand"` or `"point"`. |
+| `selectionId` | Same id while the user moves the point; new id for a new point. The region id for a region. |
+| `shape` | `"point"` or `"region"`. |
+| `regionId`, `name` | Only for a region: its id and name from `regions`. |
 | `areaKm2` | Size of the area (`0` for a point). |
 | `crossesAntimeridian` | `true` if the area spans the ±180° line. Then `bbox` has `west > east`. |
 

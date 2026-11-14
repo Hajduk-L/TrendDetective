@@ -5,7 +5,22 @@ import type { CSSProperties } from "react";
 /** [west, south, east, north] in WGS84 degrees. If west > east the box crosses the antimeridian (RFC 7946 §5.2). */
 export type BBox = [west: number, south: number, east: number, north: number];
 
-export type SelectionShape = "rectangle" | "polygon" | "freehand" | "point";
+/** How the selection was made: a single point, or one of the predefined evaluation regions. */
+export type SelectionShape = "point" | "region";
+
+/**
+ * A predefined evaluation region: a box in which there are enough measuring stations to
+ * evaluate an area instead of a single point. Supplied by the host page (e.g. `/api/regions`).
+ */
+export interface Region {
+  /** Stable id, sent back as `properties.regionId` of the selection. */
+  id: string;
+  name: string;
+  /** [west, south, east, north]. */
+  bbox: BBox;
+  /** Short text shown on hover, e.g. how many stations the region has. */
+  note?: string;
+}
 
 export interface AreaProperties {
   /** Stable id of the selection; stays the same while the user edits it. */
@@ -84,13 +99,14 @@ export type BasemapId = "streets" | "light" | "dark" | "satellite";
 
 /**
  * Toolbar tools. "select" is Pan: the selection is locked, clicks and drags only move the map.
- * "edit" unlocks the selection so it can be moved and reshaped (needs a selection).
+ * "edit" unlocks a point so it can be moved (needs a point). Areas are not drawn but picked
+ * from the predefined regions (the Areas button).
  */
-export type DrawTool = "select" | "edit" | "rectangle" | "polygon" | "freehand" | "point";
+export type DrawTool = "select" | "edit" | "point";
 
 export interface MapWidgetProps {
   /** Selection shown when the widget mounts (not echoed back via `onAreaSelected`). */
-  initialArea?: Feature<Polygon | Point>;
+  initialArea?: Feature<Point>;
   /** Called when the user finishes drawing or editing an area. */
   onAreaSelected: (area: AreaFeature) => void;
   /** Called when the user deletes the selection. */
@@ -103,6 +119,8 @@ export interface MapWidgetProps {
   basemap?: BasemapId | string | StyleSpecification;
   /** Default: "globe". */
   projection?: ProjectionType;
+  /** Predefined regions offered by the Areas button. */
+  regions?: Region[];
   /** Hide the built-in toolbar (e.g. if the host page provides its own controls via the ref). */
   hideToolbar?: boolean;
   className?: string;
@@ -117,4 +135,11 @@ export interface MapWidgetHandle {
   /** Zoom the map to a bounding box, e.g. one covering the selection and the result data. */
   fitToBounds: (bbox: BBox) => void;
   setTool: (tool: DrawTool) => void;
+  /**
+   * Select a point, as if the user had placed it (fires `onAreaSelected`). Returns false for
+   * anything but a Point: areas can only be picked from the predefined regions.
+   */
+  setArea: (feature: Feature) => boolean;
+  /** Show or hide the predefined regions (same as the Areas button). */
+  showRegions: (visible: boolean) => void;
 }

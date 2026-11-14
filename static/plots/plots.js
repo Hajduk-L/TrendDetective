@@ -1499,7 +1499,7 @@
         if (!model) {
             r.subtitle.textContent = '';
             r.chart._spec = null;
-            r.chart.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Draw an area or point on the map, choose topics and click “Apply” to plot the data here.'}</div>`;
+            r.chart.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose topics and click “Apply” to plot the data here.'}</div>`;
             r.legend.innerHTML = '';
             r.hint.innerHTML = '';
             r.analysis.innerHTML = '';
