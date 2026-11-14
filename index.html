@@ -333,7 +333,8 @@
     </main>
 
     <script>
-        const API_BASE = window.location.port === '8000' ? '' : 'http://127.0.0.1:8000';
+        // Same origin on Vercel and on the local Python server (port 8000); otherwise talk to the local server.
+        const API_BASE = (window.location.port === '8000' || !['localhost', '127.0.0.1'].includes(window.location.hostname)) ? '' : 'http://127.0.0.1:8000';
 
         let allTopics = [];
         const selectedTopics = {};
