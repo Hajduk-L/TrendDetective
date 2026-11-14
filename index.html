@@ -263,6 +263,15 @@
             gap: 0.4rem;
             margin-bottom: 0.6rem;
         }
+        .station-line {
+            font-size: 0.8rem;
+            color: #92400e;
+            background: #fef3c7;
+            border-radius: 6px;
+            padding: 4px 8px;
+            margin: 6px 0;
+        }
+
         .metric-badge {
             font-size: 0.78rem;
             padding: 0.2rem 0.55rem;
@@ -719,17 +728,30 @@
                     badgesHtml += `<span class="metric-badge">p-val: ${tt.p_value}</span>`;
                 }
 
+                const st = info.station;
+                const stationHtml = st
+                    ? `<div class="station-line">📍 Measured at ${escapeText(st.name || st.id || 'station')}`
+                      + `${st.id ? ` (${escapeText(st.id)})` : ''}: ${Number(st.latitude).toFixed(4)}, ${Number(st.longitude).toFixed(4)}`
+                      + ` · ${st.distance_km} km from the selected point</div>`
+                    : '';
                 const chartSvg = buildSvgChart(info.values, lr ? lr.trend_line : null);
                 card.innerHTML = `
                     <div class="topic-viz-header">
                         <span>${topic}</span>
                         <span style="font-size:0.78rem;color:#64748b;">[${info.coordinates[0]}, ${info.coordinates[1]}]</span>
                     </div>
+                    ${stationHtml}
                     <div class="badge-row">${badgesHtml}</div>
                     ${chartSvg}
                 `;
                 container.appendChild(card);
             }
+        }
+
+        function escapeText(value) {
+            const div = document.createElement('div');
+            div.textContent = String(value);
+            return div.innerHTML;
         }
 
         function formatArea(area) {

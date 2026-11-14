@@ -40,6 +40,15 @@ SEARCH_URL: str = "https://www.ncei.noaa.gov/access/services/search/v1/data"
 """NOAA NCEI Access Search endpoint used to discover matching stations."""
 
 SEARCH_RADIUS_DEGREES: float = 0.05
+"""Half-width in degrees of the first, smallest station search box."""
+
+SEARCH_RADII_DEGREES: tuple[float, ...] = (0.05, 0.25, 0.5, 1.0, 2.0)
+"""Search box half-widths tried in order until a matching station is found.
+
+The search starts close to the requested point and widens step by step, so
+the nearest station is used when one exists nearby, and remote points still
+get the closest available station instead of an error.
+"""
 """Half-width of the latitude/longitude bounding box around the point.
 
 The resulting query area is approximately 11 km north-south by 11 km east-west
@@ -359,19 +368,24 @@ class NOAAClient:
 
     :param timeout: Maximum time in seconds to wait for a single HTTP request.
     :type timeout: float
-    :param search_radius_degrees: Half-width of the coordinate bounding box in
-        degrees. The default is :data:`SEARCH_RADIUS_DEGREES`.
-    :type search_radius_degrees: float
+    :param search_radii_degrees: Half-widths of the coordinate bounding box in
+        degrees, tried in ascending order until a station is found. The
+        default is :data:`SEARCH_RADII_DEGREES`.
+    :type search_radii_degrees: tuple[float, ...]
     """
 
     def __init__(
         self,
         *,
         timeout: float = 60.0,
-        search_radius_degrees: float = SEARCH_RADIUS_DEGREES,
+        search_radii_degrees: tuple[float, ...] = SEARCH_RADII_DEGREES,
     ) -> None:
+        if not search_radii_degrees or any(r <= 0 for r in search_radii_degrees):
+            raise ValueError("search_radii_degrees must contain positive values.")
         self.timeout: float = timeout
-        self.search_radius_degrees: float = search_radius_degrees
+        self.search_radii_degrees: tuple[float, ...] = tuple(
+            sorted(search_radii_degrees)
+        )
         self.session: requests.Session = requests.Session()
 
     @staticmethod
@@ -411,26 +425,9 @@ class NOAAClient:
                 f"{available_topics}"
             ) from exc
 
-        bbox: str = self._make_bounding_box(
-            request.latitude, request.longitude, self.search_radius_degrees
-        )
-        search_params: dict[str, str] = {
-            "dataset": topic.dataset,
-            "dataTypes": ",".join(topic.data_types),
-            "startDate": f"{request.start_date.isoformat()}T00:00:00",
-            "endDate": f"{request.end_date.isoformat()}T23:59:59",
-            "bbox": bbox,
-            "limit": "1000",
-            "offset": "0",
-        }
-        search_payload: Any = self._get_json(SEARCH_URL, search_params)
         station_id: str
         selected_types: tuple[str, ...]
-        station_id, selected_types = self._select_nearest_station(
-            search_payload,
-            request=request,
-            requested_types=topic.data_types,
-        )
+        station_id, selected_types = self._find_station(request, topic)
 
         data_params: dict[str, str] = {
             "dataset": topic.dataset,
@@ -522,12 +519,60 @@ class NOAAClient:
             ) from exc
         return payload
 
+    def _find_station(
+        self,
+        request: PointDataRequest,
+        topic: NOAATopic,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Search for a station in growing boxes around the requested point.
+
+        Each radius in :attr:`search_radii_degrees` is tried in order; the
+        first box that contains a station with matching data wins, and the
+        nearest station inside it is returned.
+
+        :param request: Point, topic and inclusive date range to retrieve.
+        :type request: PointDataRequest
+        :param topic: Catalog entry with dataset and observation codes.
+        :type topic: NOAATopic
+        :returns: Selected station identifier and data types available there.
+        :rtype: tuple[str, tuple[str, ...]]
+        :raises NOAAError: If even the largest box contains no matching station.
+        """
+        for radius in self.search_radii_degrees:
+            search_params: dict[str, str] = {
+                "dataset": topic.dataset,
+                "dataTypes": ",".join(topic.data_types),
+                "startDate": f"{request.start_date.isoformat()}T00:00:00",
+                "endDate": f"{request.end_date.isoformat()}T23:59:59",
+                "bbox": self._make_bounding_box(
+                    request.latitude, request.longitude, radius
+                ),
+                "limit": "1000",
+                "offset": "0",
+            }
+            search_payload: Any = self._get_json(SEARCH_URL, search_params)
+            try:
+                return self._select_nearest_station(
+                    search_payload,
+                    request=request,
+                    requested_types=topic.data_types,
+                    radius_degrees=radius,
+                )
+            except NOAAError:
+                continue
+        raise NOAAError(
+            "No NOAA station with the requested data types was found within "
+            f"{self.search_radii_degrees[-1]} degrees of the selected point. "
+            "Try another location, time range or topic."
+        )
+
     @staticmethod
     def _select_nearest_station(
         search_payload: Any,
         *,
         request: PointDataRequest,
         requested_types: tuple[str, ...],
+        radius_degrees: float = SEARCH_RADIUS_DEGREES,
     ) -> tuple[str, tuple[str, ...]]:
         """Choose the closest station with a requested data type.
 
@@ -540,6 +585,8 @@ class NOAAClient:
         :type request: PointDataRequest
         :param requested_types: Dataset-specific NCEI observation codes.
         :type requested_types: tuple[str, ...]
+        :param radius_degrees: Search box half-width, used in the error message.
+        :type radius_degrees: float
         :returns: Selected station identifier and data types available there.
         :rtype: tuple[str, tuple[str, ...]]
         :raises NOAAError: If the search returns no matching nearby stations.
@@ -591,7 +638,7 @@ class NOAAClient:
         if not candidates:
             raise NOAAError(
                 "No NOAA station with the requested data types was found inside "
-                f"the {SEARCH_RADIUS_DEGREES}-degree search area. Try a nearby "
+                f"the {radius_degrees}-degree search area. Try a nearby "
                 "coordinate or another topic."
             )
         candidates.sort()

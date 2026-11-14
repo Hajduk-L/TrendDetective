@@ -422,6 +422,45 @@ def _safe_float(value: float, digits: int = 4) -> float | None:
     return round(value, digits) if math.isfinite(value) else None
 
 
+def _station_from_records(
+    records: list[dict[str, Any]], latitude: float, longitude: float
+) -> dict[str, Any] | None:
+    """Return id, name, position and distance of the station that measured ``records``.
+
+    All records of one request come from the same NOAA station, so the first
+    record with a valid position is used.
+    """
+    for record in records:
+        try:
+            station_latitude = float(record["latitude"])
+            station_longitude = float(record["longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (math.isfinite(station_latitude) and math.isfinite(station_longitude)):
+            continue
+        elevation = record.get("elevation")
+        return {
+            "id": record.get("station"),
+            "name": record.get("name"),
+            "latitude": station_latitude,
+            "longitude": station_longitude,
+            "elevation": elevation if isinstance(elevation, (int, float)) else None,
+            "distance_km": round(
+                _distance_km(latitude, longitude, station_latitude, station_longitude), 1
+            ),
+        }
+    return None
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points in kilometres."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = phi2 - phi1
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 6371.0088 * 2 * math.asin(math.sqrt(min(1.0, a)))
+
+
 def process_user_request(user_request: Any) -> dict[str, Any]:
     """Fetch, aggregate, and analyze all selected topics in a ``UserRequest``.
 
@@ -440,11 +479,37 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
 
     topic_results: dict[str, Any] = {}
     map_features: list[dict[str, Any]] = []
+    station_features: dict[str, dict[str, Any]] = {}
 
     for topic in selected_topics:
         records = _load_records_for_topic(
             topic, latitude, longitude, start_date, end_date
         )
+        station = _station_from_records(records, latitude, longitude)
+        if station is not None:
+            station_key = str(station["id"] or f"{station['latitude']},{station['longitude']}")
+            feature = station_features.setdefault(
+                station_key,
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [station["longitude"], station["latitude"]],
+                    },
+                    "properties": {
+                        "kind": "Measuring station",
+                        "station": station["id"],
+                        "name": station["name"],
+                        "latitude": station["latitude"],
+                        "longitude": station["longitude"],
+                        "elevation_m": station["elevation"],
+                        "distance_km": station["distance_km"],
+                        "topics": [],
+                        "color": "#f59e0b",
+                    },
+                },
+            )
+            feature["properties"]["topics"].append(topic)
         labels, values = _bin_records(
             records, start_date, end_date, interval_length
         )
@@ -515,6 +580,7 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
             "values": values,
             "mean": mean_value,
             "coordinates": [latitude, longitude],
+            "station": station,
             "tools": tool_results,
         }
 
@@ -557,6 +623,20 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                 "type": "geojson",
                 "id": "user-request-results",
                 "data": {"type": "FeatureCollection", "features": map_features},
+            }
+        )
+
+    if station_features:
+        # Drawn on top of the result layer so the exact measuring point stays visible.
+        map_layers.append(
+            {
+                "type": "geojson",
+                "id": "measuring-stations",
+                "pointRadius": 8,
+                "data": {
+                    "type": "FeatureCollection",
+                    "features": list(station_features.values()),
+                },
             }
         )
 
