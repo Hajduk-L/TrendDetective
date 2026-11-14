@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TrendDetective</title>
     <link rel="stylesheet" href="/static/map-widget/map-widget.css">
+    <link rel="stylesheet" href="/static/plots/plots.css">
     <style>
         * {
             box-sizing: border-box;
@@ -413,14 +414,6 @@
             <div id="topics-list" class="dropdown-menu"></div>
         </div>
 
-        <!-- Tools Dropdown Menu (starts closed, just like Topics) -->
-        <div id="tools-dropdown" class="dropdown">
-            <button id="tools-toggle-btn" class="dropdown-toggle" type="button">
-                <span>Tools</span>
-                <span class="dropdown-arrow">&#9662;</span>
-            </button>
-            <div id="tools-list" class="dropdown-menu"></div>
-        </div>
     </aside>
 
     <!-- Main Content Area -->
@@ -429,10 +422,15 @@
             <div id="map-widget"></div>
         </div>
 
+        <!-- Plot panel: timeline, years overlaid, period across years (static/plots/plots.js) -->
+        <section class="status-card" aria-label="Plot of the requested data">
+            <div id="plot-panel"></div>
+        </section>
+
         <div class="status-card">
             <h3>Request Visualization &amp; Task Output (<code>src/task.py</code>)</h3>
             <div id="visualization-container" class="viz-grid">
-                <div class="empty-message">Select topics and tools, fill the timeintervall, and click "Apply" to run tasks and visualize results.</div>
+                <div class="empty-message">Select topics, fill the timeintervall, and click "Apply" to run tasks and visualize results.</div>
             </div>
         </div>
 
@@ -442,6 +440,10 @@
         </div>
     </main>
 
+    <script src="/static/plots/plots.js"></script>
+    <script>
+        if (window.TrendPlots) window.TrendPlots.mount(document.getElementById('plot-panel'));
+    </script>
     <script type="module" src="/static/map-widget/map-widget.js"></script>
     <script type="module">
         let selectedArea = null;
@@ -477,9 +479,6 @@
 
         const topicsDropdown = document.getElementById('topics-dropdown');
         const topicsToggleBtn = document.getElementById('dropdown-toggle-btn');
-
-        const toolsDropdown = document.getElementById('tools-dropdown');
-        const toolsToggleBtn = document.getElementById('tools-toggle-btn');
 
         function sanitizeDateInput(inputElement) {
             const cleaned = inputElement.value.replace(/[^0-9.]/g, '');
@@ -619,40 +618,9 @@
             }
         }
 
-        function renderTools() {
-            const listContainer = document.getElementById('tools-list');
-            listContainer.innerHTML = '';
-
-            if (allTools.length === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'empty-message';
-                empty.textContent = 'No tools available.';
-                listContainer.appendChild(empty);
-                return;
-            }
-
-            for (const tool of allTools) {
-                const label = document.createElement('label');
-                label.className = 'topic-item';
-
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = Boolean(selectedTools[tool]);
-                checkbox.addEventListener('change', (event) => {
-                    selectedTools[tool] = event.target.checked;
-                });
-
-                const span = document.createElement('span');
-                span.textContent = tool;
-
-                label.appendChild(checkbox);
-                label.appendChild(span);
-                listContainer.appendChild(label);
-            }
-        }
-
+        // The analysis tools are chosen per time frame in the plot panel
+        // (static/plots/plots.js). The task output below always runs all of them.
         async function loadTools() {
-            const listContainer = document.getElementById('tools-list');
             try {
                 const response = await fetch(`${API_BASE}/api/tools`);
                 if (!response.ok) {
@@ -660,16 +628,11 @@
                 }
                 const data = await response.json();
                 allTools = [...data.tools].sort((a, b) => a.localeCompare(b));
-
                 for (const tool of allTools) {
-                    if (!(tool in selectedTools)) {
-                        selectedTools[tool] = false;
-                    }
+                    selectedTools[tool] = true;
                 }
-                renderTools();
             } catch (error) {
-                listContainer.innerHTML =
-                    '<div class="empty-message">Cannot reach Python server at http://127.0.0.1:8000.</div>';
+                allTools = [];
             }
         }
 
@@ -677,13 +640,6 @@
             topicsDropdown.classList.toggle('open');
             if (topicsDropdown.classList.contains('open')) {
                 loadTopics();
-            }
-        });
-
-        toolsToggleBtn.addEventListener('click', () => {
-            toolsDropdown.classList.toggle('open');
-            if (toolsDropdown.classList.contains('open')) {
-                loadTools();
             }
         });
 
@@ -999,6 +955,7 @@
                 if (window.trendMap) {
                     window.trendMap.setLoading(true);
                 }
+                if (window.TrendPlots) window.TrendPlots.setLoading(true);
 
                 const payload = {
                     topics: selectedTopics,
@@ -1036,6 +993,7 @@
                     `UserRequest(\n  topics=${JSON.stringify(ur.topics, null, 2)},\n  tools=${JSON.stringify(ur.tools, null, 2)},\n  timeintervall=(${d1}, ${d2}),\n  interval_length=(${formattedFloat}, ${JSON.stringify(unit)}),\n  area=${formatArea(ur.area)}\n)`;
 
                 renderVisualization(data.visualization);
+                if (window.TrendPlots) window.TrendPlots.setData(data.visualization, ur);
             } catch (error) {
                 document.getElementById('user-request-output').textContent =
                     'Error: Could not submit UserRequest. Ensure at least one topic, valid DD.MM.YYYY dates, and an interval length > 0 are provided.';
@@ -1043,6 +1001,7 @@
                 if (window.trendMap) {
                     window.trendMap.setLoading(false);
                 }
+                if (window.TrendPlots) window.TrendPlots.setLoading(false);
             }
         }
 

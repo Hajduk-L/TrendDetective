@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import unquote
 
 import interface
+import plot_analysis
 
 BASE_DIR: Path = Path(__file__).resolve().parent
 INTERFACE_FILE: Path = BASE_DIR / "interface.py"
@@ -157,6 +158,33 @@ class WebAppHandler(SimpleHTTPRequestHandler):
 
         super().do_GET()
 
+    def _handle_analyze(self) -> None:
+        """Run analysis tools on a series sent by the plot panel (``POST /api/analyze``).
+
+        Expects ``{"x": [...], "values": [...], "tools": [...]}`` and answers
+        with :func:`plot_analysis.analyze_series`, or ``{"groups": [{"key",
+        "x", "values"}, ...], "tools": [...]}`` (one series per year) and
+        answers with :func:`plot_analysis.analyze_groups`.
+
+        :return: None
+        :rtype: None
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            if not isinstance(body, dict):
+                raise plot_analysis.AnalysisError("Body must be a JSON object.")
+            if "groups" in body:
+                result = plot_analysis.analyze_groups(body["groups"], body.get("tools"))
+            else:
+                result = plot_analysis.analyze_series(
+                    body.get("x", []), body.get("values", []), body.get("tools")
+                )
+        except (json.JSONDecodeError, ValueError) as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        self._send_json(200, result)
+
     def do_POST(self) -> None:
         """Handle HTTP POST requests to trigger a specific button's bound method.
 
@@ -168,6 +196,10 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         :return: None
         :rtype: None
         """
+        if self.path == "/api/analyze":
+            self._handle_analyze()
+            return
+
         app_interface = get_interface()
         prefix = "/api/buttons/"
         if self.path.startswith(prefix):
