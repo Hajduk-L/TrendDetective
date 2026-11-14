@@ -212,6 +212,32 @@
         return { start, end, label, wraps: s > e, s, e };
     }
 
+    // Puts the dot in while typing a DD.MM date: "0106" -> "01.06", "1." -> "01.".
+    function formatDayMonthTyping(input, event) {
+        const deleting = Boolean(event && event.inputType && event.inputType.startsWith('delete'));
+        const raw = input.value;
+        const parts = [''];
+        for (const ch of raw) {
+            const k = parts.length - 1;
+            if (/\d/.test(ch)) {
+                if (parts[k].length >= 2) {
+                    if (k >= 1) continue;
+                    parts.push('');
+                }
+                parts[parts.length - 1] += ch;
+            } else if (ch === '.' && k === 0 && parts[0].length > 0) {
+                parts[0] = parts[0].padStart(2, '0');
+                parts.push('');
+            }
+        }
+        let formatted = parts.join('.');
+        if (!deleting && parts.length === 1 && parts[0].length === 2) formatted += '.';
+        if (formatted !== raw) {
+            input.value = formatted;
+            input.setSelectionRange(formatted.length, formatted.length);
+        }
+    }
+
     function parseDayMonth(text) {
         const m = /^(\d{1,2})\.(\d{1,2})\.?$/.exec(String(text || '').trim());
         if (!m) return null;
@@ -883,10 +909,111 @@
         const reset = spec.zoomed && geom
             ? `<button type="button" class="tp-zoom-reset" title="Show the whole time range (or double-click the plot)">Reset zoom</button>`
             : '';
-        host.innerHTML = `${svg}${reset}<div class="tp-tooltip" hidden></div>`;
+        const scroll = spec.zoomed && geom && spec.fullDomain ? scrollbarHtml(spec, geom) : '';
+        host.innerHTML = `${svg}${scroll}${reset}<div class="tp-tooltip" hidden></div>`;
         const btn = host.querySelector('.tp-zoom-reset');
         if (btn) btn.addEventListener('click', () => host._onZoom && host._onZoom(null));
         attachHover(host, spec, geom);
+        if (scroll) attachScrollbar(host, spec, geom);
+        if (!host._wheelBound) {
+            host._wheelBound = true;
+            // Horizontal scrolling (trackpad swipe or Shift + wheel) pans a zoomed plot.
+            host.addEventListener('wheel', (evt) => {
+                const sp = host._spec;
+                if (!sp || !sp.zoomed || !sp.fullDomain || !host._geom) return;
+                const delta = Math.abs(evt.deltaX) > Math.abs(evt.deltaY) ? evt.deltaX : evt.shiftKey ? evt.deltaY : 0;
+                if (!delta) return;
+                evt.preventDefault();
+                const span = sp.xDomain[1] - sp.xDomain[0];
+                panTo(host, sp.xDomain[0] + (delta / host._geom.plotW) * span);
+            }, { passive: false });
+        }
+    }
+
+    // ------------------------------------------------------------ scrollbar
+
+    function clampDomainStart(spec, start) {
+        const [f0, f1] = spec.fullDomain;
+        const span = spec.xDomain[1] - spec.xDomain[0];
+        return Math.min(Math.max(start, f0), f1 - span);
+    }
+
+    // Moves the visible window of a zoomed plot so that it starts at `start` (same width).
+    function panTo(host, start) {
+        const spec = host._spec;
+        if (!spec || !spec.fullDomain) return;
+        const span = spec.xDomain[1] - spec.xDomain[0];
+        const a = clampDomainStart(spec, start);
+        if (Math.abs(a - spec.xDomain[0]) < 1e-9) return;
+        host._pending = [a, a + span];
+        if (host._raf) return;
+        host._raf = requestAnimationFrame(() => {
+            host._raf = null;
+            const domain = host._pending;
+            if (host._onPan) host._onPan(domain);
+            host._spec.xDomain = domain;
+            host._w = 0;
+            layoutChart(host);
+        });
+    }
+
+    function scrollbarHtml(spec, geom) {
+        const [f0, f1] = spec.fullDomain;
+        const full = f1 - f0 || 1;
+        const [a, b] = spec.xDomain;
+        const left = Math.max(0, (a - f0) / full) * 100;
+        const width = Math.max(2, Math.min(100, ((b - a) / full) * 100));
+        return `<div class="tp-scroll" style="margin-left:${geom.left}px;width:${geom.plotW}px" title="Drag to scroll the zoomed plot · Shift + wheel or swipe also scroll">`
+            + `<div class="tp-scroll-thumb" tabindex="0" role="scrollbar" aria-orientation="horizontal" aria-label="Scroll the zoomed plot" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(left)}" style="left:${left}%;width:${width}%"></div></div>`;
+    }
+
+    function attachScrollbar(host, spec, geom) {
+        host._geom = geom;
+        const track = host.querySelector('.tp-scroll');
+        const thumb = host.querySelector('.tp-scroll-thumb');
+        if (!track || !thumb) return;
+        const [f0, f1] = spec.fullDomain;
+        const perPx = (f1 - f0) / geom.plotW;
+        // Dragging keeps working although the chart (and this thumb) is redrawn on every move.
+        thumb.addEventListener('pointerdown', (evt) => {
+            if (evt.button !== 0) return;
+            evt.preventDefault();
+            evt.stopPropagation();
+            const startX = evt.clientX;
+            const startA = host._spec.xDomain[0];
+            host.classList.add('is-scrolling');
+            const move = (e) => panTo(host, startA + (e.clientX - startX) * perPx);
+            const up = () => {
+                host.classList.remove('is-scrolling');
+                window.removeEventListener('pointermove', move);
+                window.removeEventListener('pointerup', up);
+                window.removeEventListener('pointercancel', up);
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+            window.addEventListener('pointercancel', up);
+        });
+        // A click on the track centres the visible window there.
+        track.addEventListener('pointerdown', (evt) => {
+            if (evt.target !== track || evt.button !== 0) return;
+            const rect = track.getBoundingClientRect();
+            const x = f0 + ((evt.clientX - rect.left) / rect.width) * (f1 - f0);
+            const span = host._spec.xDomain[1] - host._spec.xDomain[0];
+            panTo(host, x - span / 2);
+        });
+        thumb.addEventListener('keydown', (evt) => {
+            const span = host._spec.xDomain[1] - host._spec.xDomain[0];
+            const step = { ArrowLeft: -0.1, ArrowRight: 0.1, PageUp: -0.9, PageDown: 0.9 }[evt.key];
+            // The thumb is redrawn by the pan; keep the keyboard focus on the new one.
+            if (step !== undefined || evt.key === 'Home' || evt.key === 'End') host._refocusScroll = true;
+            if (step !== undefined) { evt.preventDefault(); panTo(host, host._spec.xDomain[0] + step * span); }
+            else if (evt.key === 'Home') { evt.preventDefault(); panTo(host, f0); }
+            else if (evt.key === 'End') { evt.preventDefault(); panTo(host, f1); }
+        });
+        if (host._refocusScroll) {
+            host._refocusScroll = false;
+            thumb.focus();
+        }
     }
 
     function svgFor(spec, width) {
@@ -1183,7 +1310,7 @@
         <div class="tp-legend" data-ref="legend"></div>
         <div class="tp-table-wrap" data-ref="table" hidden></div>
         <div class="tp-footer" data-ref="footer">
-            <span class="tp-footer-note">Drag across the plot to zoom in · double-click to reset</span>
+            <span class="tp-footer-note">Drag across the plot to zoom in · scroll with the bar below it (or Shift + wheel) · double-click to reset</span>
             <button type="button" class="tp-link-btn" data-ref="tableBtn">Show table</button>
             <button type="button" class="tp-link-btn" data-ref="csvBtn">Download CSV</button>
         </div>
@@ -1213,8 +1340,8 @@
             refs.customEnd.setAttribute('aria-invalid', String(!parseDayMonth(refs.customEnd.value)));
             render();
         };
-        refs.customStart.addEventListener('input', onCustom);
-        refs.customEnd.addEventListener('input', onCustom);
+        refs.customStart.addEventListener('input', (e) => { formatDayMonthTyping(refs.customStart, e); onCustom(); });
+        refs.customEnd.addEventListener('input', (e) => { formatDayMonthTyping(refs.customEnd, e); onCustom(); });
         refs.functions.addEventListener('click', (e) => {
             if (e.target.matches('input')) return;
             const b = e.target.closest('button[data-fn]');
@@ -1259,6 +1386,7 @@
         });
         refs.windows.addEventListener('input', (e) => {
             if (!e.target.matches('input[data-w]')) return;
+            formatDayMonthTyping(e.target, e);
             const row = e.target.closest('[data-window]');
             const w = row && state.windows.find((x) => x.id === Number(row.dataset.window));
             if (!w) return;
@@ -1437,9 +1565,14 @@
         } else {
             state.zoom = null;
         }
+        spec.fullDomain = fullDomain;
         r.chart._onZoom = (domain) => {
             state.zoom = domain ? { key: zoomKey, domain } : null;
             render();
+        };
+        // Scrolling only moves the visible window; the chart redraws itself (see panTo).
+        r.chart._onPan = (domain) => {
+            state.zoom = { key: zoomKey, domain };
         };
 
         r.footer.hidden = false;

@@ -552,8 +552,56 @@
             );
         }
 
-        timeintervallStartInput.addEventListener('input', updateApplyButtonState);
-        timeintervallEndInput.addEventListener('input', updateApplyButtonState);
+        // Puts the dots in while typing: "01012020" -> "01.01.2020", "1.1." -> "01.01.".
+        // `sizes` are the digit counts of the parts (day, month, year).
+        function formatDateTyping(input, event, sizes = [2, 2, 4]) {
+            const deleting = Boolean(event && event.inputType && event.inputType.startsWith('delete'));
+            const raw = input.value;
+            const caret = input.selectionStart ?? raw.length;
+            const atEnd = caret >= raw.length;
+            const digitsBeforeCaret = raw.slice(0, caret).replace(/\D/g, '').length;
+
+            const parts = [''];
+            for (const ch of raw) {
+                const k = parts.length - 1;
+                if (/\d/.test(ch)) {
+                    if (parts[k].length >= sizes[k]) {
+                        if (k + 1 >= sizes.length) continue;
+                        parts.push('');
+                    }
+                    parts[parts.length - 1] += ch;
+                } else if (ch === '.' && parts[k].length > 0 && k + 1 < sizes.length) {
+                    // A dot after a single digit means "1." = "01.".
+                    if (parts[k].length < sizes[k]) parts[k] = parts[k].padStart(sizes[k], '0');
+                    parts.push('');
+                }
+            }
+            let formatted = parts.join('.');
+            const last = parts.length - 1;
+            if (!deleting && last + 1 < sizes.length && parts[last].length === sizes[last]) formatted += '.';
+            if (formatted === raw) return;
+            input.value = formatted;
+            if (atEnd) {
+                input.setSelectionRange(formatted.length, formatted.length);
+            } else {
+                let seen = 0;
+                let pos = 0;
+                while (pos < formatted.length && seen < digitsBeforeCaret) {
+                    if (/\d/.test(formatted[pos])) seen += 1;
+                    pos += 1;
+                }
+                input.setSelectionRange(pos, pos);
+            }
+        }
+        window.formatDateTyping = formatDateTyping;
+
+        for (const input of [timeintervallStartInput, timeintervallEndInput]) {
+            input.setAttribute('inputmode', 'decimal');
+            input.addEventListener('input', (event) => {
+                formatDateTyping(input, event);
+                updateApplyButtonState();
+            });
+        }
         intervalValueInput.addEventListener('input', updateApplyButtonState);
         intervalUnitSelect.addEventListener('change', updateApplyButtonState);
 

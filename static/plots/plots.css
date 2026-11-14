@@ -557,3 +557,33 @@ button.tp-legend-item:hover {
 .tp-slope-chart {
     margin-top: 6px;
 }
+
+/* Scrollbar under a zoomed plot */
+.tp-scroll {
+    position: relative;
+    height: 12px;
+    margin: 2px 0 8px;
+    border-radius: 6px;
+    background: #eceae4;
+    cursor: pointer;
+}
+.tp-scroll-thumb {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    min-width: 18px;
+    border-radius: 5px;
+    background: #a9a79e;
+    cursor: grab;
+    touch-action: none;
+}
+.tp-scroll-thumb:hover,
+.tp-scroll-thumb:focus-visible {
+    background: #7f7d75;
+    outline: none;
+}
+.tp-chart.is-scrolling,
+.tp-chart.is-scrolling .tp-scroll-thumb {
+    cursor: grabbing;
+    user-select: none;
+}
