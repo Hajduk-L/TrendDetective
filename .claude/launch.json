@@ -2,6 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     { "name": "website", "runtimeExecutable": "python3", "runtimeArgs": ["app.py"], "port": 8000 },
+    { "name": "website-8001", "runtimeExecutable": ".venv/bin/python", "runtimeArgs": ["-c", "import app; app.run(app.ServerConfig(port=8001))"], "port": 8001, "autoPort": false },
     { "name": "map-widget", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "map-widget", "run", "dev", "--", "--port", "5173", "--strictPort"], "port": 5173 }
   ]
 }

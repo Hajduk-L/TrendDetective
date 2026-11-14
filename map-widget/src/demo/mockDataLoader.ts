@@ -13,7 +13,9 @@ export const MOCK_DATASETS: { id: MockDataset; label: string }[] = [
 
 export async function mockLoadData(area: AreaFeature, dataset: MockDataset): Promise<MapData> {
   await new Promise((r) => setTimeout(r, 700)); // pretend network latency
-  const ring = area.geometry.coordinates[0];
+  // A point selection is treated as a degenerate ring at that location.
+  const ring =
+    area.geometry.type === "Point" ? Array(4).fill(area.geometry.coordinates) : area.geometry.coordinates[0];
 
   switch (dataset) {
     case "grid": {

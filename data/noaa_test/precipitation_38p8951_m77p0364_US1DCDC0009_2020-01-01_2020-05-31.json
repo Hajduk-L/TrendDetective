@@ -1,0 +1,543 @@
+[
+  {
+    "DATE": "2020-01-24",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-01-31",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-02",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-03",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "2.8",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-04",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "2.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-05",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-06",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-18",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-19",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "11.7",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-20",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-21",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "3.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-22",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-23",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "4.1",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-24",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "5.6",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-25",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "2.3",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-26",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "4.8",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-27",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-28",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "8.6",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-03-29",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "3.3",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-05",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-06",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-07",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-21",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-22",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-23",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-24",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "33.5",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-25",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "2.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-26",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "7.4",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-27",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "3.6",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-28",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-29",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.8",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-04-30",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.3",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-01",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "29.7",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-02",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "1.5",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-03",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-04",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "29.7",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-05",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DAPR": "    2",
+    "DATE": "2020-05-07",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "LATITUDE": "38.876594",
+    "MDPR": "10.7",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-08",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-09",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "3.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-12",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-13",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-14",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-15",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.3",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-16",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-17",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-18",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-19",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-20",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-21",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-22",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "4.1",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-23",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "19.6",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-24",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-25",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-26",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-27",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-28",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.3",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-29",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "1.5",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-30",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.3",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  },
+  {
+    "DATE": "2020-05-31",
+    "STATION": "US1DCDC0009",
+    "LONGITUDE": "-77.022402",
+    "ELEVATION": "3.0",
+    "PRCP": "0.0",
+    "LATITUDE": "38.876594",
+    "NAME": "WASHINGTON 2.0 SSW, DC US"
+  }
+]

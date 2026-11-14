@@ -6,8 +6,9 @@
       "use": "@vercel/python",
       "config": {
         "includeFiles": [
-          "app.py",
-          "interface.py"
+          "*.py",
+          "src/**",
+          "data/**"
         ]
       }
     },

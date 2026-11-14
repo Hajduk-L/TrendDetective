@@ -1,0 +1,29 @@
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam ArrowColor #4a5a60
+skinparam ArrowFontColor #2a3438
+skinparam ArrowFontSize 11
+skinparam PackageFontSize 14
+skinparam PackageFontStyle bold
+skinparam ComponentBackgroundColor #ffffff
+skinparam ClassBackgroundColor #ffffff
+skinparam ClassHeaderBackgroundColor #ffffff
+skinparam DatabaseBackgroundColor #ffffff
+skinparam CloudBackgroundColor #f2f2f2
+skinparam NoteBackgroundColor #fffbe6
+skinparam NoteBorderColor #c9a25a
+skinparam TitleFontSize 18
+skinparam TitleFontStyle bold
+skinparam LegendBackgroundColor #ffffff
+skinparam LegendBorderColor #8a979c
+skinparam SequenceBoxBorderColor #8a979c
+skinparam SequenceLifeLineBorderColor #8a979c
+skinparam ParticipantBackgroundColor #ffffff
+set separator none
+' Team colours: background / border
+' 1 Map widget       #e3eefc / #2f6fb3
+' 2 UI + web server  #e2f3e6 / #2e8b57
+' 3 Data + calc      #fdeedd / #c46a12
+' 4 API wrapper      #eee6fb / #7048b8

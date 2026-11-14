@@ -1,77 +1,87 @@
-"""Module defining the mock data source, user request model, button model, and Python interface.
+"""Module defining the user request model, button model, and Python interface.
 
 This module provides:
-- :class:`marten`: Mock class supplying dataset topics via :meth:`marten.getTopics`.
-- :class:`UserRequest`: Dataclass storing selected topics, timestamp range, and interval length tuple.
+- :func:`parse_dd_mm_yyyy`: Strict ``DD.MM.YYYY`` date parser returning :class:`datetime.date`.
+- :class:`UserRequest`: Dataclass storing selected topics, selected tools, ``timeintervall`` dates,
+  ``interval_length`` tuple, and selected map ``area``.
 - :class:`Button`: Dataclass binding a UI button to a single Python trigger method.
-- :class:`AppInterface`: Main interface coordinating topics, button triggers, and user requests.
+- :class:`AppInterface`: Main interface retrieving topics from :mod:`api_wrapper`,
+  coordinating button triggers, and passing :class:`UserRequest` into :mod:`src.task`.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any
 
+import api_wrapper
+from src.task import get_available_tools, process_user_request
+
+DATE_FORMAT: str = "%d.%m.%Y"
 VALID_INTERVAL_UNITS: tuple[str, ...] = ("Day", "Month", "Year")
 
 
-@dataclass
-class marten:
-    """Mock data source class providing available dataset topics.
+def parse_dd_mm_yyyy(date_str: str) -> date:
+    """Parse a date string strictly formatted as ``DD.MM.YYYY`` into a :class:`datetime.date`.
 
-    This class is a placeholder for the external data provider class that will
-    supply dataset variables in later stages of the project.
+    :param date_str: Date string in ``DD.MM.YYYY`` format (e.g. ``"14.11.2026"``).
+    :type date_str: str
+    :raises ValueError: If ``date_str`` does not strictly match ``DD.MM.YYYY`` or is not a valid date.
+    :return: Parsed date object.
+    :rtype: date
     """
-
-    def getTopics(self) -> list[str]:
-        """Return all available variable topics from the dataset.
-
-        :return: List of dataset topic names.
-        :rtype: list[str]
-        """
-        return [
-            "Temperature",
-            "Windvelocity",
-            "Precipitation",
-            "TMP",
-            "Another Thing",
-            "not Another Thing",
-        ]
+    cleaned = str(date_str).strip()
+    if len(cleaned) != 10 or cleaned[2] != "." or cleaned[5] != ".":
+        raise ValueError(f"Date '{cleaned}' must be formatted as DD.MM.YYYY.")
+    return datetime.strptime(cleaned, DATE_FORMAT).date()
 
 
 @dataclass
 class UserRequest:
-    """Data model representing the user's filtered topic, timestamp, and interval selection.
+    """Data model representing the user's filtered topic, tool, timeintervall, interval, and area selection.
 
-    Created when the user clicks the 'Apply' button in the web interface.
+    Created when the user clicks the 'Apply' button in the web interface and passed
+    into :func:`src.task.process_user_request`.
 
     :param topics: Dictionary mapping each topic name to ``True`` if checked,
         or ``False`` otherwise.
     :type topics: dict[str, bool]
-    :param timestamp: Tuple of ``(start_timestamp, end_timestamp)`` strings entered
-        in the two timestamp brackets.
-    :type timestamp: tuple[str, str]
+    :param tools: Dictionary mapping each analysis tool name (e.g. ``"Linear Regression"``,
+        ``"t-Test"``) to ``True`` if checked, or ``False`` otherwise.
+    :type tools: dict[str, bool]
+    :param timeintervall: Tuple of ``(start_date, end_date)`` as :class:`datetime.date`
+        objects parsed from the two ``DD.MM.YYYY`` brackets.
+    :type timeintervall: tuple[date, date]
     :param interval_length: Tuple of ``(value, unit)`` where ``value`` is a ``float``
         strictly greater than ``0`` and ``unit`` is ``"Day"``, ``"Month"``, or ``"Year"``.
     :type interval_length: tuple[float, str]
-    :param area: Area drawn on the map widget as a GeoJSON Feature (Polygon, ``[lng, lat]``,
-        with ``bbox`` = ``[west, south, east, north]``), or ``None`` if no area is selected.
-        See ``map-widget/API.md``.
+    :param area: Area drawn on the map widget as a GeoJSON Feature, or ``None`` if no area is selected.
     :type area: dict[str, Any] | None
     """
 
     topics: dict[str, bool]
-    timestamp: tuple[str, str] = ("", "")
+    tools: dict[str, bool]
+    timeintervall: tuple[date, date]
     interval_length: tuple[float, str] = (1.0, "Day")
     area: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
-        """Validate the interval length value and unit after initialization.
+        """Validate the timeintervall dates and interval length after initialization.
 
-        :raises AssertionError: If the interval float value is not strictly greater
-            than ``0`` or the unit is not one of ``"Day"``, ``"Month"``, or ``"Year"``.
+        :raises AssertionError: If ``timeintervall`` does not contain two :class:`datetime.date`
+            instances, if the interval float value is not strictly greater than ``0``,
+            or if the unit is not one of ``"Day"``, ``"Month"``, or ``"Year"``.
         :return: None
         :rtype: None
         """
+        start_date, end_date = self.timeintervall
+        assert isinstance(start_date, date) and isinstance(end_date, date), (
+            "timeintervall must be a tuple of two datetime.date objects."
+        )
+        assert end_date >= start_date, (
+            "End date must be on or after start date."
+        )
+
         value, unit = self.interval_length
         assert isinstance(value, (int, float)) and float(value) > 0, (
             "Interval length value must be a float greater than 0."
@@ -84,12 +94,21 @@ class UserRequest:
     def to_dict(self) -> dict[str, Any]:
         """Serialize the user request into a JSON-compatible dictionary.
 
-        :return: Dictionary containing ``topics``, ``timestamp``, ``interval_length``, and ``area``.
+        :return: Dictionary containing ``topics``, ``tools``, ``timeintervall``,
+            ``interval_length``, and ``area``.
         :rtype: dict[str, Any]
         """
         return {
             "topics": self.topics,
-            "timestamp": list(self.timestamp),
+            "tools": self.tools,
+            "timeintervall": [
+                self.timeintervall[0].strftime(DATE_FORMAT),
+                self.timeintervall[1].strftime(DATE_FORMAT),
+            ],
+            "timeintervall_repr": [
+                repr(self.timeintervall[0]),
+                repr(self.timeintervall[1]),
+            ],
             "interval_length": [self.interval_length[0], self.interval_length[1]],
             "area": self.area,
         }
@@ -148,34 +167,37 @@ class Button:
 
 @dataclass
 class AppInterface:
-    """Python interface managing topics, timestamps, interval length, buttons, and user requests.
+    """Python interface managing topics from :mod:`api_wrapper`, tools from :mod:`src.task`, buttons, and user requests.
 
     Each button registered in this interface is connected to one method via
     :meth:`Button.set_trigger`.
 
-    :param data_source: Instance of :class:`marten` used to retrieve topics.
-    :type data_source: marten
     :param buttons: Mapping of button IDs to their corresponding :class:`Button` instances.
     :type buttons: dict[str, Button]
     :param topic_states: Current checked/unchecked state for each topic.
     :type topic_states: dict[str, bool]
-    :param timestamp: Current ``(start, end)`` timestamp values from the UI brackets.
-    :type timestamp: tuple[str, str]
+    :param tool_states: Current checked/unchecked state for each statistical tool.
+    :type tool_states: dict[str, bool]
+    :param timeintervall: Current ``(start_date, end_date)`` date objects from the UI brackets.
+    :type timeintervall: tuple[date, date] | None
     :param interval_length: Current ``(value, unit)`` interval length tuple from the UI.
     :type interval_length: tuple[float, str]
-    :param area: Current map area (GeoJSON Feature) from the map widget, or ``None``.
+    :param area: Currently selected GeoJSON Feature from the map widget, or ``None``.
     :type area: dict[str, Any] | None
     :param last_user_request: Most recent :class:`UserRequest` created when 'Apply' was clicked.
     :type last_user_request: UserRequest | None
+    :param last_task_results: Visualization and statistical output produced by :mod:`src.task`.
+    :type last_task_results: dict[str, Any] | None
     """
 
-    data_source: marten = field(default_factory=marten)
     buttons: dict[str, Button] = field(default_factory=dict, init=False)
     topic_states: dict[str, bool] = field(default_factory=dict, init=False)
-    timestamp: tuple[str, str] = field(default=("", ""), init=False)
+    tool_states: dict[str, bool] = field(default_factory=dict, init=False)
+    timeintervall: tuple[date, date] | None = field(default=None, init=False)
     interval_length: tuple[float, str] = field(default=(1.0, "Day"), init=False)
     area: dict[str, Any] | None = field(default=None, init=False)
     last_user_request: UserRequest | None = field(default=None, init=False)
+    last_task_results: dict[str, Any] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         """Initialize and register buttons with their trigger methods.
@@ -188,32 +210,48 @@ class AppInterface:
         self.register_button(apply_button)
 
     def get_sorted_topics(self) -> list[str]:
-        """Retrieve all topics from ``marten.getTopics()`` sorted alphabetically.
+        """Retrieve all topics from :func:`api_wrapper.get_all_topics_list` sorted alphabetically.
 
-        :return: Alphabetically sorted list of topic names.
+        :return: Alphabetically sorted list of topic names from :mod:`api_wrapper`.
         :rtype: list[str]
         """
-        topics = self.data_source.getTopics()
+        topics = api_wrapper.get_all_topics_list()
         return sorted(topics, key=str.lower)
+
+    def get_sorted_tools(self) -> list[str]:
+        """Retrieve all statistical analysis tools from :func:`src.task.get_available_tools`.
+
+        :return: Alphabetically sorted list of tool names (``["Linear Regression", "t-Test"]``).
+        :rtype: list[str]
+        """
+        return get_available_tools()
 
     def set_request_inputs(
         self,
         states: dict[str, bool],
-        timestamp: tuple[str, str],
+        tools: dict[str, bool],
+        timeintervall: tuple[str, str],
         interval_length: tuple[float, str],
         area: dict[str, Any] | None = None,
     ) -> None:
-        """Update the current topic selection, timestamp brackets, interval length, and map area.
+        """Update the current topic selection, tool selection, timeintervall dates, interval length, and map area.
+
+        Parses both strings in ``timeintervall`` strictly using ``DD.MM.YYYY`` into
+        :class:`datetime.date` objects.
 
         :param states: Mapping of topic names to their checked boolean state.
         :type states: dict[str, bool]
-        :param timestamp: Tuple of ``(start_timestamp, end_timestamp)`` strings.
-        :type timestamp: tuple[str, str]
+        :param tools: Mapping of tool names to their checked boolean state.
+        :type tools: dict[str, bool]
+        :param timeintervall: Tuple of ``(start_str, end_str)`` formatted as ``DD.MM.YYYY``.
+        :type timeintervall: tuple[str, str]
         :param interval_length: Tuple of ``(float_value, unit)`` where ``float_value > 0``
             and ``unit`` is ``"Day"``, ``"Month"``, or ``"Year"``.
         :type interval_length: tuple[float, str]
-        :param area: GeoJSON Feature of the area drawn on the map, or ``None``.
+        :param area: Selected GeoJSON Feature from the map widget, or ``None``.
         :type area: dict[str, Any] | None
+        :raises ValueError: If either date in ``timeintervall`` is not formatted as ``DD.MM.YYYY``
+            or if ``end_date < start_date``.
         :raises AssertionError: If ``interval_length[0] <= 0`` or ``interval_length[1]``
             is not a valid unit.
         :return: None
@@ -223,7 +261,17 @@ class AppInterface:
         self.topic_states = {
             topic: bool(states.get(topic, False)) for topic in sorted_topics
         }
-        self.timestamp = (str(timestamp[0]).strip(), str(timestamp[1]).strip())
+
+        sorted_tools = self.get_sorted_tools()
+        self.tool_states = {
+            tool: bool(tools.get(tool, False)) for tool in sorted_tools
+        }
+
+        start_date = parse_dd_mm_yyyy(timeintervall[0])
+        end_date = parse_dd_mm_yyyy(timeintervall[1])
+        if end_date < start_date:
+            raise ValueError("End date must be on or after start date.")
+        self.timeintervall = (start_date, end_date)
 
         interval_val = float(interval_length[0])
         interval_unit = str(interval_length[1]).strip()
@@ -269,35 +317,44 @@ class AppInterface:
         self.buttons[button_id].trigger()
 
     def on_apply(self) -> None:
-        """Create a :class:`UserRequest` when 'Apply' is clicked if validation passes.
+        """Create a :class:`UserRequest` and execute :func:`src.task.process_user_request` on 'Apply'.
 
-        Requires at least one topic to be checked (``True``), both timestamp
-        brackets to be non-empty, and the interval length float to be strictly
-        greater than ``0``. Does not return anything; stores the created
-        :class:`UserRequest` on ``self.last_user_request``.
+        Requires at least one topic to be checked (``True``), ``timeintervall`` to
+        contain two valid :class:`datetime.date` objects, and the interval length
+        float to be strictly greater than ``0``. Stores the created
+        :class:`UserRequest` on ``self.last_user_request`` and stores the computed
+        task and visualization results on ``self.last_task_results``.
 
-        :raises ValueError: If no topic is selected or either timestamp bracket is empty.
+        :raises ValueError: If no topic is selected or ``timeintervall`` is missing.
         :raises AssertionError: If the interval length value is not greater than ``0``.
         :return: None
         :rtype: None
         """
         sorted_topics = self.get_sorted_topics()
-        request_dict = {
+        request_topics = {
             topic: bool(self.topic_states.get(topic, False))
             for topic in sorted_topics
         }
-        if not any(request_dict.values()):
+        if not any(request_topics.values()):
             raise ValueError("At least one topic must be selected.")
-        if not self.timestamp[0] or not self.timestamp[1]:
-            raise ValueError("Both timestamp brackets must be filled.")
+        if self.timeintervall is None:
+            raise ValueError("Both timeintervall dates must be filled as DD.MM.YYYY.")
         assert self.interval_length[0] > 0, (
             "Interval length value must be greater than 0."
         )
 
+        sorted_tools = self.get_sorted_tools()
+        request_tools = {
+            tool: bool(self.tool_states.get(tool, False))
+            for tool in sorted_tools
+        }
+
         self.last_user_request = UserRequest(
-            topics=request_dict,
-            timestamp=self.timestamp,
+            topics=request_topics,
+            tools=request_tools,
+            timeintervall=self.timeintervall,
             interval_length=self.interval_length,
             area=self.area,
         )
+        self.last_task_results = process_user_request(self.last_user_request)
         print(f"Created UserRequest: {self.last_user_request}")

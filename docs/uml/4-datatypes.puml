@@ -1,0 +1,85 @@
+@startuml datatypes
+!include style.iuml
+title TrendDetective (main) — Data contracts between the work areas
+hide empty methods
+hide circle
+skinparam nodesep 40
+skinparam ranksep 50
+
+package "① Map widget produces / consumes" as D1 #e3eefc;line:2f6fb3 {
+  class "AreaFeature" <<GeoJSON Feature>> {
+    {field} type: "Feature"
+    {field} geometry: Polygon (CCW ring, [lng, lat], WGS84)
+    {field} bbox: [west, south, east, north]
+    {field} properties.selectionId: string
+    {field} properties.shape: "rectangle" | "polygon" | "freehand"
+    {field} properties.crossesAntimeridian: boolean
+    {field} properties.areaKm2: number
+  }
+  class "MapData" <<TS union, consumed by ①>> {
+    {field} geojson: {type, data: FeatureCollection, outline?, fillOpacity?}
+    {field} raster: {type, tiles: string[], bounds?, ...}
+    {field} image: {type, url, bounds}
+    {field} feature.properties.color: CSS colour (optional)
+  }
+}
+
+package "② UI & web server" as D2 #e2f3e6;line:2e8b57 {
+  class "Apply body" <<JSON  POST /api/buttons/apply>> {
+    {field} topics: {name: bool}
+    {field} timestamp: [start: str, end: str]
+    {field} interval_length: [float > 0, "Day" | "Month" | "Year"]
+    {field} area: AreaFeature | null
+  }
+  class "UserRequest" <<Python dataclass>> {
+    {field} topics: dict[str, bool]
+    {field} timestamp: tuple[str, str]
+    {field} interval_length: tuple[float, str]
+    {field} area: dict | None
+  }
+  class "API responses" <<JSON  GET>> {
+    {field} /api/topics → {topics: list[str]}
+    {field} /api/buttons → [{id, label}]
+    {field} /api/user-request → {user_request: dict | null}
+  }
+}
+
+package "④ API wrapper" as D4 #eee6fb;line:7048b8 {
+  class "PointDataRequest" <<Python frozen dataclass>> {
+    {field} latitude: float (-90..90)
+    {field} longitude: float (-180..180)
+    {field} topic: str (key of noaa_api.TOPICS)
+    {field} start_date: date
+    {field} end_date: date (≥ start_date)
+  }
+  class "Observation record" <<JSON, yielded by an Iterator>> {
+    {field} date: str
+    {field} station: str
+    {field} longitude / latitude / elevation: float
+    {field} name: str
+    {field} value: float | int | str
+    {field} description: str (NCEI code, e.g. "tavg")
+  }
+}
+
+package "③ Data & calculations" as D3 #fdeedd;line:c46a12 {
+  class "Task input" <<torch.Tensor>> {
+    {field} X: Tensor [n, k] (e.g. time)
+    {field} y: Tensor [n] (measured value)
+  }
+  class "LinearRegression output" <<tuple>> {
+    {field} w: Tensor (slope / trend)
+    {field} b: Tensor (intercept)
+  }
+}
+
+"AreaFeature" -[#2f6fb3,bold]-> "Apply body" : <color:#2f6fb3>① → ② onAreaSelected</color>
+"Apply body" --> "UserRequest" : set_request_inputs + on_apply
+"UserRequest" --> "API responses" : to_dict()
+"PointDataRequest" --> "Observation record" : fetch_point_data() → list[Iterator[record]]\none iterator per variable; file = [[var 1 records], [var 2 records], ...]
+"Task input" --> "LinearRegression output" : process(X, y)
+
+"UserRequest" .[#b03a2e,dashed].> "PointDataRequest" : <color:#b03a2e>② ⇢ ④ missing: one per topic and point</color>
+"Observation record" .[#b03a2e,dashed].> "Task input" : <color:#b03a2e>④ ⇢ ③ missing: iterators → tensors</color>
+"LinearRegression output" .[#b03a2e,dashed].> "MapData" : <color:#b03a2e>③ ⇢ ② ⇢ ① missing: results → coloured layer</color>
+@enduml

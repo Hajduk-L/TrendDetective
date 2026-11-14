@@ -89,6 +89,18 @@ Rule: `src/widget/` must never import from `src/demo/` or the website.
   parallel worker requests hang (globe stays blank, no error).
 - The box: `.map-box` (relative, `min-height: 480px`) with `#map-widget` absolutely filling it.
   `.main-content` needs `min-width: 0`, otherwise the map canvas squeezes the sidebar.
+- **Time player** (`index.html`, data panel): `/api/map-data` returns per topic `frames.values`
+  (one value per cell per timestamp, cells in feature order) and `frames.legend` (one scale for
+  the whole window). The page recolours the grid in JS (`frameLayer`, `colorFromStops`) and calls
+  `setResultData` with the same layer id, so the widget swaps data in place. `frameIndex === null`
+  is the mean view. Play steps at 1–16 steps/s and stops at the last timestamp. A small SVG chart
+  (`drawSeries`) shows `series` (area mean, or the point's values) with a cursor at the current
+  frame; clicking or dragging on it seeks.
+- **Point requests**: `map_data` sends one API request for a `Point` selection instead of one per
+  grid cell. Result per topic: `kind: "point"`, one Point feature with `pointRadius: 16` (a ring of
+  colour around the orange selection marker), `cells: 1`, `resolution_deg: null`. Mean view and
+  frames share one colour scale built from the values over time. Area results have `kind: "area"`.
+  Intervals without data are `null` and drawn grey.
 - **Remember**: after changing anything in `src/widget/`, run `npm run build:embed` and commit
   `static/map-widget/`, otherwise the website keeps the old version.
 
@@ -139,21 +151,27 @@ The three modules don't know about each other. `MapWidget` connects them with ca
 ### Tools and modes
 | Tool | Terra Draw mode | Interaction |
 |---|---|---|
-| `select` ("Pan & edit") | `TerraDrawSelectMode` | Pan the map; click the area to select it; drag it, drag corners or vertices; Delete key removes it |
+| `select` ("Pan", default) | built-in `static` mode | Pan the map only. The selection is locked: clicking or dragging it moves the map, not the area |
+| `edit` ("Edit" toggle, needs a selection) | `TerraDrawSelectMode` | The area is pre-selected; drag it, drag corners or vertices; Delete key removes it. Esc or the toggle locks it again |
 | `rectangle` | `TerraDrawRectangleMode` (`click-move-or-drag`) | Drag, or click twice |
 | `polygon` | `TerraDrawPolygonMode` | Click corners; click the first point or press Enter to finish; Esc cancels |
 | `freehand` | `TerraDrawFreehandMode` | Click, move, click |
+| `point` | `TerraDrawPointMode` | Click once |
 
-Edit rules per shape (select-mode `flags`):
+`terraMode()` maps tools to Terra Draw modes. Locking by default prevents moving the area by accident while panning.
+
+Edit rules per shape (select-mode `flags`, edit tool only):
 - **rectangle**: move it, or resize it from the opposite corner.
 - **polygon**: move it, drag/add/delete vertices.
 - **freehand**: move it, drag/delete vertices.
+- **point**: drag it. Exported via `normalizePoint` (rounded, longitude wrapped, latitude clamped), `areaKm2: 0`, zero-size `bbox`; `fitToArea` zooms to it (capped at `maxZoom` 9).
 
 Polygon and freehand reject self-intersecting shapes (`ValidateNotSelfIntersecting`).
 
 ### Behaviour
 - **One area at a time.** When a drawing finishes (`finish` with `action === "draw"`), all other areas are removed. Removal sets `suppressDelete`, so it doesn't fire "cleared".
-- After drawing, the tool switches back to `select` and the new area is selected. This runs in a `setTimeout(0)`, because Terra Draw is still handling its own event.
+- After drawing, the tool switches back to `select` (Pan) with the new area locked. This runs in a `setTimeout(0)`, because Terra Draw is still handling its own event.
+- Deleting the area while editing switches back to `select` (nothing left to edit).
 - **Edits** (`finish` with any other action on the current feature) fire `onAreaSelected` again with the same `selectionId`.
 - **Delete** (`change` event of type `delete` for the current feature) fires `onAreaCleared`.
 - `selectionId` comes from a counter: `area-001`, `area-002`, … Terra Draw's own UUIDs stay internal.
@@ -178,7 +196,10 @@ Polygon and freehand reject self-intersecting shapes (`ValidateNotSelfIntersecti
 
 - Layer and source ids: `mw-data-<index>-<id|type>-<suffix>`. The selection uses `mw-sel-*`. Host styles must not use these prefixes.
 - **Order**: data goes below the first basemap label layer if there is one, otherwise below the selection layer. The selection is always on top.
-- `setData()` removes all previous data layers and rebuilds them. Nothing is diffed; fine for the current data sizes.
+- `setData()` normally removes all previous data layers and rebuilds them. **Exception**: if the new list
+  has the same layers (same length, type, id and options) and only GeoJSON `data` differs, it calls
+  `source.setData()` in place. Layers and an open popup stay, so animation frames (the website's time
+  player) don't flicker. Keep the layer `id` stable between frames to get this path.
 - **geojson**: three layers (fill / line / circle) filtered by geometry type. Colour = `properties.color`, or blue if missing.
 - **raster**: raster source. `bounds` limits which tiles are **requested**; it does not cut tiles at the box edge. Antimeridian bounds get +360 on east.
 - **image**: image source stretched over the four corners. The image must be in Web Mercator. EPSG:4326 images drift in latitude over large areas.
@@ -207,7 +228,7 @@ Run `npm run dev`, then in the demo:
 
 1. The map loads (no "Worker failed to load" in the console); the initial rectangle over NRW is visible.
 2. Draw a rectangle, a polygon (also a concave one) and a freehand shape → each fires `onAreaSelected`, the old area disappears, and data loads.
-3. In Pan & edit: drag a corner or the whole area → the event fires again with the same `selectionId`.
+3. In Pan: dragging over the area moves the map, not the area. Turn on Edit: drag a corner or the whole area → the event fires again with the same `selectionId`; Esc locks it again.
 4. Trash button → `onAreaCleared`, data disappears.
 5. Switch basemap (Streets → Blue Marble) → the area and data stay.
 6. Globe ↔ Flat; draw across 180° in both → `crossesAntimeridian: true`, `bbox` west > east.

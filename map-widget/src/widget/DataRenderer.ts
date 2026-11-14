@@ -1,6 +1,7 @@
 import {
   Popup,
   type ExpressionSpecification,
+  type GeoJSONSource,
   type LayerSpecification,
   type Map as MapLibreMap,
   type MapLayerMouseEvent,
@@ -47,7 +48,18 @@ export class DataRenderer {
   }
 
   setData(data: MapData[]): void {
+    const previous = this.data;
     this.data = data;
+    if (this.isReady() && sameLayers(previous, data)) {
+      // Only GeoJSON contents changed (e.g. animation frames): swap the data, keep the layers
+      // and an open popup, so updates are smooth and do not flicker.
+      data.forEach((item, index) => {
+        if (item.type !== "geojson" || item === previous[index]) return;
+        const source = this.map.getSource<GeoJSONSource>(layerKey(item, index));
+        source?.setData(item.data);
+      });
+      return;
+    }
     this.render();
   }
 
@@ -104,7 +116,7 @@ export class DataRenderer {
   }
 
   private addItem(item: MapData, index: number, before: string | undefined): void {
-    const key = `${DATA_LAYER_PREFIX}-${index}-${sanitize(item.id ?? item.type)}`;
+    const key = layerKey(item, index);
     const opacity = item.opacity ?? 1;
 
     switch (item.type) {
@@ -116,7 +128,12 @@ export class DataRenderer {
             type: "fill",
             source: key,
             filter: isPolygon,
-            paint: { "fill-color": color, "fill-opacity": 0.45 * opacity },
+            // Antialiasing off when there are no outlines, so adjacent cells show no hairline seams.
+            paint: {
+              "fill-color": color,
+              "fill-opacity": (item.fillOpacity ?? 0.45) * opacity,
+              "fill-antialias": item.outline !== false,
+            },
           },
           before,
           true,
@@ -126,7 +143,7 @@ export class DataRenderer {
             id: `${key}-line`,
             type: "line",
             source: key,
-            filter: ["any", isPolygon, isLine],
+            filter: item.outline === false ? isLine : ["any", isPolygon, isLine],
             layout: { "line-join": "round", "line-cap": "round" },
             paint: {
               "line-color": color,
@@ -146,7 +163,7 @@ export class DataRenderer {
             paint: {
               "circle-color": color,
               "circle-opacity": 0.9 * opacity,
-              "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 3, 6, 6, 12, 9],
+              "circle-radius": item.pointRadius ?? ["interpolate", ["linear"], ["zoom"], 1, 3, 6, 6, 12, 9],
               "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 1,
             },
@@ -214,6 +231,17 @@ export class DataRenderer {
 /** MapLibre tile bounds must have west < east; antimeridian boxes are unwrapped. */
 function rasterBounds([w, s, e, n]: [number, number, number, number]): [number, number, number, number] {
   return w > e ? [w, s, e + 360, n] : [w, s, e, n];
+}
+
+function layerKey(item: MapData, index: number): string {
+  return `${DATA_LAYER_PREFIX}-${index}-${sanitize(item.id ?? item.type)}`;
+}
+
+/** True if both lists draw the same layers and differ at most in GeoJSON `data`. */
+function sameLayers(a: MapData[], b: MapData[]): boolean {
+  if (a.length === 0 || a.length !== b.length) return false;
+  const withoutData = (item: MapData) => JSON.stringify(item.type === "geojson" ? { ...item, data: null } : item);
+  return a.every((item, i) => item === b[i] || withoutData(item) === withoutData(b[i]));
 }
 
 function sanitize(s: string): string {

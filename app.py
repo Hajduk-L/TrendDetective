@@ -1,8 +1,10 @@
-"""HTTP server module exposing the Python topic and button interface to the web frontend.
+"""HTTP server module exposing the Python topic, tool, and button interface to the web frontend.
 
 This module serves static frontend assets, provides alphabetically sorted topics
-from ``marten.getTopics()`` at ``GET /api/topics``, and routes button click events
-at ``POST /api/buttons/<button_id>`` to the single method bound to that button.
+from :func:`api_wrapper.get_all_topics_list` at ``GET /api/topics``, provides
+available analysis tools from :mod:`src.task` at ``GET /api/tools``, and routes
+button click events at ``POST /api/buttons/<button_id>`` to the single method
+bound to that button.
 """
 
 from dataclasses import dataclass
@@ -23,9 +25,6 @@ INTERFACE: interface.AppInterface = interface.AppInterface()
 
 def get_interface() -> interface.AppInterface:
     """Return the active :class:`interface.AppInterface`, reloading if ``interface.py`` changed.
-
-    This ensures any changes to :meth:`interface.marten.getTopics` on disk are
-    reflected immediately without manually restarting the server.
 
     :return: Active application interface instance.
     :rtype: interface.AppInterface
@@ -54,7 +53,7 @@ class ServerConfig:
 
 
 class WebAppHandler(SimpleHTTPRequestHandler):
-    """HTTP request handler serving static files, topic lists, and button API endpoints.
+    """HTTP request handler serving static files, topic/tool lists, and button API endpoints.
 
     :param request: Client socket request object.
     :type request: Any
@@ -122,7 +121,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:
-        """Handle HTTP GET requests for topics, button metadata, or static files.
+        """Handle HTTP GET requests for topics, tools, user-request results, or static files.
 
         :return: None
         :rtype: None
@@ -131,6 +130,10 @@ class WebAppHandler(SimpleHTTPRequestHandler):
 
         if self.path == "/api/topics":
             self._send_json(200, {"topics": app_interface.get_sorted_topics()})
+            return
+
+        if self.path == "/api/tools":
+            self._send_json(200, {"tools": app_interface.get_sorted_tools()})
             return
 
         if self.path == "/api/buttons":
@@ -143,7 +146,13 @@ class WebAppHandler(SimpleHTTPRequestHandler):
                 if app_interface.last_user_request is not None
                 else None
             )
-            self._send_json(200, {"user_request": user_request_data})
+            self._send_json(
+                200,
+                {
+                    "user_request": user_request_data,
+                    "visualization": app_interface.last_task_results,
+                },
+            )
             return
 
         super().do_GET()
@@ -152,9 +161,9 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         """Handle HTTP POST requests to trigger a specific button's bound method.
 
         Expects paths matching ``/api/buttons/<button_id>``. Updates the topic
-        selection, timestamp brackets, interval length tuple, and map area
-        (GeoJSON Feature or ``null``) from the JSON body before invoking the
-        button trigger.
+        selection, tool selection, ``timeintervall`` brackets (in ``DD.MM.YYYY``
+        format), interval length tuple, and map area from the JSON body before
+        invoking the button trigger.
 
         :return: None
         :rtype: None
@@ -175,11 +184,21 @@ class WebAppHandler(SimpleHTTPRequestHandler):
                             if isinstance(body.get("topics"), dict)
                             else {}
                         )
-                        raw_ts = body.get("timestamp", ["", ""])
-                        if isinstance(raw_ts, list) and len(raw_ts) == 2:
-                            timestamp = (str(raw_ts[0]), str(raw_ts[1]))
+                        tools = (
+                            body.get("tools")
+                            if isinstance(body.get("tools"), dict)
+                            else {}
+                        )
+                        raw_ti = body.get(
+                            "timeintervall",
+                            body.get("timestamp", ["", ""]),
+                        )
+                        if isinstance(raw_ti, list) and len(raw_ti) == 2:
+                            timeintervall = (str(raw_ti[0]), str(raw_ti[1]))
                         else:
-                            timestamp = ("", "")
+                            raise ValueError(
+                                "timeintervall must be a pair of DD.MM.YYYY strings."
+                            )
 
                         raw_interval = body.get("interval_length", [1.0, "Day"])
                         if isinstance(raw_interval, list) and len(raw_interval) == 2:
@@ -197,7 +216,8 @@ class WebAppHandler(SimpleHTTPRequestHandler):
 
                         app_interface.set_request_inputs(
                             states=topics,
-                            timestamp=timestamp,
+                            tools=tools,
+                            timeintervall=timeintervall,
                             interval_length=interval_length,
                             area=area,
                         )
@@ -222,15 +242,13 @@ class WebAppHandler(SimpleHTTPRequestHandler):
 
 
 def run(config: ServerConfig = ServerConfig()) -> None:
-    """Start the HTTP server using the provided server configuration.
+    """Start the threaded HTTP server using the provided server configuration.
 
     :param config: Server host and port configuration.
     :type config: ServerConfig
     :return: None
     :rtype: None
     """
-    # Threaded: the map widget loads several files in parallel (e.g. its web workers), and
-    # browsers keep idle pre-opened connections that would block a single-threaded server.
     server = ThreadingHTTPServer((config.host, config.port), WebAppHandler)
     print(f"Server running at http://{config.host}:{config.port}")
     try:

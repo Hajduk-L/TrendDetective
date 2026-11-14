@@ -1,0 +1,64 @@
+@startuml sequence
+!include style.iuml
+title TrendDetective (main) — Sequence across the four work areas
+autonumber
+
+actor User
+box "① Map widget" #e3eefc
+  participant "embed.tsx\nMapController" as EMB
+  participant "MapWidget +\nSelectionManager" as SM
+end box
+box "② UI & web server" #e2f3e6
+  participant "index.html\nscript" as JS
+  participant "app.py\nWebAppHandler" as H
+  participant "interface.py\nAppInterface" as AI
+end box
+box "④ API wrapper" #eee6fb
+  participant "api_wrapper" as AW
+  participant "NOAAClient" as NC
+end box
+box "③ Data & calculations" #fdeedd
+  participant "Task /\nLinearRegression" as T
+end box
+
+== Page load ==
+JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> mount(el, {onAreaSelected, onAreaCleared})
+EMB -> SM : render MapWidget, create SelectionManager
+JS -> H : GET /api/topics
+H -> AI : get_sorted_topics()
+AI -> AI : marten.getTopics() → list[str]
+H --> JS : 200 JSON {topics: list[str]}
+
+== Area selection (① → ②) ==
+User -> SM : draw rectangle / polygon / freehand
+SM -> SM : normalizeRing(), geodesicAreaKm2()
+SM -[#2f6fb3]-> JS : <color:#2f6fb3>① → ②</color> onAreaSelected(AreaFeature)
+
+== Apply (inside ②) ==
+User -> JS : fill dates, interval, topics; click Apply
+JS -> H : POST /api/buttons/apply\n{topics: dict[str,bool], timestamp: [str,str],\n interval_length: [float,str], area: AreaFeature | null}
+H -> AI : set_request_inputs(...) + trigger_button("apply")
+AI -> AI : on_apply() → last_user_request = UserRequest
+alt valid
+  H --> JS : 204
+  JS -> H : GET /api/user-request
+  H --> JS : 200 JSON {user_request: dict}
+  JS -> JS : print UserRequest in output box
+else invalid
+  H --> JS : 400
+end
+
+== Not connected yet (contracts to agree on) ==
+AI -[#b03a2e,dashed]> AW : <color:#b03a2e>② ⇢ ④  UserRequest → PointDataRequest per topic / point</color>
+AW -> NC : fetch_point_data(request, output_dir)
+NC -> NC : save nested JSON, one list per variable
+NC --> AW : list[Iterator[dict]], one per variable\n(records streamed from the file with ijson)
+AW -[#b03a2e,dashed]> T : <color:#b03a2e>④ ⇢ ③  Iterator[dict] per variable → Tensor X (time), y (value)</color>
+T -[#b03a2e,dashed]> H : <color:#b03a2e>③ ⇢ ②  trend results (w, b per cell / point)</color>
+H -[#b03a2e,dashed]> JS : <color:#b03a2e>new route, e.g. GET /api/map-data → JSON</color>
+JS -[#b03a2e,dashed]> EMB : <color:#b03a2e>② ⇢ ①  setResultData(MapData)</color>
+note right of AW
+  Today ④ only runs from
+  noaa_test.py on the command line.
+end note
+@enduml

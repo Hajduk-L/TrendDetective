@@ -1,0 +1,3046 @@
+[
+  [
+    {
+      "date": "2020-01-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 22.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 4.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 4.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-01-31",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-02-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 19.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 22.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 25,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 28.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 24.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-03-31",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 25.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 27.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-04-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 19.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 19.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 22.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 26.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 23.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 14.4,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.2,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 30,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 28.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 22.8,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 26.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 28.3,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.1,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 25.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 26.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 26.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 26.7,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 30.6,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 28.9,
+      "description": "tmax"
+    },
+    {
+      "date": "2020-05-31",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 24.4,
+      "description": "tmax"
+    }
+  ],
+  [
+    {
+      "date": "2020-01-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 1.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 1.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -1.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 1.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -1.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -2.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -2.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -4.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -4.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -4.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -2.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 1.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 1.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 4.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -0.5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-01-31",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -0.5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 1.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -0.5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -0.5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -3.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -5.5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 4.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -4.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -3.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 0,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-02-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -0.5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": -3.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 4.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-03-31",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 12.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 4.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-04-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-01",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-02",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-03",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-04",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-05",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 9.4,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-06",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-07",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-08",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 5,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-09",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 2.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-10",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 3.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-11",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 8.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-12",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 6.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-13",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 7.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-14",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-15",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-16",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-17",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-18",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-19",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 13.3,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-20",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 11.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-21",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 10,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-22",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-23",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 17.8,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-24",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 15.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-25",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-26",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.7,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-27",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 18.9,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-28",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 22.2,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-29",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 21.1,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-30",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 20.6,
+      "description": "tmin"
+    },
+    {
+      "date": "2020-05-31",
+      "station": "USW00013743",
+      "longitude": -77.03454,
+      "elevation": 4.1,
+      "latitude": 38.84721,
+      "name": "WASHINGTON REAGAN NATIONAL AIRPORT, VA US",
+      "value": 16.1,
+      "description": "tmin"
+    }
+  ]
+]

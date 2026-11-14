@@ -61,7 +61,7 @@
             opacity: 0.7;
         }
 
-        /* Form field groups (Timestamp & Interval length) */
+        /* Form field groups (Timeintervall & Interval length) */
         .field-group {
             display: flex;
             flex-direction: column;
@@ -72,13 +72,13 @@
             font-weight: 600;
             color: #475569;
         }
-        .timestamp-row,
+        .timeintervall-row,
         .interval-row {
             display: flex;
             align-items: center;
             gap: 0.5rem;
         }
-        .timestamp-separator {
+        .timeintervall-separator {
             font-weight: 600;
             color: #64748b;
             user-select: none;
@@ -94,6 +94,10 @@
             background-color: #ffffff;
             color: #0f172a;
             transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .text-input::placeholder {
+            color: #94a3b8;
+            opacity: 1;
         }
         .text-input:focus,
         .select-input:focus {
@@ -130,7 +134,7 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
         }
 
-        /* Dropdown menu for Topics */
+        /* Dropdown menus for Topics and Tools */
         .dropdown {
             border: 1px solid #cbd5e1;
             border-radius: 8px;
@@ -165,7 +169,7 @@
         .dropdown-menu {
             display: none;
             border-top: 1px solid #e2e8f0;
-            max-height: 360px;
+            max-height: 260px;
             overflow-y: auto;
             padding: 0.4rem 0;
         }
@@ -173,7 +177,7 @@
             display: block;
         }
 
-        /* Topic items with checkbox on the left */
+        /* Items with checkbox on the left */
         .topic-item {
             display: flex;
             align-items: center;
@@ -204,17 +208,16 @@
         /* Main Visualization Workspace */
         .main-content {
             flex: 1;
-            min-width: 0; /* let the map canvas shrink instead of squeezing the sidebar */
-            padding: 2rem;
+            min-width: 0;
+            padding: 1.5rem 2rem;
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 1.25rem;
         }
-        /* World map box: hosts the interactive map widget (map-widget/, built to static/map-widget/) */
         .map-box {
             position: relative;
             flex: 1;
-            min-height: 480px;
+            min-height: 420px;
             background: #ffffff;
             border: 1px solid #e2e8f0;
             border-radius: 12px;
@@ -231,9 +234,50 @@
             padding: 1rem 1.25rem;
         }
         .status-card h3 {
-            margin: 0 0 0.5rem 0;
+            margin: 0 0 0.75rem 0;
             font-size: 0.95rem;
             color: #334155;
+        }
+        .viz-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        .topic-viz-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            background: #f8fafc;
+        }
+        .topic-viz-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+        .badge-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
+        }
+        .metric-badge {
+            font-size: 0.78rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            background: #e0e7ff;
+            color: #1e40af;
+            font-weight: 500;
+        }
+        .chart-svg {
+            width: 100%;
+            height: 110px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            display: block;
         }
         pre {
             margin: 0;
@@ -241,7 +285,7 @@
             color: #e2e8f0;
             padding: 0.75rem 1rem;
             border-radius: 6px;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             overflow-x: auto;
         }
     </style>
@@ -249,31 +293,34 @@
 <body>
     <!-- Left Sidebar -->
     <aside class="sidebar">
-        <!-- Top-left Apply button (disabled until >=1 topic, filled timestamp, and valid interval > 0) -->
+        <!-- Top-left Apply button (disabled until >=1 topic, valid DD.MM.YYYY timeintervall, and interval > 0) -->
         <div class="top-bar">
             <button id="apply" class="py-button" type="button" disabled>Apply</button>
         </div>
 
-        <!-- Timestamp brackets [start] - [end] above the search bar -->
+        <!-- Timeintervall brackets [DD.MM.YYYY] - [DD.MM.YYYY] above the search bar -->
         <div class="field-group">
-            <span class="field-label">Timestamp</span>
-            <div class="timestamp-row">
+            <span class="field-label">Timeintervall</span>
+            <div class="timeintervall-row">
                 <input
-                    id="timestamp-start"
+                    id="timeintervall-start"
                     class="text-input"
                     type="text"
-                    placeholder="Start"
-                    aria-label="Start timestamp"
+                    maxlength="10"
+                    placeholder="DD.MM.YYYY"
+                    aria-label="Start date (DD.MM.YYYY)"
                 >
-                <span class="timestamp-separator">-</span>
+                <span class="timeintervall-separator">-</span>
                 <input
-                    id="timestamp-end"
+                    id="timeintervall-end"
                     class="text-input"
                     type="text"
-                    placeholder="End"
-                    aria-label="End timestamp"
+                    maxlength="10"
+                    placeholder="DD.MM.YYYY"
+                    aria-label="End date (DD.MM.YYYY)"
                 >
             </div>
+            <span id="timeintervall-hint" class="field-hint">Dates must be valid and written as DD.MM.YYYY (end &ge; start).</span>
         </div>
 
         <!-- Two-part Interval length: float (> 0) and unit (Day, Month, Year) -->
@@ -317,52 +364,104 @@
             </button>
             <div id="topics-list" class="dropdown-menu"></div>
         </div>
+
+        <!-- Tools Dropdown Menu (starts closed, just like Topics) -->
+        <div id="tools-dropdown" class="dropdown">
+            <button id="tools-toggle-btn" class="dropdown-toggle" type="button">
+                <span>Tools</span>
+                <span class="dropdown-arrow">&#9662;</span>
+            </button>
+            <div id="tools-list" class="dropdown-menu"></div>
+        </div>
     </aside>
 
     <!-- Main Content Area -->
     <main class="main-content">
-        <!-- World map: draw an area with the tools on the left of the map; it is sent with "Apply" -->
         <div class="map-box" aria-label="TrendDetective World Map">
             <div id="map-widget"></div>
         </div>
 
         <div class="status-card">
+            <h3>Request Visualization &amp; Task Output (<code>src/task.py</code>)</h3>
+            <div id="visualization-container" class="viz-grid">
+                <div class="empty-message">Select topics and tools, fill the timeintervall, and click "Apply" to run tasks and visualize results.</div>
+            </div>
+        </div>
+
+        <div class="status-card">
             <h3>Latest Python <code>UserRequest</code> State</h3>
-            <pre id="user-request-output">Fill timestamp, interval length (> 0), and select at least one topic, then click "Apply"...</pre>
+            <pre id="user-request-output">Fill timeintervall (DD.MM.YYYY), interval length (> 0), and select at least one topic, then click "Apply"...</pre>
         </div>
     </main>
 
     <script type="module" src="/static/map-widget/map-widget.js"></script>
     <script type="module">
-        // Mount the map widget into the map box. The selected area (GeoJSON) is kept in
-        // selectedArea and sent to Python with the Apply request.
         let selectedArea = null;
-        window.trendMap = window.TrendDetectiveMap.mount(document.getElementById('map-widget'), {
-            onAreaSelected: (area) => {
-                selectedArea = area;
-            },
-            onAreaCleared: () => {
-                selectedArea = null;
-            },
-        });
+        if (window.TrendDetectiveMap) {
+            window.trendMap = window.TrendDetectiveMap.mount(document.getElementById('map-widget'), {
+                onAreaSelected: (area) => {
+                    selectedArea = area;
+                },
+                onAreaCleared: () => {
+                    selectedArea = null;
+                },
+            });
+        }
         window.getSelectedArea = () => selectedArea;
     </script>
 
     <script>
-        // Same origin on Vercel and on the local Python server (port 8000); otherwise talk to the local server.
-        const API_BASE = (window.location.port === '8000' || !['localhost', '127.0.0.1'].includes(window.location.hostname)) ? '' : 'http://127.0.0.1:8000';
+        const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:8000';
 
         let allTopics = [];
         const selectedTopics = {};
 
+        let allTools = [];
+        const selectedTools = {};
+
         const applyBtn = document.getElementById('apply');
-        const timestampStartInput = document.getElementById('timestamp-start');
-        const timestampEndInput = document.getElementById('timestamp-end');
+        const timeintervallStartInput = document.getElementById('timeintervall-start');
+        const timeintervallEndInput = document.getElementById('timeintervall-end');
+        const timeintervallHint = document.getElementById('timeintervall-hint');
         const intervalValueInput = document.getElementById('interval-value');
         const intervalUnitSelect = document.getElementById('interval-unit');
         const intervalHint = document.getElementById('interval-hint');
-        const dropdown = document.getElementById('topics-dropdown');
-        const dropdownToggleBtn = document.getElementById('dropdown-toggle-btn');
+
+        const topicsDropdown = document.getElementById('topics-dropdown');
+        const topicsToggleBtn = document.getElementById('dropdown-toggle-btn');
+
+        const toolsDropdown = document.getElementById('tools-dropdown');
+        const toolsToggleBtn = document.getElementById('tools-toggle-btn');
+
+        function sanitizeDateInput(inputElement) {
+            const cleaned = inputElement.value.replace(/[^0-9.]/g, '');
+            if (inputElement.value !== cleaned) {
+                inputElement.value = cleaned;
+            }
+        }
+
+        function parseDdMmYyyy(value) {
+            const trimmed = value.trim();
+            if (!/^\d{2}\.\d{2}\.\d{4}$/.test(trimmed)) {
+                return null;
+            }
+            const [dayStr, monthStr, yearStr] = trimmed.split('.');
+            const day = Number(dayStr);
+            const month = Number(monthStr);
+            const year = Number(yearStr);
+            if (month < 1 || month > 12 || year < 1) {
+                return null;
+            }
+            const dateObj = new Date(year, month - 1, day);
+            if (
+                dateObj.getFullYear() !== year ||
+                dateObj.getMonth() !== month - 1 ||
+                dateObj.getDate() !== day
+            ) {
+                return null;
+            }
+            return dateObj;
+        }
 
         function isIntervalValueValid() {
             const raw = intervalValueInput.value.trim();
@@ -373,36 +472,44 @@
             return Number.isFinite(parsed) && parsed > 0;
         }
 
-        // Enable Apply only when >= 1 topic is checked, both timestamps are filled, and interval > 0
         function updateApplyButtonState() {
+            sanitizeDateInput(timeintervallStartInput);
+            sanitizeDateInput(timeintervallEndInput);
+
             const hasSelectedTopic = Object.values(selectedTopics).some(Boolean);
-            const hasStartTimestamp = timestampStartInput.value.trim().length > 0;
-            const hasEndTimestamp = timestampEndInput.value.trim().length > 0;
+            const startRaw = timeintervallStartInput.value.trim();
+            const endRaw = timeintervallEndInput.value.trim();
+            const startDate = parseDdMmYyyy(startRaw);
+            const endDate = parseDdMmYyyy(endRaw);
+            const datesOrderValid = startDate && endDate ? endDate >= startDate : true;
+            const startValid = Boolean(startDate);
+            const endValid = Boolean(endDate) && datesOrderValid;
             const validInterval = isIntervalValueValid();
 
+            timeintervallStartInput.classList.toggle('invalid', startRaw.length > 0 && !startValid);
+            timeintervallEndInput.classList.toggle('invalid', endRaw.length > 0 && !endValid);
+            timeintervallHint.classList.toggle(
+                'visible',
+                (startRaw.length > 0 && !startValid) || (endRaw.length > 0 && !endValid)
+            );
+
             const rawInterval = intervalValueInput.value.trim();
-            if (rawInterval.length > 0 && !validInterval) {
-                intervalValueInput.classList.add('invalid');
-                intervalHint.classList.add('visible');
-            } else {
-                intervalValueInput.classList.remove('invalid');
-                intervalHint.classList.remove('visible');
-            }
+            intervalValueInput.classList.toggle('invalid', rawInterval.length > 0 && !validInterval);
+            intervalHint.classList.toggle('visible', rawInterval.length > 0 && !validInterval);
 
             applyBtn.disabled = !(
                 hasSelectedTopic &&
-                hasStartTimestamp &&
-                hasEndTimestamp &&
+                startValid &&
+                endValid &&
                 validInterval
             );
         }
 
-        timestampStartInput.addEventListener('input', updateApplyButtonState);
-        timestampEndInput.addEventListener('input', updateApplyButtonState);
+        timeintervallStartInput.addEventListener('input', updateApplyButtonState);
+        timeintervallEndInput.addEventListener('input', updateApplyButtonState);
         intervalValueInput.addEventListener('input', updateApplyButtonState);
         intervalUnitSelect.addEventListener('change', updateApplyButtonState);
 
-        // Render the topic checkboxes inside the dropdown, filtered by the search query
         function renderTopics(filterText = '') {
             const listContainer = document.getElementById('topics-list');
             listContainer.innerHTML = '';
@@ -441,7 +548,6 @@
             }
         }
 
-        // Load topics from Python marten.getTopics() and sort alphabetically
         async function loadTopics() {
             const listContainer = document.getElementById('topics-list');
             try {
@@ -465,18 +571,77 @@
             }
         }
 
-        // Toggle the Topics dropdown menu open/closed, loading topics from Python when opened
-        dropdownToggleBtn.addEventListener('click', () => {
-            dropdown.classList.toggle('open');
-            if (dropdown.classList.contains('open')) {
+        function renderTools() {
+            const listContainer = document.getElementById('tools-list');
+            listContainer.innerHTML = '';
+
+            if (allTools.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-message';
+                empty.textContent = 'No tools available.';
+                listContainer.appendChild(empty);
+                return;
+            }
+
+            for (const tool of allTools) {
+                const label = document.createElement('label');
+                label.className = 'topic-item';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = Boolean(selectedTools[tool]);
+                checkbox.addEventListener('change', (event) => {
+                    selectedTools[tool] = event.target.checked;
+                });
+
+                const span = document.createElement('span');
+                span.textContent = tool;
+
+                label.appendChild(checkbox);
+                label.appendChild(span);
+                listContainer.appendChild(label);
+            }
+        }
+
+        async function loadTools() {
+            const listContainer = document.getElementById('tools-list');
+            try {
+                const response = await fetch(`${API_BASE}/api/tools`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                allTools = [...data.tools].sort((a, b) => a.localeCompare(b));
+
+                for (const tool of allTools) {
+                    if (!(tool in selectedTools)) {
+                        selectedTools[tool] = false;
+                    }
+                }
+                renderTools();
+            } catch (error) {
+                listContainer.innerHTML =
+                    '<div class="empty-message">Cannot reach Python server at http://127.0.0.1:8000.</div>';
+            }
+        }
+
+        topicsToggleBtn.addEventListener('click', () => {
+            topicsDropdown.classList.toggle('open');
+            if (topicsDropdown.classList.contains('open')) {
                 loadTopics();
             }
         });
 
-        // Filter topics when typing in the upper search bar
+        toolsToggleBtn.addEventListener('click', () => {
+            toolsDropdown.classList.toggle('open');
+            if (toolsDropdown.classList.contains('open')) {
+                loadTools();
+            }
+        });
+
         document.getElementById('topic-search').addEventListener('input', async (event) => {
-            if (!dropdown.classList.contains('open')) {
-                dropdown.classList.add('open');
+            if (!topicsDropdown.classList.contains('open')) {
+                topicsDropdown.classList.add('open');
             }
             if (allTopics.length === 0) {
                 await loadTopics();
@@ -485,34 +650,121 @@
             }
         });
 
-        // Short summary of the selected map area for the status card
+        function buildSvgChart(values, trendLine) {
+            const width = 320;
+            const height = 110;
+            const pad = 14;
+            const allVals = trendLine ? [...values, ...trendLine] : [...values];
+            const minV = Math.min(...allVals);
+            const maxV = Math.max(...allVals);
+            const span = maxV - minV || 1;
+
+            const toX = (i) =>
+                values.length <= 1
+                    ? width / 2
+                    : pad + (i / (values.length - 1)) * (width - 2 * pad);
+            const toY = (v) =>
+                height - pad - ((v - minV) / span) * (height - 2 * pad);
+
+            const polyPoints = values.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ');
+            let svgContent = `<polyline fill="none" stroke="#2563eb" stroke-width="2" points="${polyPoints}" />`;
+
+            for (let i = 0; i < values.length; i++) {
+                svgContent += `<circle cx="${toX(i).toFixed(1)}" cy="${toY(values[i]).toFixed(1)}" r="2.5" fill="#1d4ed8" />`;
+            }
+
+            if (Array.isArray(trendLine) && trendLine.length === values.length) {
+                const trendPoints = trendLine
+                    .map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`)
+                    .join(' ');
+                svgContent += `<polyline fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3" points="${trendPoints}" />`;
+            }
+
+            return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${svgContent}</svg>`;
+        }
+
+        function renderVisualization(visualization) {
+            const container = document.getElementById('visualization-container');
+            if (!visualization || !visualization.topics) {
+                container.innerHTML = '<div class="empty-message">No visualization data available.</div>';
+                return;
+            }
+
+            if (window.trendMap && Array.isArray(visualization.map_layers)) {
+                window.trendMap.setResultData(visualization.map_layers);
+            }
+
+            const entries = Object.entries(visualization.topics);
+            if (entries.length === 0) {
+                container.innerHTML = '<div class="empty-message">No topics selected.</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            for (const [topic, info] of entries) {
+                const card = document.createElement('div');
+                card.className = 'topic-viz-card';
+
+                const lr = info.tools && info.tools['Linear Regression'];
+                const tt = info.tools && info.tools['t-Test'];
+
+                let badgesHtml = `<span class="metric-badge">Mean: ${info.mean}</span>`;
+                badgesHtml += `<span class="metric-badge">Intervals: ${info.values.length}</span>`;
+                if (lr) {
+                    badgesHtml += `<span class="metric-badge">Slope (w): ${lr.slope}</span>`;
+                    badgesHtml += `<span class="metric-badge">Intercept (b): ${lr.intercept}</span>`;
+                }
+                if (tt) {
+                    badgesHtml += `<span class="metric-badge">t-stat: ${tt.t_statistic}</span>`;
+                    badgesHtml += `<span class="metric-badge">p-val: ${tt.p_value}</span>`;
+                }
+
+                const chartSvg = buildSvgChart(info.values, lr ? lr.trend_line : null);
+                card.innerHTML = `
+                    <div class="topic-viz-header">
+                        <span>${topic}</span>
+                        <span style="font-size:0.78rem;color:#64748b;">[${info.coordinates[0]}, ${info.coordinates[1]}]</span>
+                    </div>
+                    <div class="badge-row">${badgesHtml}</div>
+                    ${chartSvg}
+                `;
+                container.appendChild(card);
+            }
+        }
+
         function formatArea(area) {
             if (!area) {
                 return 'None';
             }
             const p = area.properties || {};
-            return `${p.selectionId} (${p.shape}, ${Math.round(p.areaKm2).toLocaleString('en-US')} km², bbox=${JSON.stringify(area.bbox)})`;
+            return `${p.selectionId || 'area'} (${p.shape || 'Polygon'}, bbox=${JSON.stringify(area.bbox)})`;
         }
 
-        // Trigger the connected Python Button method
         async function triggerButton(buttonId) {
             try {
+                if (allTools.length === 0) {
+                    await loadTools();
+                }
                 const intervalFloat = parseFloat(intervalValueInput.value.trim());
                 if (!(Number.isFinite(intervalFloat) && intervalFloat > 0)) {
                     throw new Error('Interval length must be greater than 0.');
                 }
 
+                if (window.trendMap) {
+                    window.trendMap.setLoading(true);
+                }
+
                 const payload = {
                     topics: selectedTopics,
-                    timestamp: [
-                        timestampStartInput.value.trim(),
-                        timestampEndInput.value.trim(),
+                    tools: selectedTools,
+                    timeintervall: [
+                        timeintervallStartInput.value.trim(),
+                        timeintervallEndInput.value.trim(),
                     ],
                     interval_length: [
                         intervalFloat,
                         intervalUnitSelect.value,
                     ],
-                    // Area drawn on the map (GeoJSON Feature) or null; see map-widget/API.md
                     area: window.getSelectedArea ? window.getSelectedArea() : null,
                 };
 
@@ -528,17 +780,26 @@
 
                 const res = await fetch(`${API_BASE}/api/user-request`);
                 const data = await res.json();
-                const [val, unit] = data.user_request.interval_length;
+                const ur = data.user_request;
+                const [val, unit] = ur.interval_length;
                 const formattedFloat = Number.isInteger(val) ? `${val}.0` : String(val);
+                const [d1, d2] = ur.timeintervall_repr;
+
+                // Show only selected topics in summary or full dict
                 document.getElementById('user-request-output').textContent =
-                    `UserRequest(\n  topics=${JSON.stringify(data.user_request.topics, null, 2)},\n  timestamp=(${JSON.stringify(data.user_request.timestamp[0])}, ${JSON.stringify(data.user_request.timestamp[1])}),\n  interval_length=(${formattedFloat}, ${JSON.stringify(unit)}),\n  area=${formatArea(data.user_request.area)}\n)`;
+                    `UserRequest(\n  topics=${JSON.stringify(ur.topics, null, 2)},\n  tools=${JSON.stringify(ur.tools, null, 2)},\n  timeintervall=(${d1}, ${d2}),\n  interval_length=(${formattedFloat}, ${JSON.stringify(unit)}),\n  area=${formatArea(ur.area)}\n)`;
+
+                renderVisualization(data.visualization);
             } catch (error) {
                 document.getElementById('user-request-output').textContent =
-                    'Error: Could not submit UserRequest. Ensure at least one topic, both timestamp brackets, and an interval length > 0 are provided.';
+                    'Error: Could not submit UserRequest. Ensure at least one topic, valid DD.MM.YYYY dates, and an interval length > 0 are provided.';
+            } finally {
+                if (window.trendMap) {
+                    window.trendMap.setLoading(false);
+                }
             }
         }
 
-        // Connect every HTML button with class="py-button" to its Python Button via id
         document.querySelectorAll('button.py-button').forEach((buttonElement) => {
             buttonElement.addEventListener('click', () => {
                 triggerButton(buttonElement.id);

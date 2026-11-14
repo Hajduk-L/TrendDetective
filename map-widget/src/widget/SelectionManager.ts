@@ -1,8 +1,9 @@
-import type { Feature, Polygon } from "geojson";
+import type { Feature, Point, Polygon } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   TerraDraw,
   TerraDrawFreehandMode,
+  TerraDrawPointMode,
   TerraDrawPolygonMode,
   TerraDrawRectangleMode,
   TerraDrawSelectMode,
@@ -11,17 +12,28 @@ import {
   type TerraDrawEventListeners,
 } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
-import { geodesicAreaKm2, isAxisAlignedRectangle, normalizeRing } from "./geo";
+import { geodesicAreaKm2, isAxisAlignedRectangle, normalizePoint, normalizeRing } from "./geo";
 import type { AreaFeature, DrawTool, SelectionShape } from "./types";
 
 /** Prefix of all MapLibre sources/layers created by Terra Draw. */
 export const SELECTION_LAYER_PREFIX = "mw-sel";
 
-const SHAPES: readonly SelectionShape[] = ["rectangle", "polygon", "freehand"];
+const POLYGON_SHAPES: readonly SelectionShape[] = ["rectangle", "polygon", "freehand"];
 const ACCENT = "#ff6b2c";
 const WHITE = "#ffffff";
 
 type FeatureId = string | number;
+
+/**
+ * Terra Draw mode for a toolbar tool. "select" (Pan) uses Terra Draw's built-in passive
+ * "static" mode, so the selection is locked and clicks/drags only move the map; only the
+ * "edit" tool turns on Terra Draw's select mode, where the shape can be moved and reshaped.
+ */
+function terraMode(tool: DrawTool): string {
+  if (tool === "select") return "static";
+  if (tool === "edit") return "select";
+  return tool;
+}
 
 /**
  * MapLibre returns wrapped longitudes on the globe. Keep them continuous relative to the
@@ -53,8 +65,10 @@ export interface SelectionCallbacks {
   onToolChange: (tool: DrawTool) => void;
 }
 
+/** A selection drawn by one of our tools (polygon shapes or a single point). */
 const isAreaFeature = (f: GeoJSONStoreFeatures) =>
-  f.geometry.type === "Polygon" && SHAPES.includes(f.properties.mode as SelectionShape);
+  (f.geometry.type === "Polygon" && POLYGON_SHAPES.includes(f.properties.mode as SelectionShape)) ||
+  (f.geometry.type === "Point" && f.properties.mode === "point");
 
 /**
  * Wraps Terra Draw: drawing tools, editing, single-selection policy and GeoJSON export.
@@ -64,7 +78,7 @@ export class SelectionManager {
   private draw: TerraDraw | null = null;
   private tool: DrawTool = "select";
   private parked: GeoJSONStoreFeatures[] = [];
-  private pendingArea: Feature<Polygon> | null = null;
+  private pendingArea: Feature<Polygon | Point> | null = null;
   private currentId: FeatureId | null = null;
   private selectionId: string | null = null;
   private counter = 0;
@@ -95,7 +109,17 @@ export class SelectionManager {
       this.pendingArea = null;
       this.setArea(area);
     }
-    draw.setMode(this.tool);
+    this.applyMode();
+  }
+
+  /** Puts Terra Draw into the mode of the current tool; in edit mode the shape is pre-selected. */
+  private applyMode(): void {
+    const draw = this.draw;
+    if (!draw) return;
+    draw.setMode(terraMode(this.tool));
+    if (this.tool === "edit" && this.currentId != null && draw.hasFeature(this.currentId)) {
+      draw.selectFeature(this.currentId);
+    }
   }
 
   /** Removes Terra Draw from the map but keeps the selection for the next attach(). */
@@ -120,10 +144,11 @@ export class SelectionManager {
     return this.tool;
   }
 
+  /** Switches the tool. "edit" without a selection falls back to "select" (Pan). */
   setTool(tool: DrawTool): void {
-    this.tool = tool;
-    this.draw?.setMode(tool);
-    this.callbacks.onToolChange(tool);
+    this.tool = tool === "edit" && this.currentId == null ? "select" : tool;
+    this.applyMode();
+    this.callbacks.onToolChange(this.tool);
   }
 
   /** Current selection as exported GeoJSON, or null. */
@@ -132,7 +157,18 @@ export class SelectionManager {
     const f = this.draw
       ? this.draw.getSnapshotFeature(this.currentId)
       : this.parked.find((p) => p.id === this.currentId);
-    if (!f || f.geometry.type !== "Polygon") return null;
+    if (!f) return null;
+
+    if (f.geometry.type === "Point") {
+      const coordinates = normalizePoint(f.geometry.coordinates);
+      return {
+        type: "Feature",
+        bbox: [coordinates[0], coordinates[1], coordinates[0], coordinates[1]],
+        properties: { selectionId: this.selectionId, shape: "point", crossesAntimeridian: false, areaKm2: 0 },
+        geometry: { type: "Point", coordinates },
+      };
+    }
+    if (f.geometry.type !== "Polygon") return null;
 
     const { ring, bbox, crossesAntimeridian } = normalizeRing(f.geometry.coordinates[0]);
     return {
@@ -149,10 +185,26 @@ export class SelectionManager {
   }
 
   /** Programmatically sets the selection (does not fire onChange). Returns false if the geometry was rejected. */
-  setArea(feature: Feature<Polygon>): boolean {
+  setArea(feature: Feature<Polygon | Point>): boolean {
     const draw = this.draw;
     if (!draw) {
       this.pendingArea = feature;
+      return true;
+    }
+    if (feature.geometry.type === "Point") {
+      const id = draw.getFeatureId();
+      const coordinates = normalizePoint(feature.geometry.coordinates);
+      const [result] = draw.addFeatures([
+        { id, type: "Feature", geometry: { type: "Point", coordinates }, properties: { mode: "point" } },
+      ]);
+      if (!result?.valid) {
+        console.warn("[MapWidget] initial point rejected:", result?.reason);
+        return false;
+      }
+      this.removeAreas((fid) => fid !== id);
+      this.currentId = id;
+      const given = feature.properties?.selectionId;
+      this.selectionId = typeof given === "string" ? given : this.nextSelectionId();
       return true;
     }
     const ring = normalizeRing(feature.geometry.coordinates[0]).ring;
@@ -186,6 +238,7 @@ export class SelectionManager {
     const had = this.currentId != null;
     this.currentId = null;
     this.selectionId = null;
+    if (this.tool === "edit") this.setTool("select"); // nothing left to edit
     if (notify && had) this.callbacks.onChange(null);
   }
 
@@ -221,11 +274,11 @@ export class SelectionManager {
       this.currentId = id;
       this.selectionId = this.nextSelectionId();
       this.callbacks.onChange(this.getArea());
-      // Hand over to edit mode with the new shape selected (deferred: Terra Draw is mid-event).
+      // Back to Pan with the new shape locked, so it cannot be moved by accident
+      // (deferred: Terra Draw is mid-event). The Edit tool unlocks it.
       setTimeout(() => {
-        if (this.draw !== draw || !draw.hasFeature(id)) return;
+        if (this.draw !== draw) return;
         this.setTool("select");
-        draw.selectFeature(id);
       }, 0);
       return;
     }
@@ -238,6 +291,7 @@ export class SelectionManager {
     if (!ids.includes(this.currentId)) return;
     this.currentId = null;
     this.selectionId = null;
+    if (this.tool === "edit") setTimeout(() => this.setTool("select"), 0); // Terra Draw is mid-event
     this.callbacks.onChange(null);
   };
 }
@@ -263,12 +317,17 @@ function createModes() {
           },
         },
         freehand: { feature: { draggable: true, coordinates: { draggable: true, deletable: true } } },
+        point: { feature: { draggable: true } },
       },
       styles: {
         selectedPolygonColor: ACCENT,
         selectedPolygonFillOpacity: 0.05,
         selectedPolygonOutlineColor: ACCENT,
         selectedPolygonOutlineWidth: 3,
+        selectedPointColor: ACCENT,
+        selectedPointWidth: 7,
+        selectedPointOutlineColor: WHITE,
+        selectedPointOutlineWidth: 3,
         selectionPointColor: WHITE,
         selectionPointOutlineColor: ACCENT,
         selectionPointWidth: 5,
@@ -291,5 +350,8 @@ function createModes() {
       },
     }),
     new TerraDrawFreehandMode({ styles: shapeStyle, validation: notSelfIntersecting }),
+    new TerraDrawPointMode({
+      styles: { pointColor: ACCENT, pointWidth: 6, pointOutlineColor: WHITE, pointOutlineWidth: 2 },
+    }),
   ];
 }

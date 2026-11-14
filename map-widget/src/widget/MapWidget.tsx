@@ -12,9 +12,9 @@ import type { AreaFeature, BasemapId, DrawTool, MapWidgetHandle, MapWidgetProps,
 const TOOLS: { id: DrawTool; label: string; hint: string; icon: string }[] = [
   {
     id: "select",
-    label: "Pan & edit",
-    hint: "Drag to pan. Click the selection to move it or drag its corners.",
-    icon: "M9 3v10.5l-2.6-2.6L5 12.3 11 18l6-5.7-1.4-1.4-2.6 2.6V3z",
+    label: "Pan",
+    hint: "Drag to pan. The selection is locked; use Edit to move or reshape it.",
+    icon: "M12 2l3 3h-2v4h-2V5H9zm0 20l-3-3h2v-4h2v4h2zM2 12l3-3v2h4v2H5v2zm20 0l-3 3v-2h-4v-2h4V9z",
   },
   {
     id: "rectangle",
@@ -34,9 +34,18 @@ const TOOLS: { id: DrawTool; label: string; hint: string; icon: string }[] = [
     hint: "Click to start, move the mouse to draw, click again to finish.",
     icon: "M4 18c2-6 5-11 8-11s2 6 4 6 2-4 4-6l1.4 1.4C19.6 10.2 19 15 16 15s-2-6-4-6-5 6-6.2 9.7z",
   },
+  {
+    id: "point",
+    label: "Point",
+    hint: "Click to pick a single location.",
+    icon: "M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z",
+  },
 ];
 
 const TRASH_ICON = "M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7z";
+const EDIT_ICON =
+  "M3 17.25V21h3.75L17.8 9.94l-3.75-3.75zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z";
+const EDIT_HINT = "Editing: drag the selection to move it, drag its corners to reshape it. Esc or Edit again to lock it.";
 
 function isBasemapId(b: unknown): b is BasemapId {
   return typeof b === "string" && b in BASEMAPS;
@@ -167,7 +176,17 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
     [],
   );
 
-  const hint = TOOLS.find((t) => t.id === tool)?.hint;
+  // Esc leaves edit mode and locks the selection again.
+  useEffect(() => {
+    if (tool !== "edit") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") selectionRef.current?.setTool("select");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tool]);
+
+  const hint = tool === "edit" ? EDIT_HINT : TOOLS.find((t) => t.id === tool)?.hint;
   void initialArea; // consumed once on mount via propsRef
 
   return (
@@ -193,6 +212,19 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
               </button>
             ))}
             <span className="mw-sep" />
+            <button
+              type="button"
+              className="mw-btn"
+              aria-pressed={tool === "edit"}
+              aria-label="Edit selection"
+              title={tool === "edit" ? "Lock selection (Esc)" : "Edit selection: move or reshape it"}
+              disabled={!area}
+              onClick={() => selectionRef.current?.setTool(tool === "edit" ? "select" : "edit")}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d={EDIT_ICON} />
+              </svg>
+            </button>
             <button
               type="button"
               className="mw-btn"
@@ -234,12 +266,15 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
           <div className="mw-status" aria-live="polite">
             {area ? (
               <span>
-                <strong>{area.properties.selectionId}</strong> · {formatArea(area.properties.areaKm2)}
+                <strong>{area.properties.selectionId}</strong> ·{" "}
+                {area.geometry.type === "Point"
+                  ? formatPoint(area.geometry.coordinates)
+                  : formatArea(area.properties.areaKm2)}
                 {area.properties.crossesAntimeridian ? " · crosses 180°" : ""}
                 {tool === "select" ? "" : ` — ${hint}`}
               </span>
             ) : (
-              <span>{tool === "select" ? "Pick a tool on the left to select an area." : hint}</span>
+              <span>{tool === "select" ? "Pick a tool on the left to select an area or a point." : hint}</span>
             )}
           </div>
         </>
@@ -253,6 +288,11 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
       )}
     </div>
   );
+}
+
+function formatPoint([lng, lat]: number[]): string {
+  const f = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(3)}° ${v >= 0 ? pos : neg}`;
+  return `${f(lat, "N", "S")}, ${f(lng, "E", "W")}`;
 }
 
 function formatArea(km2: number): string {

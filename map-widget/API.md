@@ -42,7 +42,7 @@ and ends up in `UserRequest.area`.
 
 | Method | What it does |
 |---|---|
-| `setResultData(data)` | Show data (§4); `undefined` clears it |
+| `setResultData(data)` | Show data (§4); `undefined` clears it. Same layers with new GeoJSON `data` (same `id`) are updated in place, which is smooth enough for animation |
 | `setLoading(bool)` | Show / hide "Loading data…" |
 | `getArea()` | Current area (§3) or `null` |
 | `clearArea()` | Remove the area |
@@ -99,14 +99,25 @@ cd map-widget && npm install && npm run build:embed
 
 | Field | Meaning |
 |---|---|
-| `geometry` | The drawn area. Closed polygon, one ring. |
+| `geometry` | The drawn area (closed polygon, one ring), or a `Point` from the point tool. |
 | `bbox` | `[west, south, east, north]`. Easiest input for most APIs. |
 | `selectionId` | Same id while the user edits the area; new id for a new area. |
-| `shape` | `"rectangle"`, `"polygon"` or `"freehand"`. |
-| `areaKm2` | Size of the area. |
+| `shape` | `"rectangle"`, `"polygon"`, `"freehand"` or `"point"`. |
+| `areaKm2` | Size of the area (`0` for a point). |
 | `crossesAntimeridian` | `true` if the area spans the ±180° line. Then `bbox` has `west > east`. |
 
-There is only ever one area at a time.
+A **point** looks like this (`bbox` has zero size, longitude is wrapped to ±180):
+
+```json
+{
+  "type": "Feature",
+  "bbox": [13.4, 52.52, 13.4, 52.52],
+  "properties": { "selectionId": "area-002", "shape": "point", "crossesAntimeridian": false, "areaKm2": 0 },
+  "geometry": { "type": "Point", "coordinates": [13.4, 52.52] }
+}
+```
+
+Check `geometry.type` before reading coordinates. There is only ever one area or point at a time.
 
 ---
 
@@ -121,6 +132,10 @@ Pick the type that matches your data.
 ```
 
 Optional `properties.color` per feature (e.g. `"#d7301f"`). Clicking a feature shows its properties.
+
+Optional on the layer: `outline: false` hides polygon borders (for gapless fields such as
+grid cells), `fillOpacity` sets the polygon fill opacity (default `0.45`), and `pointRadius`
+sets the radius of point markers in pixels (default grows with zoom from 3 to 9).
 
 To colour the whole selected area by one value (e.g. its mean trend), send the area itself:
 

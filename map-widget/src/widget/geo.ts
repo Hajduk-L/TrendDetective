@@ -101,6 +101,11 @@ export function normalizeRing(input: Position[]): NormalizedRing {
   return { ring, bbox, crossesAntimeridian };
 }
 
+/** Rounds a point, clamps its latitude to ±90 and wraps its longitude into [-180, 180]. */
+export function normalizePoint(p: Position): [number, number] {
+  return [round(wrapLng(p[0])), round(clamp(p[1], -90, 90))];
+}
+
 /** True if the ring is an axis-aligned lng/lat rectangle (4 corners + closing point). */
 export function isAxisAlignedRectangle(ring: Position[]): boolean {
   const pts = isClosed(ring) ? ring.slice(0, -1) : ring;
