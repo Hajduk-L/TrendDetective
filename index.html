@@ -274,6 +274,41 @@
             padding: 4px 8px;
             margin: 6px 0;
         }
+        .coverage-box {
+            font-size: 0.8rem;
+            color: #334155;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 6px 8px;
+            margin: 6px 0;
+        }
+        .coverage-box.coverage-muted { color: #64748b; }
+        .coverage-title { font-weight: 600; margin-bottom: 4px; }
+        .coverage-code { margin-top: 6px; }
+        .coverage-code-head { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
+        .coverage-code-head .muted { color: #64748b; }
+        .coverage-bars { display: block; width: 100%; height: 34px; margin-top: 3px; }
+        .coverage-bars rect.bar { fill: #0f766e; }
+        .coverage-bars rect.bar:hover { fill: #134e4a; }
+        .coverage-bars rect.request { fill: #fed7aa; }
+        .coverage-bars line.need { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+        .coverage-axis { display: flex; justify-content: space-between; color: #64748b; font-size: 0.72rem; }
+        .coverage-legend { color: #64748b; font-size: 0.72rem; margin-top: 2px; }
+        .coverage-legend .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
+        .coverage-stations { margin: 4px 0 0; padding-left: 16px; color: #475569; }
+        .coverage-use {
+            margin-top: 4px;
+            font: inherit;
+            font-size: 0.78rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid #0f766e;
+            background: #fff;
+            color: #0f766e;
+            cursor: pointer;
+        }
+        .coverage-use:hover { background: #0f766e; color: #fff; }
         .station-line {
             font-size: 0.8rem;
             color: #5b21b6;
@@ -327,15 +362,6 @@
             text-align: center;
             border: 1px dashed #cbd5e1;
             border-radius: 6px;
-        }
-        pre {
-            margin: 0;
-            background: #0f172a;
-            color: #e2e8f0;
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
-            font-size: 0.82rem;
-            overflow-x: auto;
         }
         /* City / region search on the map */
         .place-search {
@@ -489,8 +515,8 @@
         <div class="map-box" aria-label="TrendDetective World Map">
             <div id="map-widget"></div>
             <div class="place-search" role="search">
-                <input id="place-search" type="search" placeholder="Search city or region…"
-                    autocomplete="off" aria-label="Search city or region"
+                <input id="place-search" type="search" placeholder="Search city, region or lat, lon…"
+                    autocomplete="off" aria-label="Search city, region or coordinates"
                     role="combobox" aria-expanded="false" aria-controls="place-results" aria-autocomplete="list">
                 <span class="place-search-status" id="place-search-status" aria-hidden="true"></span>
                 <ul class="place-results" id="place-results" role="listbox" hidden></ul>
@@ -507,11 +533,6 @@
             <div id="visualization-container" class="viz-grid">
                 <div class="empty-message">Select topics, fill the timeintervall, and click "Apply" to run tasks and visualize results.</div>
             </div>
-        </div>
-
-        <div class="status-card">
-            <h3>Latest Python <code>UserRequest</code> State</h3>
-            <pre id="user-request-output">Fill timeintervall (DD.MM.YYYY), interval length (> 0), and select at least one topic, then click "Apply"...</pre>
         </div>
     </main>
 
@@ -571,7 +592,7 @@
             // near it). Areas can only be the predefined regions, so for states, counties,
             // countries etc. the map zooms there and shows the regions (Areas).
             const POINT_KINDS = new Set(['city', 'town', 'village', 'hamlet', 'suburb', 'quarter',
-                'neighbourhood', 'borough', 'city district', 'municipality', 'locality']);
+                'neighbourhood', 'borough', 'city district', 'municipality', 'locality', 'coordinates']);
 
             function placeArea(place) {
                 const properties = { placeName: place.name, placeLabel: place.label };
@@ -679,13 +700,7 @@
             });
         }
         window.getSelectedArea = () => selectedArea;
-        // Regions with enough stations for an area evaluation (the map's Areas button).
-        if (window.trendMap) {
-            fetch('/api/regions')
-                .then((r) => (r.ok ? r.json() : { regions: [] }))
-                .then((d) => window.trendMap.setRegions(d.regions || []))
-                .catch(() => {});
-        }
+        // The regions of the map's Areas button are loaded per selected topic (refreshRegions below).
     </script>
 
     <script>
@@ -693,6 +708,24 @@
 
         let allTopics = [];
         const selectedTopics = {};
+
+        // Regions with enough stations to evaluate an area for the selected topics (the
+        // map's Areas button). Reloaded on every topic change; only the newest answer is
+        // applied, so a slow reply for an earlier selection cannot overwrite it.
+        let regionsRequest = 0;
+        function refreshRegions() {
+            if (!window.trendMap) return;
+            const request = ++regionsRequest;
+            const topics = Object.keys(selectedTopics).filter((topic) => selectedTopics[topic]);
+            const query = topics.length ? `?topics=${encodeURIComponent(topics.join(','))}` : '';
+            fetch(`${API_BASE}/api/regions${query}`)
+                .then((r) => (r.ok ? r.json() : { regions: [] }))
+                .then((d) => {
+                    if (request === regionsRequest) window.trendMap.setRegions(d.regions || []);
+                })
+                .catch(() => {});
+        }
+        refreshRegions();
 
         let allTools = [];
         const selectedTools = {};
@@ -860,6 +893,7 @@
                 checkbox.addEventListener('change', (event) => {
                     selectedTopics[topic] = event.target.checked;
                     updateApplyButtonState();
+                    refreshRegions();
                 });
 
                 const span = document.createElement('span');
@@ -1086,7 +1120,9 @@
             return html + '</div>';
         }
 
-        function renderVisualization(visualization) {
+        // opts (progressive 'Apply'): partial = more topics are coming (skip the coverage lookups
+        // until the end), pending = topics not loaded yet, failed = why they will not load.
+        function renderVisualization(visualization, opts = {}) {
             const container = document.getElementById('visualization-container');
             if (!visualization || !visualization.topics) {
                 container.innerHTML = '<div class="empty-message">No visualization data available.</div>';
@@ -1146,9 +1182,14 @@
                 const stationHtml = st
                     ? `<div class="station-line">📍 Measured at ${escapeText(st.name || st.id || 'station')}`
                       + `${st.id ? ` (${escapeText(st.id)})` : ''}: ${Number(st.latitude).toFixed(4)}, ${Number(st.longitude).toFixed(4)}`
-                      + ` · ${st.distance_km} km from the selected point</div>`
+                      + ` · ${st.distance_km} km from the selected point`
+                      + `${st.source ? ` · source: ${escapeText(st.source)}` : ''}</div>`
                     : info.region && !info.error
                     ?`<div class="station-line">▦ Area mean of ${info.station_count ?? 'the'} stations in ${escapeText(info.region.name)}`
+                      + (info.sources && Object.keys(info.sources).length
+                          ? ` (${Object.entries(info.sources).map(([name, n]) => `${escapeText(name)} ${n}`).join(', ')})`
+                          : '')
+                      + (info.duplicates_removed ? ` · ${info.duplicates_removed} duplicate station(s) from other databases removed` : '')
                       + ' · each dot on the map is one station, coloured by its own trend</div>'
                     : '';
                 const trendLine = lr ? lr.trend_line : null;
@@ -1170,15 +1211,144 @@
                 host._chartData = { values, trendLine, labels: info.labels, unit: info.unit };
                 if (!hasValues) {
                     host.innerHTML = buildSvgChart([], null, [], null);
+                    if (!opts.partial) loadCoverage(card, topic);
                 } else {
                     chartHosts.push(host);
                 }
+            }
+            for (const topic of opts.pending || []) {
+                const card = document.createElement('div');
+                card.className = 'topic-viz-card';
+                card.innerHTML = `<div class="topic-viz-header"><span>${escapeText(topic)}</span></div>`
+                    + (opts.failed
+                        ? `<div class="topic-error">⚠ Not loaded: ${escapeText(opts.failed)}</div>`
+                        : '<div class="empty-message">Still loading…</div>');
+                container.appendChild(card);
             }
             // Draw only after every card is in the grid, so each chart gets its final width.
             for (const host of chartHosts) {
                 drawChartInto(host);
                 if (chartResizeObserver) chartResizeObserver.observe(host);
             }
+        }
+
+        // ---- When do the stations here have data? (shown on cards without values) ----
+        let lastRequestContext = null;
+
+        function isoToDdMmYyyy(iso) {
+            const [y, m, d] = String(iso).slice(0, 10).split('-');
+            return `${d}.${m}.${y}`;
+        }
+
+        function yearOf(iso) {
+            return Number(String(iso).slice(0, 4));
+        }
+
+        async function loadCoverage(card, topic) {
+            const ctx = lastRequestContext;
+            if (!ctx || !ctx.area) return;
+            const box = document.createElement('div');
+            box.className = 'coverage-box coverage-muted';
+            box.textContent = 'Looking up when the stations here have data…';
+            card.querySelector('.badge-row').before(box);
+            try {
+                const res = await fetch(`${API_BASE}/api/coverage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ area: ctx.area, topic, timeintervall: ctx.timeintervall }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                renderCoverage(box, data);
+            } catch (error) {
+                box.textContent = `Could not look up when the stations here have data: ${error.message}`;
+            }
+        }
+
+        // One bar per year: how many stations report the code; the requested time frame is shaded.
+        function buildCoverageBars(code, requested, needed) {
+            let first = code.years[0];
+            let last = code.years[code.years.length - 1];
+            const req = requested ? [yearOf(requested[0]), yearOf(requested[1])] : null;
+            if (req) {
+                first = Math.min(first, req[0]);
+                last = Math.max(last, req[1]);
+            }
+            const span = last - first + 1;
+            const maxCount = Math.max(needed, ...code.counts);
+            const h = 30;
+            const scale = (n) => (n / maxCount) * (h - 2);
+            let svg = `<svg class="coverage-bars" viewBox="0 0 ${span} ${h}" preserveAspectRatio="none" role="img"`
+                + ` aria-label="Stations reporting ${escapeText(code.code)} per year, ${first} to ${last}">`;
+            if (req) {
+                svg += `<rect class="request" x="${req[0] - first}" y="0" width="${req[1] - req[0] + 1}" height="${h}"><title>Your time frame: ${req[0]}–${req[1]}</title></rect>`;
+            }
+            const gap = span > 60 ? 0 : 0.15;
+            code.years.forEach((year, i) => {
+                const n = code.counts[i];
+                if (!n) return;
+                const bh = Math.max(scale(n), 1.5);
+                svg += `<rect class="bar" x="${year - first + gap / 2}" y="${h - bh}" width="${1 - gap}" height="${bh}">`
+                    + `<title>${year}: ${n} station${n === 1 ? '' : 's'}</title></rect>`;
+            });
+            if (needed > 1) {
+                const y = h - scale(needed);
+                svg += `<line class="need" x1="0" x2="${span}" y1="${y}" y2="${y}"><title>${needed} stations needed for an area</title></line>`;
+            }
+            svg += '</svg>';
+            return svg + `<div class="coverage-axis"><span>${first}</span><span>${last}</span></div>`;
+        }
+
+        function renderCoverage(box, data) {
+            box.classList.remove('coverage-muted');
+            const where = data.scope === 'region'
+                ? `in ${escapeText(data.place)}`
+                : `within about ${data.radius_km} km`;
+            if (!data.codes || data.codes.length === 0) {
+                box.classList.add('coverage-muted');
+                box.textContent = data.scope === 'region'
+                    ? `No station in ${data.place} has ever reported this topic.`
+                    : `No station within about ${data.radius_km} km has ever reported this topic. Try another place or topic.`;
+                return;
+            }
+            const reqText = data.requested
+                ? `${yearOf(data.requested[0])}–${yearOf(data.requested[1])}`
+                : null;
+            let html = `<div class="coverage-title">When is there data? Stations ${where}`
+                + `${data.scope === 'region' ? ` (an area needs ${data.needed})` : ''}</div>`;
+            data.codes.forEach((code, index) => {
+                const label = code.name ? `${code.name} (${code.code})` : code.code;
+                const inRange = code.in_range == null || !reqText
+                    ? ''
+                    : ` · <span class="muted">${code.in_range} cover ${reqText}</span>`;
+                html += `<div class="coverage-code">`
+                    + `<div class="coverage-code-head"><strong>${escapeText(label)}</strong>`
+                    + `<span>${yearOf(code.first)}–${yearOf(code.last)} · ${code.station_count} station${code.station_count === 1 ? '' : 's'}${inRange}</span></div>`
+                    + buildCoverageBars(code, data.requested, data.needed);
+                if (index === 0 && code.stations.length) {
+                    html += '<ul class="coverage-stations">' + code.stations.slice(0, 3).map((s) =>
+                        `<li>${escapeText(s.name)}: ${yearOf(s.first)}–${yearOf(s.last)}`
+                        + `${s.distance_km != null ? ` · ${s.distance_km} km` : ''}</li>`).join('') + '</ul>';
+                }
+                if (code.suggestion) {
+                    const [a, b] = code.suggestion;
+                    html += `<button type="button" class="coverage-use" data-start="${isoToDdMmYyyy(a)}" data-end="${isoToDdMmYyyy(b)}">`
+                        + `Use ${isoToDdMmYyyy(a)} – ${isoToDdMmYyyy(b)}</button>`;
+                }
+                html += '</div>';
+            });
+            html += `<div class="coverage-legend"><span class="swatch" style="background:#0f766e"></span>stations reporting per year`
+                + `${reqText ? ` &nbsp;<span class="swatch" style="background:#fed7aa"></span>your time frame` : ''}`
+                + `${data.scope === 'region' ? ' &nbsp;┄ stations needed' : ''}</div>`;
+            box.innerHTML = html;
+            box.querySelectorAll('.coverage-use').forEach((button) => {
+                button.addEventListener('click', () => {
+                    timeintervallStartInput.value = button.dataset.start;
+                    timeintervallEndInput.value = button.dataset.end;
+                    updateApplyButtonState();
+                    timeintervallStartInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
+            });
         }
 
         // Zoom so the selected area and every measuring station are visible together;
@@ -1213,15 +1383,38 @@
             return div.innerHTML;
         }
 
-        function formatArea(area) {
-            if (!area) {
-                return 'None';
+        // Reads an NDJSON response body line by line, calling onMessage as each line arrives.
+        async function readNdjson(body, onMessage) {
+            const reader = body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            try {
+                for (;;) {
+                    const { value, done } = await reader.read();
+                    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+                    let nl;
+                    while ((nl = buffer.indexOf('\n')) >= 0) {
+                        const line = buffer.slice(0, nl).trim();
+                        buffer = buffer.slice(nl + 1);
+                        if (line) onMessage(JSON.parse(line));
+                    }
+                    if (done) break;
+                }
+                if (buffer.trim()) onMessage(JSON.parse(buffer));
+            } catch (error) {
+                reader.cancel().catch(() => {});
+                throw error;
             }
-            const p = area.properties || {};
-            return `${p.selectionId || 'area'} (${p.shape || 'Polygon'}, bbox=${JSON.stringify(area.bbox)})`;
         }
 
+        let applyRun = null; // AbortController of the 'Apply' whose results are coming in
+
         async function triggerButton(buttonId) {
+            if (applyRun) applyRun.abort();
+            const run = new AbortController();
+            applyRun = run;
+            let shown = null; // result drawn so far, kept if a later part fails
+            let pending = [];
             try {
                 if (allTools.length === 0) {
                     await loadTools();
@@ -1249,38 +1442,59 @@
                     ],
                     area: window.getSelectedArea ? window.getSelectedArea() : null,
                 };
+                // The coverage lookup of empty cards must use what this request was made with.
+                lastRequestContext = { area: payload.area, timeintervall: payload.timeintervall };
 
-                const postRes = await fetch(`${API_BASE}/api/buttons/${encodeURIComponent(buttonId)}`, {
+                // Streamed answer: each topic is drawn as soon as it is evaluated (app.py _stream_apply).
+                const res = await fetch(`${API_BASE}/api/buttons/${encodeURIComponent(buttonId)}/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
+                    signal: run.signal,
                 });
 
-                if (!postRes.ok) {
-                    throw new Error(`HTTP ${postRes.status}`);
+                if (!res.ok || !res.body) {
+                    throw new Error(`HTTP ${res.status}`);
                 }
 
-                const res = await fetch(`${API_BASE}/api/user-request`);
-                const data = await res.json();
-                const ur = data.user_request;
-                const [val, unit] = ur.interval_length;
-                const formattedFloat = Number.isInteger(val) ? `${val}.0` : String(val);
-                const [d1, d2] = ur.timeintervall_repr;
-
-                // Show only selected topics in summary or full dict
-                document.getElementById('user-request-output').textContent =
-                    `UserRequest(\n  topics=${JSON.stringify(ur.topics, null, 2)},\n  tools=${JSON.stringify(ur.tools, null, 2)},\n  timeintervall=(${d1}, ${d2}),\n  interval_length=(${formattedFloat}, ${JSON.stringify(unit)}),\n  area=${formatArea(ur.area)}\n)`;
-
-                renderVisualization(data.visualization);
-                if (window.TrendPlots) window.TrendPlots.setData(data.visualization, ur);
+                let ur = null;
+                let finished = false;
+                await readNdjson(res.body, (msg) => {
+                    if (run !== applyRun) return;
+                    if (msg.type === 'request') {
+                        ur = msg.user_request;
+                        pending = Array.isArray(msg.topics) ? msg.topics.slice() : [];
+                    } else if (msg.type === 'partial' || msg.type === 'done') {
+                        finished = msg.type === 'done';
+                        pending = finished ? [] : pending.filter((t) => t !== msg.topic);
+                        shown = msg.visualization;
+                        renderVisualization(shown, { partial: !finished, pending });
+                        if (window.TrendPlots) window.TrendPlots.setData(shown, ur);
+                    } else if (msg.type === 'error') {
+                        throw new Error(msg.error);
+                    }
+                });
+                if (!finished && run === applyRun) {
+                    throw new Error('The connection closed before all topics were loaded.');
+                }
             } catch (error) {
-                document.getElementById('user-request-output').textContent =
-                    'Error: Could not submit UserRequest. Ensure at least one topic, valid DD.MM.YYYY dates, and an interval length > 0 are provided.';
-            } finally {
-                if (window.trendMap) {
-                    window.trendMap.setLoading(false);
+                if (run !== applyRun) return; // replaced by a newer 'Apply'
+                const container = document.getElementById('visualization-container');
+                if (shown) {
+                    // Keep what is already drawn; only the missing topics show the error.
+                    renderVisualization(shown, { pending, failed: error.message || String(error) });
+                } else if (container) {
+                    container.innerHTML =
+                        '<div class="empty-message">Error: Could not submit the request. Ensure at least one topic, valid DD.MM.YYYY dates, and an interval length &gt; 0 are provided.</div>';
                 }
-                if (window.TrendPlots) window.TrendPlots.setLoading(false);
+            } finally {
+                if (run === applyRun) {
+                    applyRun = null;
+                    if (window.trendMap) {
+                        window.trendMap.setLoading(false);
+                    }
+                    if (window.TrendPlots) window.TrendPlots.setLoading(false);
+                }
             }
         }
 

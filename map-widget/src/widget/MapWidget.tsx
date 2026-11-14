@@ -196,6 +196,7 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
   useEffect(() => {
     const list = resultData == null ? [] : Array.isArray(resultData) ? resultData : [resultData];
     rendererRef.current?.setData(list);
+    regionLayerRef.current?.setSelectedHidden(list.some((d) => d.id === "area-result"));
   }, [resultData]);
 
   // ---- Imperative API ----

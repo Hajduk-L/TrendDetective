@@ -37,6 +37,8 @@ export class RegionLayer {
   private regions: Region[] = [];
   private visible = false;
   private selectedId: string | null = null;
+  /** The area result outlines the stations used, so the selected box is no longer drawn. */
+  private selectedHidden = false;
   private ready = false;
   private readonly hover = new Popup({ closeButton: false, closeOnClick: false, className: "mw-region-tip", offset: 10 });
 
@@ -60,7 +62,14 @@ export class RegionLayer {
   }
 
   setSelected(id: string | null): void {
+    if (id !== this.selectedId) this.selectedHidden = false;
     this.selectedId = id;
+    this.render();
+  }
+
+  /** Hides the selected region's box while its area result is on the map (shown again on a new pick). */
+  setSelectedHidden(hidden: boolean): void {
+    this.selectedHidden = hidden;
     this.render();
   }
 
@@ -87,7 +96,7 @@ export class RegionLayer {
   }
 
   private shown(): Region[] {
-    return this.regions.filter((r) => this.visible || r.id === this.selectedId);
+    return this.regions.filter((r) => this.visible || (r.id === this.selectedId && !this.selectedHidden));
   }
 
   private render(): void {

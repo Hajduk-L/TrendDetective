@@ -1,17 +1,21 @@
 @startuml classes
 !include style.iuml
-title TrendDetective (main @ a6e430f) — Classes and functions per work area
+title TrendDetective (data-expansion @ 524818c) — Classes and functions per work area
 hide empty members
-skinparam nodesep 40
-skinparam ranksep 60
+skinparam nodesep 35
+skinparam ranksep 55
 
 package "① MAP WIDGET  (TypeScript, map-widget/src)" as P1 #e3eefc;line:2f6fb3 {
   class "embed.tsx" as EMB <<module>> {
-    +mount(element, options): MapController
+    +mount(element, options: MountOptions): MapController
+    -Host (React): resultData · loading · regions
   }
   interface MapController {
     +setResultData(data: MapData | MapData[] | undefined)
     +setLoading(loading: boolean)
+    +setRegions(regions: Region[])
+    +showRegions(visible: boolean)
+    +setArea(feature: Feature<Point>): boolean
     +getArea(): AreaFeature | null
     +clearArea()
     +fitToArea()
@@ -20,93 +24,112 @@ package "① MAP WIDGET  (TypeScript, map-widget/src)" as P1 #e3eefc;line:2f6fb3
   }
   class MapWidget <<React component>> {
     props: MapWidgetProps
-    ref: MapWidgetHandle
+    ref: MapWidgetHandle (+ setTool)
+    state: tool · area · showRegions · basemap · projection
+    -regionFeature(region): AreaFeature
   }
   class MapEngine {
     +map: maplibregl.Map
+    +onStyleReady(fn) / onBeforeStyleChange(fn)
     +setStyle(style)
-    +setProjection(p)
-    +fitToBBox(bbox)
+    +setProjection(p: "globe" | "mercator")
+    +fitToBBox(bbox, opts)
   }
   class SelectionManager {
+    tools: select · edit · point (Terra Draw)
+    +attach(map) / detach()
     +setTool(tool: DrawTool)
     +getArea(): AreaFeature | null
-    +setArea(feature): boolean
+    +setArea(point): boolean
     +clear(notify)
+  }
+  class RegionLayer {
+    +setRegions(regions: Region[])
+    +setVisible(visible)
+    +setSelected(id | null)
+    +find(id): Region
+    +reapply() / suspend() / destroy()
+    onPick(region) → MapWidget
   }
   class DataRenderer {
     +setData(data: MapData[])
-    +reapply() / suspend()
+    +reapply() / suspend() / destroy()
+    popups: properties table
   }
-  class "geo.ts" as GEO <<module>> {
-    +normalizeRing(ring)
-    +normalizePoint(p)
-    +geodesicAreaKm2(ring)
-    +splitAtAntimeridian(feature)
+  class "geo.ts · basemaps.ts" as GEO <<module>> {
+    +geodesicAreaKm2(ring) · wrapLng(lng)
+    +normalizePoint(p) · splitAtAntimeridian(f)
+    +BASEMAPS · resolveBasemap()
   }
   EMB ..> MapController : returns
   EMB --> MapWidget : renders
   MapWidget *-- MapEngine
   MapWidget *-- SelectionManager
+  MapWidget *-- RegionLayer
   MapWidget *-- DataRenderer
+  MapWidget ..> GEO
   SelectionManager ..> GEO
 }
 
-package "② USER INTERFACE & WEB SERVER  (index.html, app.py, interface.py)" as P2 #e2f3e6;line:2e8b57 {
+package "② USER INTERFACE & WEB SERVER  (index.html, static/plots, app.py, interface.py, places.py)" as P2 #e2f3e6;line:2e8b57 {
   class "index.html script" as JS <<JavaScript>> {
-    +loadTopics() / renderTopics()
-    +loadTools() / renderTools()
-    +parseDdMmYyyy(value)
-    +triggerButton(buttonId)
+    +place search: search() · choose() · placeArea()
+    +loadTopics() · renderTopics() · loadTools()
+    +parseDdMmYyyy() · updateApplyButtonState()
+    +triggerButton("apply")
     +renderVisualization(visualization)
-    +buildSvgChart(values, trendLine)
+    +buildSvgChart(values, trendLine, labels, unit, width)
     +fitMapToSelectionAndStations(mapLayers)
-    +escapeText(value)
-    +formatArea(area)
+    +★ loadCoverage() · renderCoverage() · buildCoverageBars()
+  }
+  class "plots.js  TrendPlots" as PL <<JavaScript>> {
+    +mount(el) · setData(visualization, user_request)
+    +setLoading(bool)
+    POST /api/analyze per time frame / per year
   }
   class WebAppHandler {
-    +do_GET(): /api/topics, /api/tools,\n/api/buttons, /api/user-request
-    +do_POST(): /api/buttons/<id>
+    +do_GET(): /api/topics · /api/tools · /api/regions\n/api/places?q · /api/buttons · /api/user-request
+    +do_POST(): /api/buttons/<id> · /api/analyze · ★ /api/coverage
+    -_handle_analyze() · -★_handle_coverage()
     -_send_json(status_code, data)
   }
   class AppInterface <<dataclass>> {
-    +topic_states: dict[str, bool]
-    +tool_states: dict[str, bool]
+    +topic_states · tool_states: dict[str, bool]
     +timeintervall: tuple[date, date] | None
     +interval_length: tuple[float, str]
     +area: dict | None
-    +last_user_request: UserRequest | None
-    +last_task_results: dict | None
-    +get_sorted_topics(): list[str]
-    +get_sorted_tools(): list[str]
+    +last_user_request · last_task_results
+    +get_sorted_topics() · get_sorted_tools()
     +set_request_inputs(states, tools, timeintervall, interval_length, area)
     +trigger_button(button_id)
-    +on_apply()
+    +on_apply(): region → area flow, else point flow
   }
   class UserRequest <<dataclass>> {
-    +topics: dict[str, bool]
-    +tools: dict[str, bool]
+    +topics · tools: dict[str, bool]
     +timeintervall: tuple[date, date]
     +interval_length: tuple[float, str]
     +area: dict | None
     +to_dict(): dict
   }
   class Button <<dataclass>> {
-    +button_id: str
-    +label: str
-    +trigger()
+    +button_id · label
+    +trigger() · to_metadata()
   }
-  class "interface.py" as IFM <<module>> {
-    +parse_dd_mm_yyyy(date_str): date
+  class "places.py" as PLC <<module>> {
+    +search_places(query, limit=6): list[dict]
+    +parse_coordinates(query): (lat, lon) | None
+    -_coordinate_place(lat, lon) · _to_place(item)
   }
   JS ..> WebAppHandler : HTTP JSON
-  WebAppHandler ..> AppInterface : get_interface()
+  PL ..> WebAppHandler : /api/analyze
+  JS --> PL : setData()
+  WebAppHandler ..> AppInterface : get_interface() (hot reload)
+  WebAppHandler ..> PLC
   AppInterface *-- Button
   AppInterface --> UserRequest : creates
-  AppInterface ..> IFM
 }
 
-package "③ DATA MANIPULATION & CALCULATIONS  (src/task.py)" as P3 #fdeedd;line:c46a12 {
+package "③ DATA MANIPULATION & CALCULATIONS  (src/task.py, area_analysis.py, plot_analysis.py)" as P3 #fdeedd;line:c46a12 {
   abstract class Task {
     {abstract} +process(X: Tensor, y: Tensor)
   }
@@ -116,91 +139,155 @@ package "③ DATA MANIPULATION & CALCULATIONS  (src/task.py)" as P3 #fdeedd;line
     +analyze_trend(time, values, confidence_level): TrendAnalysis
   }
   class TTest {
-    +process(X, y): (t_statistic, p_value)
-    early half vs late half
+    +process(X, y): (t, p)  late vs early half
   }
   class MannKendall {
-    +process(X, y): MannKendallResult
+    +process(X, y): (S, p)
   }
-  class TrendAnalysis <<frozen dataclass>> #fff6e6;line:c46a12;line.dashed {
-    +slope, intercept, r_value: float
-    +t_statistic, p_value, standard_error: float
-    +confidence_interval: tuple[float, float]
-    +observations: int
-    G8: computed by no caller
+  class TrendAnalysis <<frozen dataclass>> {
+    slope · intercept · r_value · t_statistic
+    p_value · standard_error · confidence_interval · observations
   }
   class MannKendallResult <<frozen dataclass>> {
-    +s_statistic: int
-    +z_statistic, p_value, tau, variance: float
-    +trend: str
-    +observations: int
-    +alpha: float
+    s_statistic · variance · z_statistic · p_value
+    tau · trend · observations · alpha
   }
   class "task.py" as TM <<module>> {
-    +AVAILABLE_TOOLS: dict[str, type[Task]]
-    +INTERVAL_DAYS: {Day: 1, Month: 30.44, Year: 365.24}
+    +AVAILABLE_TOOLS · INTERVAL_DAYS · VARIABLE_NAMES
     +DEFAULT_COORDINATE = (38.8951, -77.0364)
     +get_available_tools(): list[str]
     +process_user_request(UserRequest): dict
     +mann_kendall_test(time, values, alpha): MannKendallResult
+    +split_by_variable(topic, records)
+    +variable_label(topic, code)
     -_extract_coordinates(area): (lat, lon)
-    -_load_records_for_topic(topic, lat, lon, start, end): list[dict]
+    -_load_records_for_topic(topic, lat, lon, start, end)
     -_bin_records(records, start, end, interval): (labels, values)
-    -_station_from_records(records, lat, lon): dict | None
-    -_distance_km(...) / _safe_float(...)
+    -_parse_observation_period(date): YYYY-MM-DD | YYYY-MM | YYYY
+    -_station_from_records(records, lat, lon)
+  }
+  class Region <<frozen dataclass>> {
+    +id · name · bbox
+    +temperature_stations · precipitation_stations
+    +to_dict(): {id, name, bbox, note}
+  }
+  class "area_analysis.py" as AAM <<module>> {
+    +REGIONS (22) · MIN_STATIONS=3 · MAX_STATIONS=40 · MIN_COVERAGE=0.8
+    +list_regions() · region_for_area(area): Region | None
+    +process_region_request(UserRequest, Region): dict
+    -_gather_stations() → ★ _other_source_stations() · deduplicate
+    -_find_stations(NOAAClient, region, topic): list[Station]
+    -_fetch_all_records() → _fetch_records() (NOAA) · ★ client.fetch()
+    -_evaluate_topic() · _evaluate_variable()
+    -_area_series(station_bins): anomaly average
+  }
+  class "plot_analysis.py" as PAM <<module>> {
+    +analyze_series(x, values, tools): dict
+    +analyze_groups(groups, tools): dict
+    +run_tools(x, values, tools): dict
+    AnalysisError(ValueError)
   }
   Task <|-- LinearRegression
   Task <|-- TTest
   Task <|-- MannKendall
-  LinearRegression ..> TrendAnalysis : analyze_trend()
-  MannKendall ..> MannKendallResult
-  TM --> Task : AVAILABLE_TOOLS
-  TM ..> MannKendallResult : mann_kendall_test()
+  LinearRegression ..> TrendAnalysis
+  TM --> Task : AVAILABLE_TOOLS (names only)
+  TM ..> MannKendallResult
+  AAM *-- Region
+  AAM ..> TM : _bin_records · split_by_variable
+  AAM ..> PAM : run_tools
+  PAM ..> LinearRegression : analyze_trend
+  PAM ..> TTest
+  PAM ..> TM : mann_kendall_test
 }
 
-package "④ API WRAPPER  (api_wrapper.py, noaa_api.py, noaa_test.py)" as P4 #eee6fb;line:7048b8 {
+package "④ API WRAPPER & DATA SOURCES  (api_wrapper.py, noaa_api.py, ★ station_sources.py, ★ *_api.py, ★ station_coverage.py)" as P4 #eee6fb;line:7048b8 {
   class "api_wrapper" as AWM <<module>> {
-    +fetch_data_single_topic_single_coordinate(request, provider, output_dir): list[Iterator[dict]]
+    +_PROVIDERS: noaa · ★ dwd · eccc · fmi · openmeteo · polarwatch
+    +★ PROVIDER_NAMES
     +get_all_topics_list(): list[str]
-    -_PROVIDERS: {"noaa": NOAAClient}
+    +★ providers_for(topic, lat, lon): list[str]
+    +★ fetch_data_single_topic_nearest_station(request): list[list[dict]]
+    +fetch_data_single_topic_single_coordinate(request, provider): list[Iterator[dict]]
   }
   interface PointDataProvider <<Protocol>> {
-    +list_topics(): Sequence[tuple[str, object]]
+    +list_topics()
     +fetch_point_data(request, output_dir): list[Iterator[dict]]
   }
   class PointDataRequest <<frozen dataclass>> {
-    +latitude: float
-    +longitude: float
+    +latitude · longitude: float
     +topic: str
-    +start_date: date
-    +end_date: date
+    +start_date · end_date: date
   }
   class NOAAClient {
-    +list_topics()
-    +fetch_point_data(request, output_dir): list[Iterator[dict]]
-    -{static} _iter_measurements(path, description): Iterator[dict]
-    +search_radii_degrees: (0.05, 0.25, 0.5, 1, 2)
-    -_find_station(request, topic): (station_id, types)
-    -_select_nearest_station(...)
+    +TOPICS: 42 NOAATopic
+    +list_topics() · fetch_point_data(request, output_dir)
+    -_find_station(request, topic) · _rank_stations()
+    -_get_json(url, params) · _month_chunks()
+    -{static} _iter_measurements(path, code)
   }
   class NOAATopic <<frozen dataclass>> {
-    +label: str
-    +dataset: str
-    +data_types: tuple[str, ...]
-    +description: str
-    G12: label/description not exposed
+    +label · dataset · data_types · description
+  }
+  abstract class "★ StationSource" as SSB {
+    SOURCE · PRIORITY · COVERAGE · TOPICS
+    +list_topics() · covers(lat, lon) · covers_box(bbox)
+    {abstract} +stations(bbox, topic, start, end): list[Station]
+    {abstract} +fetch(stations, topic, start, end): list[dict]
+    +fetch_point_data(request, output_dir): nearest ≤ 150 km
+  }
+  class "★ DWDClient" as DWD
+  class "★ ECCCClient" as ECCC
+  class "★ FMIClient" as FMI
+  class "★ OpenMeteoClient" as OM {
+    ERA5 3×3 grid · exact point
+  }
+  class "★ PolarWatchIceClient" as PW {
+    VIIRS ice thickness · point only
+  }
+  class "★ Station" as ST <<frozen dataclass>> {
+    source · id · name · latitude · longitude · elevation
+    first_date · last_date · ids · coverage · priority
+    +coverage_of(start, end) · record(day, value, code, unit)
+  }
+  class "★ station_sources.py" as SSM <<module>> {
+    +deduplicate(stations): (kept, [(dropped, kept)])
+    +same_station(a, b) · ghcnd_identity_keys(id)
+    +http_get · cached_download · save_and_iterate
+    SourceError(RuntimeError)
+  }
+  class "★ station_coverage.py" as COV <<module>> {
+    +data_coverage(area, result_key, timeintervall): dict
+    -_search(dataset, bbox) (lru_cache) · _suggest()
+    CoverageError(ValueError)
   }
   AWM ..> PointDataProvider : _PROVIDERS
   PointDataProvider <|.. NOAAClient
+  PointDataProvider <|.. SSB
+  SSB <|-- DWD
+  SSB <|-- ECCC
+  SSB <|-- FMI
+  SSB <|-- OM
+  SSB <|-- PW
+  SSB ..> ST
+  SSB ..> SSM
   AWM ..> PointDataRequest
-  NOAAClient ..> NOAATopic : TOPICS (44)
+  NOAAClient ..> NOAATopic
+  COV ..> NOAAClient : _get_json · TOPICS
 }
 
 JS -[#2f6fb3,bold]-> EMB : mount()
-SelectionManager -[#2f6fb3,bold]-> JS : onAreaSelected(AreaFeature)
-JS -[#2f6fb3,bold]-> MapController : setResultData(map_layers)\nfitToBounds(bbox)
+MapWidget -[#2f6fb3,bold]-> JS : onAreaSelected(AreaFeature)
+JS -[#2f6fb3,bold]-> MapController : setRegions · setArea · setResultData · fitToBounds
 AppInterface -[#2f6fb3,bold]-> AWM : get_all_topics_list()
 AppInterface -[#2f6fb3,bold]-> TM : get_available_tools()\nprocess_user_request()
-TM -[#2f6fb3,bold]-> AWM : fetch_data_single_topic_single_coordinate()
-TM -[#2f6fb3,bold]-> PointDataRequest : builds one per topic
+AppInterface -[#2f6fb3,bold]-> AAM : region_for_area()\nprocess_region_request()
+WebAppHandler -[#2f6fb3,bold]-> PAM : analyze_series / analyze_groups
+WebAppHandler -[#2f6fb3,bold]-> AAM : list_regions()
+WebAppHandler -[#2f6fb3,bold]-> COV : ★ data_coverage()
+TM -[#2f6fb3,bold]-> AWM : ★ fetch_data_single_topic_nearest_station()
+AAM -[#2f6fb3,bold]-> NOAAClient : _get_json · SEARCH_URL / BASE_URL
+AAM -[#2f6fb3,bold]-> AWM : ★ providers_for · _PROVIDERS
+AAM -[#2f6fb3,bold]-> SSM : ★ deduplicate
+COV -[#2f6fb3,bold]-> AAM : region_for_area · MIN_COVERAGE
 @enduml

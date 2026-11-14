@@ -7,15 +7,23 @@ station in the region is fetched, binned like a point request and analysed
 on its own (one coloured dot per station on the map); the region's series is
 the mean of all stations (see :func:`_area_series`).
 
-The regions were chosen with a station count from the NCEI Search Service
-for 2015–2024 (stations whose record covers the whole period): every region
-has at least 12 temperature and 14 precipitation stations. Wind and the other
+The regions were chosen with a station count for 2015–2024 (stations whose
+record covers at least :data:`MIN_COVERAGE` of the period, all databases
+together, duplicates removed): every region has at least 7 temperature and
+10 precipitation stations. Wind and the other
 optional daily codes are sparse everywhere, so a topic is only evaluated
 when the region has at least :data:`MIN_STATIONS` stations for it.
 
-The existing code is used without changes: NOAA requests go through
-:class:`noaa_api.NOAAClient`, binning through :mod:`src.task`, and the tools
-through :mod:`plot_analysis`.
+Stations come from every database offering the topic in the region
+(NOAA everywhere, DWD in Germany, ECCC in Canada, FMI in Finland, ERA5 grid
+points from Open-Meteo for the ``*_era5`` topics). Databases often publish the
+same station (GHCN-Daily re-publishes many national stations), so the merged
+list is cleaned with :func:`station_sources.deduplicate` before the mean is
+computed: copies are recognised by WMO number, ECCC climate id and GHCN id,
+and, for stations without a shared id, by standing at the same place.
+
+NOAA requests go through :class:`noaa_api.NOAAClient`, binning through
+:mod:`src.task`, and the tools through :mod:`plot_analysis`.
 """
 
 from __future__ import annotations
@@ -26,15 +34,18 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
+import api_wrapper
 import noaa_api
 import plot_analysis
+import station_sources
 from src import task
+from station_sources import Station
 
 MIN_STATIONS: int = 3
 """Fewest stations with data for a topic before a region is evaluated."""
 
-MAX_STATIONS: int = 30
-"""Most stations fetched per topic and region; the longest records win."""
+MAX_STATIONS: int = 40
+"""Most stations fetched per topic and region (after removing duplicates); the longest records win."""
 
 STATIONS_PER_REQUEST: int = 10
 """Stations combined in one NOAA data request, so no response gets too large."""
@@ -54,6 +65,9 @@ Hourly data is 24 times larger and marine platforms move, so those topics
 stay point-only.
 """
 
+NOAA_PRIORITY: int = 1
+"""NOAA re-publishes national stations; the national original (priority 0) wins a tie."""
+
 
 @dataclass(frozen=True)
 class Region:
@@ -64,6 +78,8 @@ class Region:
     :param bbox: ``(west, south, east, north)`` in degrees.
     :param temperature_stations: Daily temperature stations covering 2015–2024.
     :param precipitation_stations: Daily precipitation stations covering 2015–2024.
+
+    Both counts are of all databases together, after removing duplicates.
     """
 
     id: str
@@ -80,7 +96,7 @@ class Region:
             "bbox": list(self.bbox),
             "note": (
                 f"{self.temperature_stations} temperature / "
-                f"{self.precipitation_stations} precipitation stations (2015–2024)"
+                f"{self.precipitation_stations} precipitation stations (2015–2024, all sources)"
             ),
         }
 
@@ -100,10 +116,14 @@ REGIONS: tuple[Region, ...] = (
     Region("san-francisco-bay", "San Francisco Bay", (-122.8, 37.2, -121.8, 38.2), 37, 65),
     Region("seattle", "Seattle–Puget Sound", (-122.8, 47.0, -121.8, 48.0), 18, 71),
     Region("netherlands", "Netherlands", (4.0, 51.5, 6.5, 53.0), 19, 191),
-    Region("berlin-brandenburg", "Berlin–Brandenburg", (12.5, 52.0, 14.5, 53.0), 14, 14),
-    Region("bavaria", "Bavaria", (10.5, 47.5, 12.5, 49.5), 43, 47),
+    Region("berlin-brandenburg", "Berlin–Brandenburg", (12.5, 52.0, 14.5, 53.0), 15, 52),
+    Region("bavaria", "Bavaria", (10.5, 47.5, 12.5, 49.5), 58, 247),
     Region("southern-sweden", "Southern Sweden", (12.5, 55.3, 14.5, 56.5), 14, 36),
     Region("sydney", "Sydney", (150.6, -34.2, 151.4, -33.5), 19, 48),
+    Region("toronto", "Toronto", (-80.0, 43.4, -79.0, 44.1), 7, 10),
+    Region("montreal", "Montréal", (-74.2, 45.2, -73.2, 45.8), 23, 23),
+    Region("vancouver", "Vancouver", (-123.4, 49.0, -122.4, 49.5), 20, 21),
+    Region("helsinki", "Helsinki–Uusimaa", (24.0, 59.9, 25.8, 60.7), 21, 21),
 )
 """Regions offered by the map's Areas button."""
 
@@ -115,10 +135,69 @@ _FALLING = "#2563eb"
 _FALLING_WEAK = "#93c5fd"
 _FLAT = "#94a3b8"
 
+HULL_BORDER_KM: float = 5.0
+"""Margin drawn around the outermost stations of an area result."""
 
-def list_regions() -> list[dict[str, Any]]:
-    """All regions as JSON-friendly dicts."""
-    return [region.to_dict() for region in REGIONS]
+_HULL_CIRCLE_POINTS: int = 24
+"""Corners of the circle around each station; the hull of all circles is rounded."""
+
+
+def _counted_stations(region: Region, topic_key: str) -> int | None:
+    """Known station count of ``region`` for ``topic_key``; ``None`` when not counted in advance."""
+    topic = topic_key.lower()
+    if topic == "temperature":
+        return region.temperature_stations
+    if topic == "precipitation":
+        return region.precipitation_stations
+    return None
+
+
+def _area_capable(region: Region, topic_key: str) -> bool:
+    """Whether any database can have fixed stations for ``topic_key`` in ``region``.
+
+    Mirrors the checks of :func:`_evaluate_topic` and :func:`_other_source_stations`.
+    """
+    noaa_topic = noaa_api.TOPICS.get(topic_key.lower())
+    if noaa_topic is not None and noaa_topic.dataset in AREA_DATASETS:
+        return True
+    for key in api_wrapper.providers_for(topic_key):
+        if key == "noaa":
+            continue
+        covers_box = getattr(api_wrapper._PROVIDERS[key], "covers_box", None)
+        if covers_box is not None and covers_box(region.bbox):
+            return True
+    return False
+
+
+def _region_for_topics(region: Region, topics: list[str]) -> dict[str, Any] | None:
+    """``region`` as a dict with a note for the selected topics, or ``None`` if none can be evaluated there."""
+    usable: list[str] = []
+    for topic in topics:
+        if not _area_capable(region, topic):
+            continue
+        count = _counted_stations(region, topic)
+        if count is None:
+            usable.append(f"{topic}: stations checked on evaluation")
+        elif count >= MIN_STATIONS:
+            usable.append(f"{topic}: {count} stations (2015–2024)")
+    if not usable:
+        return None
+    result = region.to_dict()
+    result["note"] = " · ".join(usable)
+    return result
+
+
+def list_regions(topics: list[str] | None = None) -> list[dict[str, Any]]:
+    """Regions as JSON-friendly dicts.
+
+    :param topics: Selected topics. When given, only regions in which at
+        least one of them can be evaluated are listed, and the note names
+        those topics; without topics every region is listed.
+    """
+    if not topics:
+        return [region.to_dict() for region in REGIONS]
+    listed = (_region_for_topics(region, topics) for region in REGIONS)
+    return [region for region in listed if region is not None]
 
 
 def region_for_area(area: Any) -> Region | None:
@@ -144,20 +223,20 @@ def _find_stations(
     topic: noaa_api.NOAATopic,
     start_date: date,
     end_date: date,
-) -> list[dict[str, Any]]:
-    """Stations in the region whose record covers most of the requested range.
+) -> list[Station]:
+    """NOAA stations in the region whose record covers most of the requested range.
 
     Every code is searched on its own and the results are merged: the
     Search Service only returns stations reporting *all* listed codes, and
     most stations report only some of a topic's codes (e.g. TMAX and TMIN
     but not TAVG).
 
-    :return: ``{"id", "name", "coverage"}`` dicts, longest record first,
-        at most :data:`MAX_STATIONS`.
+    :return: Stations with ``coverage`` set and only their GHCN id as
+        identity (see :func:`_with_ghcnd_identities`).
     """
     west, south, east, north = region.bbox
     requested_days = (end_date - start_date).days + 1
-    found: dict[str, dict[str, Any]] = {}
+    found: dict[str, Station] = {}
     for data_types in [(code,) for code in topic.data_types]:
         payload = client._get_json(
             noaa_api.SEARCH_URL,
@@ -180,16 +259,124 @@ def _find_stations(
             coverage = max(0.0, overlap / requested_days)
             if coverage < MIN_COVERAGE:
                 continue
+            points = result.get("boundingPoints") or [{}]
+            coordinates = points[0].get("coordinates") or []
+            if len(coordinates) < 2:
+                continue
             for station in result.get("stations", []):
                 station_id = station.get("id")
-                if station_id and coverage > found.get(station_id, {}).get("coverage", -1):
-                    found[station_id] = {
-                        "id": station_id,
-                        "name": station.get("name"),
-                        "coverage": round(coverage, 3),
-                    }
-    ranked = sorted(found.values(), key=lambda s: (-s["coverage"], s["id"]))
-    return ranked[:MAX_STATIONS]
+                if not station_id:
+                    continue
+                if station_id in found and found[station_id].coverage >= coverage:
+                    continue
+                found[station_id] = Station(
+                    source="NOAA",
+                    id=station_id,
+                    name=str(station.get("name") or station_id),
+                    latitude=float(coordinates[1]),
+                    longitude=float(coordinates[0]),
+                    first_date=first,
+                    last_date=last,
+                    ids=frozenset({f"ghcnd:{station_id}"}),
+                    coverage=round(coverage, 3),
+                    priority=NOAA_PRIORITY,
+                )
+    return list(found.values())
+
+
+def _with_ghcnd_identities(stations: list[Station]) -> list[Station]:
+    """Add WMO number and ECCC climate id to NOAA stations (see :func:`station_sources.ghcnd_identity_keys`)."""
+    from dataclasses import replace
+
+    return [replace(s, ids=station_sources.ghcnd_identity_keys(s.id)) for s in stations]
+
+
+def _other_source_stations(
+    region: Region, topic_key: str, start_date: date, end_date: date
+) -> tuple[list[Station], dict[str, Any], list[str]]:
+    """Stations of all non-NOAA databases offering the topic in the region.
+
+    :return: ``(stations, {source name: client}, [error messages])``.
+    """
+    stations: list[Station] = []
+    clients: dict[str, Any] = {}
+    errors: list[str] = []
+    for key in api_wrapper.providers_for(topic_key):
+        if key == "noaa":
+            continue
+        client_type = api_wrapper._PROVIDERS[key]
+        covers_box = getattr(client_type, "covers_box", None)
+        if covers_box is None or not covers_box(region.bbox):
+            continue
+        client = client_type()
+        try:
+            found = client.stations(region.bbox, topic_key.lower(), start_date, end_date)
+        except (RuntimeError, ValueError, OSError) as error:
+            errors.append(f"{client.SOURCE}: {error}")
+            continue
+        found = [s for s in found if s.coverage >= MIN_COVERAGE]
+        if found:
+            clients[client.SOURCE] = client
+            stations.extend(found)
+    return stations, clients, errors
+
+
+def _gather_stations(
+    client: noaa_api.NOAAClient,
+    region: Region,
+    topic_key: str,
+    start_date: date,
+    end_date: date,
+) -> tuple[list[Station], list[tuple[Station, Station]], dict[str, Any], list[str]]:
+    """Stations of all databases for the topic, duplicates removed, best :data:`MAX_STATIONS`.
+
+    :return: ``(stations, dropped duplicates, {source: client}, errors)``.
+    """
+    noaa_topic = noaa_api.TOPICS.get(topic_key.lower())
+    noaa_stations: list[Station] = []
+    errors: list[str] = []
+    if noaa_topic is not None and noaa_topic.dataset in AREA_DATASETS:
+        try:
+            noaa_stations = _find_stations(client, region, noaa_topic, start_date, end_date)
+        except (RuntimeError, ValueError) as error:
+            errors.append(f"NOAA: {error}")
+    others, clients, other_errors = _other_source_stations(region, topic_key, start_date, end_date)
+    errors += other_errors
+    if others and noaa_stations:
+        noaa_stations = _with_ghcnd_identities(noaa_stations)
+    kept, dropped = station_sources.deduplicate([*noaa_stations, *others])
+    return _spread(kept, MAX_STATIONS), dropped, clients, errors
+
+
+def _spread(stations: list[Station], count: int) -> list[Station]:
+    """At most ``count`` stations, the longest records first, spread over the region.
+
+    Stations are taken in order of coverage; within the same coverage the
+    next one is always the station farthest from all chosen ones, so a dense
+    network (hundreds of DWD rain gauges) does not end up as one cluster.
+    """
+    ranked = sorted(stations, key=lambda s: (-round(s.coverage, 2), s.priority, s.source, s.id))
+    if len(ranked) <= count:
+        return ranked
+    chosen: list[Station] = []
+    for coverage in sorted({round(s.coverage, 2) for s in ranked}, reverse=True):
+        group = [s for s in ranked if round(s.coverage, 2) == coverage]
+        while group and len(chosen) < count:
+            if not chosen:
+                pick = group[0]
+            else:
+                pick = max(
+                    group,
+                    key=lambda s: min(
+                        station_sources.distance_km(s.latitude, s.longitude, c.latitude, c.longitude)
+                        for c in chosen
+                    ),
+                )
+            chosen.append(pick)
+            group.remove(pick)
+        if len(chosen) >= count:
+            break
+    return chosen
 
 
 def _fetch_records(
@@ -233,7 +420,34 @@ def _fetch_records(
     with ThreadPoolExecutor(max_workers=PARALLEL_REQUESTS) as pool:
         for payload in pool.map(fetch, chunks):
             for collection in noaa_api._normalize_observations(payload):
-                records.extend(collection)
+                records.extend({**record, "source": "NOAA"} for record in collection)
+    return records
+
+
+def _fetch_all_records(
+    client: noaa_api.NOAAClient,
+    topic_key: str,
+    stations: list[Station],
+    clients: dict[str, Any],
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    """Observations of all stations, every database in its own thread."""
+    by_source: dict[str, list[Station]] = {}
+    for station in stations:
+        by_source.setdefault(station.source, []).append(station)
+
+    def fetch(source: str) -> list[dict[str, Any]]:
+        group = by_source[source]
+        if source == "NOAA":
+            topic = noaa_api.TOPICS[topic_key.lower()]
+            return _fetch_records(client, topic, [s.id for s in group], start_date, end_date)
+        return clients[source].fetch(group, topic_key.lower(), start_date, end_date)
+
+    records: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max(1, len(by_source))) as pool:
+        for part in pool.map(fetch, list(by_source)):
+            records.extend(part)
     return records
 
 
@@ -267,6 +481,17 @@ def _area_series(
     }
 
 
+def _source_counts(
+    by_station: dict[str, list[dict[str, Any]]], station_bins: dict[str, dict[int, float]]
+) -> dict[str, int]:
+    """Number of stations each database contributed to the area mean."""
+    counts: dict[str, int] = {}
+    for station_id in station_bins:
+        source = str(by_station[station_id][0].get("source", "NOAA"))
+        counts[source] = counts.get(source, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _station_colour(trend: dict[str, Any]) -> str:
     slope = trend.get("slope")
     if not trend.get("available") or slope is None or slope == 0:
@@ -274,6 +499,55 @@ def _station_colour(trend: dict[str, Any]) -> str:
     if slope > 0:
         return _RISING if trend.get("significant") else _RISING_WEAK
     return _FALLING if trend.get("significant") else _FALLING_WEAK
+
+
+def _convex_hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Convex hull, counter-clockwise, without repeating the first point (monotone chain)."""
+    unique = sorted(set(points))
+    if len(unique) < 3:
+        return unique
+
+    def cross(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list[tuple[float, float]] = []
+    for point in unique:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+    upper: list[tuple[float, float]] = []
+    for point in reversed(unique):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0:
+            upper.pop()
+        upper.append(point)
+    return lower[:-1] + upper[:-1]
+
+
+def _station_hull(stations: list[dict[str, Any]], region: Region) -> dict[str, Any]:
+    """Polygon around the stations used for an area result, with a border.
+
+    Each station is replaced by a circle of :data:`HULL_BORDER_KM` and the
+    convex hull of all circles is returned, so the outline keeps the same
+    distance to the outermost stations and its corners are rounded. Without
+    station positions the region's box is returned.
+    """
+    circle: list[tuple[float, float]] = []
+    for feature in stations:
+        longitude, latitude = feature["geometry"]["coordinates"][:2]
+        degrees_latitude = HULL_BORDER_KM / 111.32
+        degrees_longitude = degrees_latitude / max(math.cos(math.radians(latitude)), 0.01)
+        for k in range(_HULL_CIRCLE_POINTS):
+            angle = 2 * math.pi * k / _HULL_CIRCLE_POINTS
+            circle.append((
+                round(longitude + degrees_longitude * math.cos(angle), 5),
+                round(latitude + degrees_latitude * math.sin(angle), 5),
+            ))
+    hull = _convex_hull(circle)
+    if len(hull) < 3:
+        west, south, east, north = region.bbox
+        hull = [(west, south), (east, south), (east, north), (west, north)]
+    ring = [[x, y] for x, y in hull]
+    return {"type": "Polygon", "coordinates": [ring + [ring[0]]]}
 
 
 def _error_result(region: Region, message: str) -> dict[str, Any]:
@@ -306,30 +580,42 @@ def _evaluate_topic(
     Returns one ``(result key, result, station dots)`` triple per NOAA code
     (e.g. TMAX, TMIN and TAVG separately), see :func:`task.split_by_variable`.
     """
-    topic = noaa_api.TOPICS.get(topic_key.lower())
-    if topic is None:
+    noaa_topic = noaa_api.TOPICS.get(topic_key.lower())
+    other_keys = [key for key in api_wrapper.providers_for(topic_key) if key != "noaa"]
+    if noaa_topic is None and not other_keys:
         return [(topic_key, _error_result(region, f"Unknown topic {topic_key!r}."), [])]
-    if topic.dataset not in AREA_DATASETS:
+    if noaa_topic is not None and noaa_topic.dataset not in AREA_DATASETS and not other_keys:
         return [(topic_key, _error_result(
             region,
             "Area evaluation needs fixed stations with daily, monthly or annual data; "
             "this topic can only be evaluated at a point.",
         ), [])]
 
-    stations = _find_stations(client, region, topic, start_date, end_date)
+    stations, dropped, clients, errors = _gather_stations(client, region, topic_key, start_date, end_date)
     if len(stations) < MIN_STATIONS:
+        reason = f" ({'; '.join(errors)})" if errors else ""
         return [(topic_key, _error_result(
             region,
             f"Only {len(stations)} station(s) in {region.name} report this topic for most of the "
-            f"selected time range; at least {MIN_STATIONS} are needed for an area. Pick a point instead.",
+            f"selected time range; at least {MIN_STATIONS} are needed for an area. Pick a point instead."
+            + reason,
         ), [])]
 
-    records = _fetch_records(client, topic, [s["id"] for s in stations], start_date, end_date)
-    return [
-        (result_key, *_evaluate_variable(region, result_key, variable_records,
-                                         start_date, end_date, interval_length, tools))
-        for result_key, variable_records in task.split_by_variable(topic_key, records)
-    ]
+    records = _fetch_all_records(client, topic_key, stations, clients, start_date, end_date)
+    evaluated = []
+    for result_key, variable_records in task.split_by_variable(topic_key, records):
+        result, features = _evaluate_variable(
+            region, result_key, variable_records, start_date, end_date, interval_length, tools
+        )
+        result["duplicates_removed"] = len(dropped)
+        result["duplicates"] = [
+            {"dropped": f"{copy.source} {copy.id}", "kept": f"{twin.source} {twin.id}"}
+            for copy, twin in dropped
+        ]
+        if errors:
+            result["source_errors"] = errors
+        evaluated.append((result_key, result, features))
+    return evaluated
 
 
 def _evaluate_variable(
@@ -370,6 +656,7 @@ def _evaluate_variable(
                 "properties": {
                     "kind": "Measuring station",
                     "topic": topic_key,
+                    "source": first.get("source", "NOAA"),
                     "station": station_id,
                     "name": first.get("name"),
                     "elevation_m": first.get("elevation"),
@@ -407,6 +694,7 @@ def _evaluate_variable(
             "variables": sorted({str(r["description"]) for r in records if r.get("description")}),
             "unit": units.pop() if len(units) == 1 else None,
             "station_count": len(station_bins),
+            "sources": _source_counts(by_station, station_bins),
             "tools": plot_analysis.run_tools(indices, values, tools) if tools else {},
         }
     )
@@ -422,7 +710,8 @@ def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
     :param region: Region picked on the map.
     :return: ``{"topics": {topic: result}, "map_layers": [...]}``. Each topic
         result carries the region's mean series, ``region`` and
-        ``station_count``; the map layers are the region outline coloured by
+        ``station_count``; the map layers are the outline around the stations
+        used (convex hull with a border, see :func:`_station_hull`) coloured by
         the area trend and one dot per station coloured by its own trend.
     """
     topics = [topic for topic, checked in user_request.topics.items() if checked]
@@ -456,16 +745,7 @@ def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
                 outline_features.append(
                     {
                         "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [[
-                                [region.bbox[0], region.bbox[1]],
-                                [region.bbox[2], region.bbox[1]],
-                                [region.bbox[2], region.bbox[3]],
-                                [region.bbox[0], region.bbox[3]],
-                                [region.bbox[0], region.bbox[1]],
-                            ]],
-                        },
+                        "geometry": _station_hull(stations, region),
                         "properties": {
                             "topic": result_key,
                             "region": region.name,

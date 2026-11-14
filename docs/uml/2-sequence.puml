@@ -1,72 +1,98 @@
 @startuml sequence
 !include style.iuml
-title TrendDetective (main @ a6e430f) — Sequence across the four work areas
+title TrendDetective (data-expansion @ 524818c) — Sequence across the four work areas
 autonumber
 
 actor User
 box "① Map widget" #e3eefc
   participant "embed.tsx\nMapController" as EMB
-  participant "MapWidget +\nSelectionManager" as SM
+  participant "MapWidget +\nSelectionManager\n+ RegionLayer" as SM
 end box
 box "② UI & web server" #e2f3e6
-  participant "index.html\nscript" as JS
+  participant "index.html\n+ plots.js" as JS
   participant "app.py\nWebAppHandler" as H
   participant "interface.py\nAppInterface" as AI
 end box
 box "③ Data & calculations" #fdeedd
   participant "src/task.py" as T
+  participant "area_analysis\n+ plot_analysis" as AA
 end box
-box "④ API wrapper" #eee6fb
+box "④ API wrapper & sources" #eee6fb
   participant "api_wrapper" as AW
   participant "NOAAClient" as NC
+  participant "★ DWD / ECCC / FMI /\nOpen-Meteo / PolarWatch" as SS
 end box
 
 == Page load ==
 JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> mount(el, {onAreaSelected, onAreaCleared})
+JS -> H : GET /api/regions
+H -[#2f6fb3]> AA : <color:#2f6fb3>② → ③</color> list_regions()
+H --> JS : {regions: [{id, name, bbox, note}]}
+JS -[#2f6fb3]> EMB : setRegions(regions)
 JS -> H : GET /api/topics
 H -> AI : get_sorted_topics()
 AI -[#2f6fb3]> AW : <color:#2f6fb3>② → ④</color> get_all_topics_list()
-AW --> AI : list[str] (44 keys, no labels, no availability)
-H --> JS : {topics: list[str]}
+AW --> AI : keys of all 6 providers (raw keys, no labels)
 JS -> H : GET /api/tools
-H -> AI : get_sorted_tools()
-AI -[#2f6fb3]> T : <color:#2f6fb3>② → ③</color> get_available_tools()
-T --> AI : ["Linear Regression", "Mann-Kendall", "t-Test"]
-H --> JS : {tools: list[str]}
+H -> AI : get_sorted_tools() → task.get_available_tools()
+H --> JS : ["Linear Regression", "Mann-Kendall", "t-Test"] (all sent as true)
 
-== Selection ==
-User -> SM : draw rectangle / polygon / freehand or pick point
+== Selection (one point or one region) ==
+alt place search
+  User -> JS : "Aachen" or "50.77, 6.08"
+  JS -> H : GET /api/places?q=…
+  H -> H : places.search_places() (coordinates parsed locally, else Nominatim)
+  JS -[#2f6fb3]> EMB : setArea(Point) or showRegions(true); fitToBounds(bbox)
+else map
+  User -> SM : Point tool, or Areas → click a region
+end
 SM -[#2f6fb3]-> JS : <color:#2f6fb3>① → ②</color> onAreaSelected(AreaFeature)
 
 == Apply ==
-User -> JS : topics, tools, DD.MM.YYYY dates, interval; click Apply
+User -> JS : topics, DD.MM.YYYY dates, interval; click Apply
 JS -> EMB : setLoading(true)
-JS -> H : POST /api/buttons/apply\n{topics, tools, timeintervall: [str,str], interval_length, area}
-H -> AI : set_request_inputs() → parse_dd_mm_yyyy()
-H -> AI : trigger_button("apply") → on_apply()
-AI -[#2f6fb3]> T : <color:#2f6fb3>② → ③</color> process_user_request(UserRequest)
-T -> T : _extract_coordinates(area) → one (lat, lon)\n<color:#b03a2e>G1 area reduced to its centre · G6 no area → Washington DC</color>
-loop each selected topic
-  T -[#2f6fb3]> AW : <color:#2f6fb3>③ → ④</color> PointDataRequest(lat, lon, topic, start, end)
-  AW -> NC : fetch_point_data()
-  NC -> NC : _find_station(): box 0.05° → 0.25° → 0.5° → 1° → 2°
-  alt station found
-    NC --> AW : list[Iterator[record]], one per variable
-    AW --[#2f6fb3]> T : <color:#2f6fb3>④ → ③</color> records
-    T -> T : merge all variables <color:#b03a2e>(G5)</color> → _bin_records()\n<color:#b03a2e>G3 "YYYY-MM" / "YYYY" dates dropped</color>
-    T -> T : LinearRegression / TTest / MannKendall .process()
-    T -> T : _station_from_records() → station point
-  else no station within 2° or NCEI error
-    NC --[#b03a2e]> T : <color:#b03a2e>NOAAError → topic gets "error" (G2)</color>
+JS -> H : POST /api/buttons/apply\n{topics, tools, timeintervall, interval_length, area}
+H -> AI : set_request_inputs(); trigger_button("apply") → on_apply()
+alt area.properties.shape == "region"
+  AI -[#2f6fb3]> AA : <color:#2f6fb3>② → ③</color> process_region_request(UserRequest, Region)
+  loop each topic
+    AA -[#2f6fb3]> NC : <color:#2f6fb3>③ → ④</color> NCEI station search (bbox, coverage ≥ 0.8)
+    AA -[#2f6fb3]> SS : <color:#2f6fb3>③ → ④</color> ★ stations(bbox) where covers_box()
+    AA -> AA : ★ deduplicate (WMO / GHCN / ECCC id / same place), keep ≤ 40
+    AA -[#2f6fb3]> NC : bulk fetch, 10 stations per request, 3 in parallel
+    AA -[#2f6fb3]> SS : ★ fetch(stations)
+    AA -> AA : per code: bin each station → anomaly average\nrun_tools() per station (LR) and on the area series (selected tools)
   end
+  AA --[#2f6fb3]> AI : <color:#2f6fb3>③ → ②</color> {topics, map_layers: [area-result, area-stations-<key>…]}
+else point or no area
+  AI -[#2f6fb3]> T : <color:#2f6fb3>② → ③</color> process_user_request(UserRequest)
+  T -> T : _extract_coordinates(area)\n<color:#b03a2e>G6 no area → Washington DC</color>
+  loop each topic
+    T -[#2f6fb3]> AW : <color:#2f6fb3>③ → ④</color> ★ fetch_data_single_topic_nearest_station(PointDataRequest)
+    par every provider in providers_for(topic, lat, lon)
+      AW -> NC : fetch_point_data()
+      AW -> SS : ★ fetch_point_data()
+    end
+    AW --[#2f6fb3]> T : <color:#2f6fb3>④ → ③</color> records of the nearest station (+ source)
+    T -> T : split_by_variable → _bin_records → LR.process / TTest / mann_kendall_test
+  end
+  T --[#2f6fb3]> AI : <color:#2f6fb3>③ → ②</color> {topics, map_layers: [user-request-results, measuring-stations]}
 end
-T --[#2f6fb3]> AI : <color:#2f6fb3>③ → ②</color> {topics: {...}, map_layers: [results, measuring-stations]}
-AI -> AI : last_task_results = result
 H --> JS : 204
 JS -> H : GET /api/user-request
-H --> JS : {user_request, visualization: last_task_results}
-JS -> JS : renderVisualization(): station line, badges, SVG chart\n<color:#b03a2e>G7 Mann-Kendall not shown · G9 no dates or units on the chart</color>
-JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> setResultData(map_layers)
-JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> fitToBounds(selection + stations)
+H --> JS : {user_request, visualization}
+JS -> JS : renderVisualization(): cards, SVG chart with dates + unit, LR / t-Test / MK
+JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> setResultData(map_layers); fitToBounds(...)
 JS -> EMB : setLoading(false)
+
+== Cards without data (★) ==
+JS -> H : POST /api/coverage {area, topic, timeintervall}
+H -[#2f6fb3]> AW : <color:#2f6fb3>② → ④</color> station_coverage.data_coverage() — NOAA stations only (G16)
+H --> JS : codes with years, counts, suggestion → "Use … – …" button
+
+== Plot panel ==
+User -> JS : pick tools per time frame / per year
+JS -> H : POST /api/analyze {x, values, tools} or {groups}
+H -[#2f6fb3]> AA : <color:#2f6fb3>② → ③</color> analyze_series / analyze_groups
+H --> JS : {observations, tools} (LR with p-value, CI, r²)
 @enduml

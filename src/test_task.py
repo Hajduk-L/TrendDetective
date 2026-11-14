@@ -5,7 +5,7 @@ import unittest
 
 import torch
 
-from src.task import LinearRegression, _load_records_for_topic, get_available_tools, mann_kendall_test, process_user_request, split_by_variable
+from src.task import LinearRegression, _load_records_for_topic, get_available_tools, mann_kendall_test, precipitation_as_density, process_user_request, split_by_variable
 
 
 class MannKendallTests(unittest.TestCase):
@@ -133,11 +133,41 @@ class RequestProcessingTests(unittest.TestCase):
             "temperature", 38.9, -77.0, date(2024, 1, 1), date(2024, 1, 2)
         )
 
-        self.assertEqual(records, [first, second])
+        # Only NOAA covers Washington; every record names its database.
+        self.assertEqual(records, [{**first, "source": "NOAA"}, {**second, "source": "NOAA"}])
         fetch_data.assert_called_once()
         request = fetch_data.call_args.args[0]
         self.assertEqual(request.topic, "temperature")
         self.assertEqual(fetch_data.call_args.kwargs["provider"], "noaa")
+
+
+class PrecipitationDensityTests(unittest.TestCase):
+    def test_monthly_totals_and_rain_day_counts_become_per_day_values(self):
+        # Real NANJING (CHM00058238) values for January 2020 (31 days).
+        records = [
+            {"date": "2020-01", "value": 75.9, "description": "prcp", "unit": "mm"},
+            {"date": "2020-01", "value": 16, "description": "dp01", "unit": "days"},
+            {"date": "2020-01", "value": 22.9, "description": "emxp", "unit": "mm"},
+        ]
+        prcp, dp01, emxp = precipitation_as_density(records)
+        self.assertAlmostEqual(prcp["value"], 75.9 / 31, places=3)
+        self.assertEqual(prcp["unit"], "mm/day")
+        self.assertAlmostEqual(dp01["value"], 100 * 16 / 31, places=3)
+        self.assertEqual(dp01["unit"], "% of days")
+        self.assertEqual(emxp, records[2])  # a daily maximum is already per day
+
+    def test_multiday_total_is_spread_over_its_dapr_days(self):
+        records = [
+            {"date": "2020-07-03", "value": 4.0, "description": "prcp", "unit": "mm", "station": "S"},
+            {"date": "2020-07-05", "value": 30.0, "description": "mdpr", "unit": "mm", "station": "S"},
+            {"date": "2020-07-05", "value": 3, "description": "dapr", "unit": None, "station": "S"},
+        ]
+        converted = precipitation_as_density(records)
+        self.assertEqual([r["description"] for r in converted], ["prcp", "mdpr"])
+        self.assertEqual(converted[0]["value"], 4.0)
+        self.assertEqual(converted[0]["unit"], "mm/day")
+        self.assertEqual(converted[1]["value"], 10.0)
+        self.assertEqual(converted[1]["unit"], "mm/day")
 
 
 class TrendAnalysisTests(unittest.TestCase):

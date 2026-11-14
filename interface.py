@@ -9,8 +9,9 @@ This module provides:
   coordinating button triggers, and passing :class:`UserRequest` into :mod:`src.task`.
 """
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator
+import copy
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
 
@@ -20,6 +21,63 @@ from src.task import get_available_tools, process_user_request
 
 DATE_FORMAT: str = "%d.%m.%Y"
 VALID_INTERVAL_UNITS: tuple[str, ...] = ("Day", "Month", "Year")
+
+_LEADING_LAYERS: tuple[str, ...] = ("user-request-results", "area-result")
+"""Map layers that come first in a full result (the others are drawn on top of them)."""
+
+
+def _station_key(feature: dict[str, Any]) -> str:
+    """Same key :func:`src.task.process_user_request` uses to share one station dot between topics."""
+    props = feature.get("properties") or {}
+    return str(props.get("station") or f"{props.get('latitude')},{props.get('longitude')}")
+
+
+def merge_visualizations(parts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge single-topic results (in topic order) into the result of one request for all topics.
+
+    Topic results are concatenated; map layers with the same id are joined
+    feature by feature, and a measuring station shared by several topics stays
+    one dot listing all its topics, exactly as a request for all topics at once.
+
+    :param parts: ``{"topics": ..., "map_layers": [...]}`` results, one per topic.
+    :type parts: list[dict[str, Any]]
+    :return: The combined ``{"topics": ..., "map_layers": [...]}``.
+    :rtype: dict[str, Any]
+    """
+    topics: dict[str, Any] = {}
+    layers: dict[Any, dict[str, Any]] = {}
+    for part in parts:
+        topics.update(part.get("topics") or {})
+        for layer in part.get("map_layers") or []:
+            layer_id = layer.get("id")
+            if layer_id not in layers:
+                layers[layer_id] = copy.deepcopy(layer)
+                continue
+            features = layers[layer_id]["data"]["features"]
+            for feature in layer["data"]["features"]:
+                if layer_id == "measuring-stations":
+                    key = _station_key(feature)
+                    match = next((f for f in features if _station_key(f) == key), None)
+                    if match is not None:
+                        match["properties"]["topics"].extend(feature["properties"]["topics"])
+                        continue
+                features.append(copy.deepcopy(feature))
+    ordered = sorted(layers.values(), key=lambda layer: layer.get("id") not in _LEADING_LAYERS)
+    return {"topics": topics, "map_layers": ordered}
+
+
+def _failed_topic(message: str) -> dict[str, Any]:
+    """Result card of a topic whose evaluation failed unexpectedly."""
+    return {
+        "labels": [],
+        "values": [],
+        "mean": None,
+        "station": None,
+        "variables": [],
+        "unit": None,
+        "error": message,
+        "tools": {},
+    }
 
 
 def parse_dd_mm_yyyy(date_str: str) -> date:
@@ -331,6 +389,24 @@ class AppInterface:
         :return: None
         :rtype: None
         """
+        self.last_user_request = self.prepare_apply()
+        region = area_analysis.region_for_area(self.area)
+        if region is not None:
+            self.last_task_results = area_analysis.process_region_request(
+                self.last_user_request, region
+            )
+        else:
+            self.last_task_results = process_user_request(self.last_user_request)
+        print(f"Created UserRequest: {self.last_user_request}")
+
+    def prepare_apply(self) -> UserRequest:
+        """Validate the current inputs and build the :class:`UserRequest` of an 'Apply' click.
+
+        :raises ValueError: If no topic is selected or ``timeintervall`` is missing.
+        :raises AssertionError: If the interval length value is not greater than ``0``.
+        :return: The request; also stored on ``self.last_user_request``.
+        :rtype: UserRequest
+        """
         sorted_topics = self.get_sorted_topics()
         request_topics = {
             topic: bool(self.topic_states.get(topic, False))
@@ -357,11 +433,40 @@ class AppInterface:
             interval_length=self.interval_length,
             area=self.area,
         )
-        region = area_analysis.region_for_area(self.area)
-        if region is not None:
-            self.last_task_results = area_analysis.process_region_request(
-                self.last_user_request, region
+        return self.last_user_request
+
+    def iter_apply(self, user_request: UserRequest) -> Iterator[tuple[str, dict[str, Any]]]:
+        """Evaluate ``user_request`` one topic at a time, for progressive rendering.
+
+        After each topic yields ``(topic, result so far)``; the result so far is
+        :func:`merge_visualizations` of the finished topics, so the last one
+        equals what :meth:`on_apply` computes for all topics at once. A topic
+        that fails unexpectedly gets an error card instead of ending the run.
+        The final result is stored on ``self.last_task_results``.
+
+        :param user_request: Request from :meth:`prepare_apply`.
+        :type user_request: UserRequest
+        :return: Iterator of ``(finished topic, merged result)`` pairs.
+        :rtype: Iterator[tuple[str, dict[str, Any]]]
+        """
+        self.last_task_results = None
+        region = area_analysis.region_for_area(user_request.area)
+        parts: list[dict[str, Any]] = []
+        merged: dict[str, Any] = {"topics": {}, "map_layers": []}
+        for topic in [name for name, checked in user_request.topics.items() if checked]:
+            single = replace(
+                user_request,
+                topics={name: name == topic for name in user_request.topics},
             )
-        else:
-            self.last_task_results = process_user_request(self.last_user_request)
-        print(f"Created UserRequest: {self.last_user_request}")
+            try:
+                if region is not None:
+                    part = area_analysis.process_region_request(single, region)
+                else:
+                    part = process_user_request(single)
+            except Exception as error:  # noqa: BLE001 - keep the topics already shown
+                part = {"topics": {topic: _failed_topic(f"{type(error).__name__}: {error}")}, "map_layers": []}
+            parts.append(part)
+            merged = merge_visualizations(parts)
+            yield topic, merged
+        self.last_task_results = merged
+        print(f"Created UserRequest: {user_request}")

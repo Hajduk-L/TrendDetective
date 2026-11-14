@@ -289,6 +289,13 @@
         return (x - 1970) * 365.2425 * DAY_MS;
     }
 
+    // The results of the selected tools only (the analysis runs every available tool).
+    function pickTools(results, tools) {
+        const out = {};
+        for (const t of tools) if (results && results[t]) out[t] = results[t];
+        return out;
+    }
+
     // Everything one analysis time frame needs: its per-year rows and the tool results.
     function evaluateWindows(model) {
         const canCompare = model.canCompare && model.years.length >= 2;
@@ -310,11 +317,13 @@
                 if (!base.tools.length) status = 'No tool selected for this time frame.';
                 else if (rows.length < 2) status = 'Needs at least two values.';
                 else {
-                    const key = JSON.stringify([state.topic, base.tools, rows.map((row) => [row.year, row.mean])]);
+                    // Keyed by every available tool (not the selected ones), so toggling a tool off
+                    // reuses the cached results instead of re-running the others.
+                    const key = JSON.stringify([state.topic, state.tools, rows.map((row) => [row.year, row.mean])]);
                     if (!state.analysisCache.has(key)) requestAnalysis(key, { x: rows.map((row) => row.year), values: rows.map((row) => row.mean) });
                     analysis = state.analysisCache.get(key);
                 }
-                const results = analysis && !analysis.pending && !analysis.error ? analysis.tools || {} : null;
+                const results = analysis && !analysis.pending && !analysis.error ? pickTools(analysis.tools, base.tools) : null;
                 return { ...base, label, rows, allRows, years: [], analysis, results, status };
             }
 
@@ -339,12 +348,12 @@
             else if (analysed.every((yr) => yr.pts.length < 3)) status = `Each ${label} has fewer than three values. Choose a shorter interval (e.g. 1 Day) to analyse inside the period.`;
             else {
                 const groups = analysed.map((yr) => ({ key: yr.year, x: yr.pts.map((q) => +q.x.toFixed(3)), values: yr.pts.map((q) => q.y) }));
-                const key = JSON.stringify([state.topic, base.tools, 'groups', groups]);
+                const key = JSON.stringify([state.topic, state.tools, 'groups', groups]);
                 if (!state.analysisCache.has(key)) requestAnalysis(key, { groups });
                 analysis = state.analysisCache.get(key);
                 if (analysis && analysis.groups) {
                     const byKey = new Map(analysis.groups.map((g) => [g.key, g.tools]));
-                    for (const yr of years) yr.res = byKey.get(yr.year) || null;
+                    for (const yr of years) yr.res = byKey.has(yr.year) ? pickTools(byKey.get(yr.year), base.tools) : null;
                 }
             }
             const results = analysis && !analysis.pending && !analysis.error ? {} : null;
@@ -409,7 +418,9 @@
             groups.get(b).push(p.value);
         }
         const clim = new Map();
-        for (const [b, vals] of groups) clim.set(b, { mean: mean(vals), sd: stdDev(vals), n: vals.length });
+        // `exact` is the plain mean of this bucket's values (never smoothed), so the anomalies of
+        // each bucket – and therefore of the whole series – average to exactly zero.
+        for (const [b, vals] of groups) clim.set(b, { mean: mean(vals), exact: mean(vals), sd: stdDev(vals), n: vals.length });
         if (!monthly) smoothClimatology(clim, CLIM_SMOOTH_DAYS);
 
         const years = [...new Set(points.map((p) => p.year))].sort((a, b) => a - b);
@@ -444,7 +455,7 @@
                 if (isNum(c.mean)) means.push(c.mean);
                 if (isNum(c.sd)) sds.push(c.sd);
             }
-            clim.set(b, { mean: mean(means), sd: sds.length ? mean(sds) : null, n: raw.get(b).n });
+            clim.set(b, { ...raw.get(b), mean: mean(means), sd: sds.length ? mean(sds) : null });
         }
     }
 
@@ -452,7 +463,7 @@
     function transformed(model, p) {
         if (!state.fn.anomaly) return p.value;
         const c = model.clim.get(model.bucketOf(p));
-        return c && isNum(c.mean) ? p.value - c.mean : null;
+        return c && isNum(c.exact) ? p.value - c.exact : null;
     }
 
     function yearColor(model, year) {
@@ -1467,7 +1478,10 @@
         state.request = userRequest || null;
         const topics = state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
         const withData = topics.filter((t) => (state.viz.topics[t].values || []).some(isNum));
-        if (!topics.includes(state.topic)) state.topic = withData[0] || topics[0] || null;
+        // Also leave a topic without data once one with data arrives (topics stream in one by one).
+        if (!topics.includes(state.topic) || (withData.length && !withData.includes(state.topic))) {
+            state.topic = withData[0] || topics[0] || null;
+        }
         state.hiddenYears.clear();
         render();
     }
@@ -1519,11 +1533,15 @@
             `${model.points.length} intervals of ${model.ivText}`,
             model.years.length ? `${model.years[0]}–${model.years[model.years.length - 1]}` : '',
             st && st.name ? `station ${st.name}` : '',
+            // Topics arrive one by one (setData while loading): say that more is coming.
+            state.loading ? 'still loading other topics…' : '',
         ].filter(Boolean).join(' · ');
         r.title.textContent = `Plot: ${state.topic}`;
 
         const hints = [];
         if (model.info.error) hints.push(model.info.error);
+        if (model.unit === 'mm/day') hints.push('Precipitation is shown as a density: the average rainfall per day (mm/day) in each interval. Monthly or yearly totals and multiday totals (MDPR) are divided by the number of days they cover, so 3 mm/day over a month means about 90 mm in that month.');
+        else if (model.unit === '% of days') hints.push('Share of days in each interval on which precipitation reached the threshold (monthly / yearly rain-day counts divided by the number of days), e.g. 50 % = every second day.');
         if (!model.points.length) hints.push('This topic has no numeric values in the selected time range.');
         else if (!model.canCompare) hints.push(`Comparing years needs intervals of up to 2 months; the current interval is ${model.ivText}. Choose Day or Month intervals.`);
         else if (model.years.length < 2) hints.push('The time range covers only one year. Choose a range over several years to compare them.');
@@ -1776,7 +1794,8 @@
         const lo = Math.min(...all);
         const hi = Math.max(...all);
         const domain = [Math.floor(lo) - 0.6, Math.ceil(hi) + 0.6];
-        const perDay = unit ? `${unit}/day` : 'per day';
+        // "per day" in words, so rate units (mm/day) don't read as "mm/day/day".
+        const perDay = unit ? `${unit} per day` : 'per day';
         return {
             kind: 'year', height: 210, xDomain: domain,
             xTicks: (plotW, shown = domain) => {

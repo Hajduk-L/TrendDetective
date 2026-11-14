@@ -8,12 +8,20 @@ client module.
 
 from __future__ import annotations
 
+import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Iterator, Protocol, Sequence
 
+from dwd_api import DWDClient
+from eccc_api import ECCCClient
+from fmi_api import FMIClient
 from noaa_api import NOAAClient, NOAAError
+from openmeteo_api import OpenMeteoClient
+from polarwatch_api import PolarWatchIceClient
+from station_sources import SourceError, distance_km
 
 
 class PointDataProvider(Protocol):
@@ -36,8 +44,30 @@ class PointDataProvider(Protocol):
 
 _PROVIDERS: dict[str, type[PointDataProvider]] = {
     "noaa": NOAAClient,
+    "dwd": DWDClient,
+    "eccc": ECCCClient,
+    "fmi": FMIClient,
+    "openmeteo": OpenMeteoClient,
+    "polarwatch": PolarWatchIceClient,
 }
-"""Provider-name to client-class registry."""
+"""Provider-name to client-class registry.
+
+None of these needs a registration or key. NOAA covers the world; DWD
+(Germany), ECCC (Canada) and FMI (Finland) add their national station
+networks for the shared topics (``temperature``, ``precipitation``, ...).
+Open-Meteo (ERA5 model, ``*_era5`` topics) and PolarWatch (satellite ice
+thickness) add topics of their own.
+"""
+
+PROVIDER_NAMES: dict[str, str] = {
+    "noaa": "NOAA",
+    "dwd": "DWD",
+    "eccc": "ECCC",
+    "fmi": "FMI",
+    "openmeteo": "Open-Meteo ERA5",
+    "polarwatch": "NOAA PolarWatch VIIRS",
+}
+"""Display names written into the ``source`` field of every record."""
 
 
 @dataclass(frozen=True)
@@ -111,6 +141,134 @@ def fetch_data_single_topic_single_coordinate(
     return client.fetch_point_data(request=request, output_dir=destination)
 
 
+def providers_for(topic: str, latitude: float | None = None, longitude: float | None = None) -> list[str]:
+    """Registry keys of the providers offering ``topic`` (at the point, if given)."""
+    keys: list[str] = []
+    for key, client_type in _PROVIDERS.items():
+        if topic.lower() not in {name for name, _ in client_type.list_topics()}:
+            continue
+        covers = getattr(client_type, "covers", None)
+        if latitude is not None and longitude is not None and covers is not None:
+            if not covers(latitude, longitude):
+                continue
+        keys.append(key)
+    return keys
+
+
+def _nearest_distance(records: list[dict[str, Any]], latitude: float, longitude: float) -> float:
+    """Distance from the point to the station that measured ``records``."""
+    for record in records:
+        try:
+            return distance_km(latitude, longitude, float(record["latitude"]), float(record["longitude"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return math.inf
+
+
+def fetch_data_single_topic_nearest_station(
+    request: PointDataRequest,
+    *,
+    output_dir: str | Path | None = None,
+) -> list[list[dict[str, Any]]]:
+    """Ask every provider of the topic and keep the station nearest to the point.
+
+    All providers covering the point run in parallel. Each returns its own
+    nearest station with data; the closest of those wins, so a dense national
+    network (DWD, ECCC, FMI) is used where it has a station nearer than NOAA.
+    Every record gets a ``source`` field naming the database.
+
+    :returns: One record list per measured variable, like
+        :func:`fetch_data_single_topic_single_coordinate` (but materialised).
+    :raises RuntimeError: If no provider found a station; the message lists
+        each provider's reason.
+    """
+    keys = providers_for(request.topic, request.latitude, request.longitude)
+    if not keys:
+        raise ValueError(f"No data source offers the topic {request.topic!r} at this point.")
+
+    def run(key: str) -> list[list[dict[str, Any]]]:
+        destination = Path(output_dir) / key if output_dir is not None else None
+        collections = fetch_data_single_topic_single_coordinate(
+            request, provider=key, output_dir=destination
+        )
+        result: list[list[dict[str, Any]]] = []
+        for collection in collections:
+            records = [dict(record) for record in collection if isinstance(record, dict)]
+            for record in records:
+                record.setdefault("source", PROVIDER_NAMES.get(key, key))
+            if records:
+                result.append(records)
+        return result
+
+    answers: list[tuple[float, float, int, list[list[dict[str, Any]]]]] = []
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=len(keys)) as pool:
+        futures = {key: pool.submit(run, key) for key in keys}
+        for order, (key, future) in enumerate(futures.items()):
+            try:
+                collections = future.result()
+            except (RuntimeError, ValueError, OSError) as error:  # NOAAError/SourceError are RuntimeErrors
+                errors.append(f"{PROVIDER_NAMES.get(key, key)}: {error}")
+                continue
+            if any(isinstance(r.get("value"), (int, float)) for c in collections for r in c):
+                first = next(record for collection in collections for record in collection)
+                answers.append(
+                    (
+                        _record_coverage(collections, request),
+                        _nearest_distance([first], request.latitude, request.longitude),
+                        order,
+                        collections,
+                    )
+                )
+            else:
+                errors.append(f"{PROVIDER_NAMES.get(key, key)}: no values in the selected time range")
+    if not answers:
+        raise SourceError(" | ".join(errors) if errors else "No data source returned values.")
+    # A near station that only has a few of the requested years must not beat
+    # one a little farther away that covers the whole range.
+    good = [answer for answer in answers if answer[0] >= GOOD_COVERAGE]
+    if good:
+        return min(good, key=lambda answer: (answer[1], answer[2]))[3]
+    return max(answers, key=lambda answer: (answer[0], -answer[1], -answer[2]))[3]
+
+
+GOOD_COVERAGE: float = 0.8
+"""Share of the requested range a point answer must span to be chosen by distance alone."""
+
+
+def _period(text: str) -> tuple[date, date] | None:
+    """First and last day of a ``YYYY-MM-DD``, ``YYYY-MM`` or ``YYYY`` observation date."""
+    try:
+        if len(text) >= 10:
+            day = date.fromisoformat(text[:10])
+            return day, day
+        if len(text) == 7:
+            year, month = int(text[:4]), int(text[5:7])
+            return date(year, month, 1), date(year + month // 12, month % 12 + 1, 1)
+        if len(text) == 4:
+            return date(int(text), 1, 1), date(int(text), 12, 31)
+    except ValueError:
+        pass
+    return None
+
+
+def _record_coverage(collections: list[list[dict[str, Any]]], request: PointDataRequest) -> float:
+    """Share of the requested range between the first and last observation."""
+    periods = [
+        period
+        for collection in collections
+        for record in collection
+        if isinstance(record.get("value"), (int, float))
+        and (period := _period(str(record.get("date")))) is not None
+    ]
+    if not periods:
+        return 0.0
+    first = max(min(start for start, _ in periods), request.start_date)
+    last = min(max(end for _, end in periods), request.end_date)
+    requested = (request.end_date - request.start_date).days + 1
+    return max(0.0, min(1.0, ((last - first).days + 1) / requested))
+
+
 def get_all_topics_list() -> list[str]:
     """Collect the topic keys exposed by every registered API provider.
 
@@ -135,7 +293,10 @@ def get_all_topics_list() -> list[str]:
 
 
 __all__ = [
+    "PROVIDER_NAMES",
     "PointDataRequest",
+    "fetch_data_single_topic_nearest_station",
     "fetch_data_single_topic_single_coordinate",
     "get_all_topics_list",
+    "providers_for",
 ]

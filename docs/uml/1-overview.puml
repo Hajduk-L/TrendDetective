@@ -1,97 +1,114 @@
 @startuml overview
 !include style.iuml
-title TrendDetective (main @ a6e430f) — Four work areas and how they connect
+title TrendDetective (data-expansion @ 524818c) — Four work areas and how they connect
 skinparam componentStyle rectangle
-skinparam nodesep 55
-skinparam ranksep 65
+skinparam nodesep 50
+skinparam ranksep 60
 
 actor User
 
 package "① MAP WIDGET\nmap-widget/  →  static/map-widget/" as P1 #e3eefc;line:2f6fb3;line.bold {
-  component "**embed.tsx**  window.TrendDetectiveMap\nmount(el, options) → MapController\nsetResultData · setLoading · getArea\nclearArea · fitToArea · fitToBounds · destroy" as T1API #ffffff;line:2f6fb3
-  component "**MapWidget** (React)\nprops: onAreaSelected · resultData · loading" as MWc #ffffff;line:2f6fb3
-  component "**SelectionManager**\ntools: rectangle · polygon · freehand · point · edit\ngetArea · setArea · clear" as SM #ffffff;line:2f6fb3
+  component "**embed.tsx**  window.TrendDetectiveMap\nmount(el, {onAreaSelected, onAreaCleared}) → MapController\nsetResultData · setLoading · setRegions · showRegions\nsetArea(Point) · getArea · clearArea · fitToArea · fitToBounds" as T1API #ffffff;line:2f6fb3
+  component "**MapWidget** (React)\ntoolbar: Pan · Point · Areas · Edit point · Delete\nbasemap + globe / flat" as MWc #ffffff;line:2f6fb3
+  component "**SelectionManager**\nTerra Draw, points only\ngetArea · setArea · clear" as SM #ffffff;line:2f6fb3
+  component "**RegionLayer**\npredefined regions\nsetRegions · setVisible · setSelected" as RL #ffffff;line:2f6fb3
   component "**DataRenderer**\nsetData(MapData[])\ngeojson · raster · image, popups" as DR #ffffff;line:2f6fb3
   component "**MapEngine**\nMapLibre map · setStyle\nsetProjection · fitToBBox" as ME #ffffff;line:2f6fb3
-  component "**geo.ts**\nnormalizeRing · geodesicAreaKm2\nwrapLng · splitAtAntimeridian" as GEO #ffffff;line:2f6fb3
 }
 
-package "② USER INTERFACE & WEB SERVER\nindex.html · app.py · interface.py" as P2 #e2f3e6;line:2e8b57;line.bold {
-  component "**index.html form**\ntopics · tools · DD.MM.YYYY dates · interval" as Form #ffffff;line:2e8b57
-  component "**index.html script**\nloadTopics · loadTools · triggerButton\nrenderVisualization · buildSvgChart\nfitMapToSelectionAndStations" as JS #ffffff;line:2e8b57
-  component "**app.py  WebAppHandler**\nGET /api/topics · /api/tools · /api/buttons\nGET /api/user-request · POST /api/buttons/<id>" as H #ffffff;line:2e8b57
-  component "**interface.AppInterface**\nget_sorted_topics · get_sorted_tools\nset_request_inputs · on_apply" as AI #ffffff;line:2e8b57
+package "② USER INTERFACE & WEB SERVER\nindex.html · static/plots · app.py · interface.py · places.py" as P2 #e2f3e6;line:2e8b57;line.bold {
+  component "**index.html**\nplace search · topics · DD.MM.YYYY dates · interval\nresult cards (chart, LR / t-Test / MK)\n★ coverage box for cards without data" as JS #ffffff;line:2e8b57
+  component "**plots.js**  TrendPlots\nplot panel: tools per time frame / per year" as PL #ffffff;line:2e8b57
+  component "**app.py  WebAppHandler**\nGET /api/topics · tools · regions · places · user-request\nPOST /api/buttons/apply · /api/analyze · ★ /api/coverage" as H #ffffff;line:2e8b57
+  component "**interface.AppInterface**\nset_request_inputs · on_apply\nregion → area flow, else point flow" as AI #ffffff;line:2e8b57
+  component "**places.py**\nsearch_places · parse_coordinates\n(Nominatim, 1 req/s, cache)" as PLC #ffffff;line:2e8b57
   database "**UserRequest** + last_task_results" as UR #ffffff;line:2e8b57
 }
+cloud "OSM Nominatim" as NOM
 
-package "③ DATA MANIPULATION & CALCULATIONS\nsrc/task.py · src/test_task.py" as P3 #fdeedd;line:c46a12;line.bold {
-  component "**process_user_request(UserRequest)**\n_extract_coordinates (area → 1 point)\n_load_records_for_topic · _bin_records\n_station_from_records" as PUR #ffffff;line:c46a12
-  component "**Tasks**  AVAILABLE_TOOLS\nLinearRegression · TTest · MannKendall\nget_available_tools()" as TK #ffffff;line:c46a12
-  component "**LinearRegression.analyze_trend()**\n→ TrendAnalysis (p, CI, r)\nnot called by process_user_request" as AT #fff6e6;line:c46a12;line.dashed
+package "③ DATA MANIPULATION & CALCULATIONS\nsrc/task.py · area_analysis.py · plot_analysis.py" as P3 #fdeedd;line:c46a12;line.bold {
+  component "**task.process_user_request**  (point flow)\narea → 1 point · nearest station of any source\nsplit_by_variable · _bin_records (day / month / year)" as PUR #ffffff;line:c46a12
+  component "**area_analysis.process_region_request**  (area flow)\n22 REGIONS · ≥3 stations, coverage ≥ 0.8, ≤ 40\n★ stations of all sources, deduplicated\nanomaly average → area series" as ARA #ffffff;line:c46a12
+  component "**plot_analysis**\nanalyze_series · analyze_groups · run_tools" as PA #ffffff;line:c46a12
+  component "**Tasks**  AVAILABLE_TOOLS\nLinearRegression (+ analyze_trend)\nTTest · MannKendall / mann_kendall_test" as TK #ffffff;line:c46a12
 }
 
-package "④ API WRAPPER\napi_wrapper.py · noaa_api.py · noaa_test.py" as P4 #eee6fb;line:7048b8;line.bold {
-  component "**api_wrapper**\nget_all_topics_list() → list[str]\nfetch_data_single_topic_single_coordinate()\n→ list[Iterator[dict]]" as AW #ffffff;line:7048b8
-  component "**NOAAClient**\nfetch_point_data · _find_station\n(box 0.05° → 2°, nearest station)\n_normalize_observations · _iter_measurements" as NC #ffffff;line:7048b8
-  component "**noaa_test.py**\nrun_noaa_test · display_data" as CLI #ffffff;line:7048b8
-  database "**temp dir / data/noaa/*.json**\nnested: one list per variable" as F #ffffff;line:7048b8
+package "④ API WRAPPER & DATA SOURCES\napi_wrapper.py · noaa_api.py · ★ station_sources.py · ★ *_api.py · ★ station_coverage.py" as P4 #eee6fb;line:7048b8;line.bold {
+  component "**api_wrapper**\nget_all_topics_list · providers_for\n★ fetch_data_single_topic_nearest_station\nfetch_data_single_topic_single_coordinate" as AW #ffffff;line:7048b8
+  component "**NOAAClient**  42 TOPICS\n_find_station (box 0.05° → 2°)\nmarine: ±1° box, month chunks" as NC #ffffff;line:7048b8
+  component "★ **StationSource** subclasses\nDWDClient · ECCCClient · FMIClient\nOpenMeteoClient (ERA5) · PolarWatchIceClient" as SS #ffffff;line:7048b8
+  component "★ **station_sources**\nStation · deduplicate · same_station\ncached_download · http_get" as STS #ffffff;line:7048b8
+  component "★ **station_coverage**\ndata_coverage(area, key, range)\nNOAA station years, suggested range" as COV #ffffff;line:7048b8
+  database "**data/noaa · data/cache**\nper-request JSON (ijson)\nDWD zips, ghcnd-stations.txt" as F #ffffff;line:7048b8
 }
 cloud "NOAA NCEI\nsearch/v1 · data/v1" as NCEI
+cloud "★ DWD · ECCC · FMI\nOpen-Meteo · PolarWatch" as EXT
 
 ' ---------- inside ① ----------
-T1API --> MWc : props
+T1API --> MWc : props + handle
 MWc --> ME : creates
 MWc --> SM : creates
+MWc --> RL : creates
 MWc --> DR : creates
-SM --> GEO : ring → bbox, km²
 DR --> ME : sources / layers
+RL --> ME : region layers
 
 ' ---------- inside ② ----------
-User --> Form : input
-Form --> JS : str · float · bool
+User --> JS : search · topics · dates
 JS --> H : HTTP + JSON
-H --> AI : set_request_inputs()\ntrigger_button()
+PL --> H : POST /api/analyze
+H --> AI : set_request_inputs()\ntrigger_button("apply")
+H --> PLC : search_places(q)
+PLC --> NOM : HTTPS
 AI --> UR : on_apply()
 UR --> H : to_dict() +\nlast_task_results
+JS --> PL : TrendPlots.setData()
 
 ' ---------- inside ③ ----------
-PUR --> TK : process(x, y) per selected tool
+PUR --> TK : process / mann_kendall_test
+ARA --> PA : run_tools()
+PA --> TK : analyze_trend · TTest · mann_kendall_test
+ARA --> PUR : _bin_records · split_by_variable
 
 ' ---------- inside ④ ----------
-CLI --> AW : PointDataRequest
-AW --> NC : PointDataRequest
+AW --> NC : fetch_point_data
+AW --> SS : fetch_point_data
+SS --> STS
 NC --> NCEI : HTTPS GET
-NCEI --> NC : raw JSON rows
-NC --> F : list[list[dict]]
-F --> NC : streamed (ijson)
+SS --> EXT : HTTPS GET
+NC --> F
+SS --> F
+COV --> NCEI : station search
 
-' ---------- between areas: works ----------
-User --> MWc : draws area / point
-JS -[#2f6fb3,bold]-> T1API : <color:#2f6fb3>**② → ①  mount · setResultData(map_layers) · fitToBounds**</color>
-T1API -[#2f6fb3,bold]-> JS : <color:#2f6fb3>**① → ②  AreaFeature**</color>\n<color:#2f6fb3>GeoJSON Polygon or Point + bbox</color>
-AI -[#2f6fb3,bold]-> AW : <color:#2f6fb3>**② → ④  get_all_topics_list()**</color>\n<color:#2f6fb3>list[str], 44 NOAA topic keys</color>
-AI -[#2f6fb3,bold]-> PUR : <color:#2f6fb3>**② → ③  process_user_request(UserRequest)**</color>
-AI -[#2f6fb3,bold]-> TK : <color:#2f6fb3>**② → ③  get_available_tools()**</color>
-PUR -[#2f6fb3,bold]-> AW : <color:#2f6fb3>**③ → ④  PointDataRequest per topic**</color>\n<color:#2f6fb3>(one point = centre of the area)</color>
-F -[#2f6fb3,bold]-> PUR : <color:#2f6fb3>**④ → ③  list[Iterator[record]]**</color>
+' ---------- between areas ----------
+User --> MWc : point · region · Areas
+JS -[#2f6fb3,bold]-> T1API : <color:#2f6fb3>**② → ①  setRegions · setArea · setResultData(map_layers) · fitToBounds**</color>
+T1API -[#2f6fb3,bold]-> JS : <color:#2f6fb3>**① → ②  AreaFeature**</color>\n<color:#2f6fb3>Point or region Polygon + bbox</color>
+AI -[#2f6fb3,bold]-> AW : <color:#2f6fb3>**② → ④  get_all_topics_list()**</color>
+AI -[#2f6fb3,bold]-> PUR : <color:#2f6fb3>**② → ③  point / no area**</color>
+AI -[#2f6fb3,bold]-> ARA : <color:#2f6fb3>**② → ③  shape == "region"**</color>
+H -[#2f6fb3,bold]-> PA : <color:#2f6fb3>**② → ③  /api/analyze**</color>
+H -[#2f6fb3,bold]-> ARA : <color:#2f6fb3>**② → ③  list_regions()**</color>
+H -[#2f6fb3,bold]-> COV : <color:#2f6fb3>**② → ④  ★ /api/coverage**</color>
+PUR -[#2f6fb3,bold]-> AW : <color:#2f6fb3>**③ → ④  PointDataRequest per topic**</color>
+ARA -[#2f6fb3,bold]-> NC : <color:#2f6fb3>**③ → ④  station search + bulk fetch**</color>
+ARA -[#2f6fb3,bold]-> SS : <color:#2f6fb3>**③ → ④  ★ stations(bbox) · fetch()**</color>
 PUR -[#2f6fb3,bold]-> UR : <color:#2f6fb3>**③ → ②  {topics, map_layers}**</color>
-
-' ---------- gaps ----------
-AT .[#b03a2e,dashed].> UR : <color:#b03a2e>G8  p-value, CI, r never reach ②</color>
+ARA -[#2f6fb3,bold]-> UR : <color:#2f6fb3>**③ → ②  {topics, map_layers}**</color>
 
 P1 -[hidden]right- P2
 P2 -[hidden]right- P3
 P2 -[hidden]down- P4
 
 legend right
-  |= Area |= Owner |= Files |
-  |<back:#e3eefc> ① Map widget </back>| Dev 1 | map-widget/, static/map-widget/ |
-  |<back:#e2f3e6> ② UI & web server </back>| Dev 2 | index.html, app.py, interface.py |
-  |<back:#fdeedd> ③ Data & calculations </back>| Dev 3 | src/task.py, src/test_task.py |
-  |<back:#eee6fb> ④ API wrapper </back>| Dev 4 | api_wrapper.py, noaa_api.py, noaa_test.py |
-  | **──►** | | inside one area |
-  | <color:#2f6fb3>**━━►**</color> | | between areas, works |
-  | <color:#b03a2e>**┄┄►**</color> | | gap (see page 5, G1–G14) |
+  |= Area |= Files |
+  |<back:#e3eefc> ① Map widget </back>| map-widget/, static/map-widget/ |
+  |<back:#e2f3e6> ② UI & web server </back>| index.html, static/plots/, app.py, interface.py, places.py |
+  |<back:#fdeedd> ③ Data & calculations </back>| src/task.py, area_analysis.py, plot_analysis.py |
+  |<back:#eee6fb> ④ API wrapper & sources </back>| api_wrapper.py, noaa_api.py, station_sources.py,\ndwd/eccc/fmi/openmeteo/polarwatch_api.py, station_coverage.py |
+  | **──►** | inside one area |
+  | <color:#2f6fb3>**━━►**</color> | between areas |
+  | ★ | new on branch data-expansion, not yet on main |
 endlegend
-caption The full path ① → ② → ③ → ④ → ③ → ② → ① works end to end.\nWhat is still missing are features one area offers that the next one cannot use or deliver: see page 5 "Feature gaps".
+caption Two analysis paths: a point (or no area) goes through task.process_user_request, a predefined region through area_analysis.\nOpen issues between the areas are on page 5 "Feature gaps".
 @enduml

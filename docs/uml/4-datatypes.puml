@@ -1,6 +1,6 @@
 @startuml datatypes
 !include style.iuml
-title TrendDetective (main @ a6e430f) — Data contracts between the work areas
+title TrendDetective (data-expansion @ 524818c) — Data contracts between the work areas
 hide empty methods
 hide circle
 skinparam nodesep 40
@@ -8,15 +8,22 @@ skinparam ranksep 50
 
 package "① Map widget" as D1 #e3eefc;line:2f6fb3 {
   class "AreaFeature" <<GeoJSON Feature, ① → ②>> {
-    {field} geometry: Polygon (CCW ring) or Point, [lng, lat] WGS84
-    {field} bbox: [west, south, east, north]
-    {field} properties.selectionId: string
-    {field} properties.shape: rectangle | polygon | freehand | point
-    {field} properties.crossesAntimeridian: boolean
+    {field} geometry: Point [lng, lat]  or  region bbox Polygon
+    {field} bbox: [west, south, east, north] (zero-size for a point)
+    {field} properties.selectionId: string ("area-001" or region id)
+    {field} properties.shape: "point" | "region"
+    {field} properties.regionId, name: region only
+    {field} properties.crossesAntimeridian: boolean (always false now)
     {field} properties.areaKm2: number (0 for a point)
   }
+  class "Region" <<JSON  GET /api/regions → setRegions>> {
+    {field} id: string
+    {field} name: string
+    {field} bbox: [west, south, east, north]
+    {field} note?: string (station counts)
+  }
   class "MapData" <<TS union, consumed by ①>> {
-    {field} geojson: {type, id?, data: FeatureCollection, outline?, fillOpacity?}
+    {field} geojson: {type, id?, data: FeatureCollection, outline?, fillOpacity?, pointRadius?}
     {field} raster: {type, tiles: string[], bounds?, ...}
     {field} image: {type, url, bounds}
     {field} feature.properties.color: CSS colour (optional)
@@ -26,7 +33,7 @@ package "① Map widget" as D1 #e3eefc;line:2f6fb3 {
 package "② UI & web server" as D2 #e2f3e6;line:2e8b57 {
   class "Apply body" <<JSON  POST /api/buttons/apply>> {
     {field} topics: {name: bool}
-    {field} tools: {name: bool}
+    {field} tools: {name: true} (no tool picker, all tools)
     {field} timeintervall: ["DD.MM.YYYY", "DD.MM.YYYY"]
     {field} interval_length: [float > 0, "Day" | "Month" | "Year"]
     {field} area: AreaFeature | null
@@ -38,43 +45,69 @@ package "② UI & web server" as D2 #e2f3e6;line:2e8b57 {
     {field} interval_length: tuple[float, str]
     {field} area: dict | None
   }
+  class "Place" <<JSON  GET /api/places>> {
+    {field} name, label: str
+    {field} kind: str ("city", "state", "coordinates", ...)
+    {field} lat, lon: float
+    {field} bbox: [west, south, east, north]
+  }
   class "visualization" <<JSON, ③ → ②>> {
-    {field} topics.<name>.labels: str[] DD.MM.YYYY (G9 not drawn)
-    {field} topics.<name>.values: number[] (one per interval)
-    {field} topics.<name>.mean: number | null
-    {field} topics.<name>.coordinates: [lat, lon] (area centre)
-    {field} topics.<name>.station: {id, name, latitude, longitude, elevation, distance_km} | null
-    {field} topics.<name>.error: str (only if the topic failed)
-    {field} topics.<name>.tools["Linear Regression"]: {slope, intercept, trend_line, observations}
-    {field} topics.<name>.tools["t-Test"]: {available, t_statistic, p_value, significant}
-    {field} topics.<name>.tools["Mann-Kendall"]: {trend, p_value, tau, ...} (G7 not drawn)
-    {field} map_layers[0] "user-request-results": one feature per topic, colour = slope sign
-    {field} map_layers[1] "measuring-stations": Point per station
+    {field} topics.<key>: one entry per topic and NOAA code ("temperature · maximum (TMAX)")
+    {field} .labels: str[] DD.MM.YYYY · .values: number[] · .mean · .unit · .variables
+    {field} .coordinates: [lat, lon] (point, or region bbox centre)
+    {field} .station: {id, name, latitude, longitude, elevation, ★ source, distance_km} | null
+    {field} .tools["Linear Regression"]: point: {slope, intercept, trend_line} · region: + p_value, CI, r²
+    {field} .tools["t-Test"]: {available, t_statistic, p_value, significant}
+    {field} .tools["Mann-Kendall"]: {available, trend, p_value, tau, z_statistic, s_statistic}
+    {field} region only: .region, .station_count, ★ .sources, .duplicates(_removed), .source_errors
+    {field} .error: str (only if the topic failed)
+    {field} map_layers: point → user-request-results + measuring-stations
+    {field} map_layers: region → area-result + area-stations-<key> (dot colour = trend)
+  }
+  class "★ coverage" <<JSON  POST /api/coverage>> {
+    {field} request: {area, topic: result key, timeintervall}
+    {field} scope: "point" | "region" · place · radius_km · needed
+    {field} codes[]: {code, name, station_count, years[], counts[],\n first, last, in_range, suggestion: [iso, iso] | null, stations[≤5]}
+  }
+  class "analyze body" <<JSON  POST /api/analyze>> {
+    {field} {x: number[], values: (number | null)[], tools?}
+    {field} or {groups: [{key, x, values}], tools?}
+    {field} → {observations, tools} or {groups: [{key, observations, tools}]}
   }
 }
 
-package "④ API wrapper" as D4 #eee6fb;line:7048b8 {
+package "④ API wrapper & sources" as D4 #eee6fb;line:7048b8 {
   class "PointDataRequest" <<Python frozen dataclass>> {
     {field} latitude: float (-90..90)
     {field} longitude: float (-180..180)
-    {field} topic: str (key of noaa_api.TOPICS)
+    {field} topic: str (key of any provider)
     {field} start_date: date
     {field} end_date: date (≥ start_date)
   }
-  class "Observation record" <<dict yielded by an Iterator>> {
-    {field} date: str "YYYY-MM-DD" daily · "YYYY-MM" monthly (G3) · "YYYY" annual (G3)
-    {field} station / name: str
-    {field} longitude / latitude / elevation: float
+  class "Observation record" <<dict>> {
+    {field} date: "YYYY-MM-DD" daily · "YYYY-MM" monthly · "YYYY" annual
+    {field} station, name: str
+    {field} longitude, latitude, elevation: float
     {field} value: float | int | str
-    {field} description: str (NCEI code, e.g. "tmax")
-    {field} no unit field (metric implied) (G9)
+    {field} description: lowercase code ("tmax", "prcp", "wnd_speed", ...)
+    {field} unit: str | None (metric)
+    {field} ★ source: "NOAA" | "DWD" | "ECCC" | "FMI" | "Open-Meteo ERA5" | ...
+  }
+  class "★ Station" <<Python frozen dataclass>> {
+    {field} source, id, name: str
+    {field} latitude, longitude, elevation
+    {field} first_date, last_date: date | None
+    {field} ids: frozenset ("wmo:10501", "ghcnd:…", "eccc:…")
+    {field} coverage: 0..1 of the requested range
+    {field} priority: 0 national · 1 NOAA · 9 model / satellite
   }
 }
 
 package "③ Data & calculations" as D3 #fdeedd;line:c46a12 {
-  class "Series input" <<list | tuple | Tensor>> {
-    {field} time: 1-D numbers (e.g. days since start), unique
-    {field} values: 1-D finite numbers, same length, n ≥ 3
+  class "Binned series" <<(labels, values)>> {
+    {field} labels: DD.MM.YYYY, one per non-empty interval
+    {field} values: mean per interval
+    {field} region: anomaly average over stations + mean level
   }
   class "TrendAnalysis" <<frozen dataclass>> {
     {field} slope, intercept, r_value: float
@@ -90,15 +123,20 @@ package "③ Data & calculations" as D3 #fdeedd;line:c46a12 {
 }
 
 "AreaFeature" -[#2f6fb3,bold]-> "Apply body" : <color:#2f6fb3>① → ② onAreaSelected</color>
-"Apply body" --> "UserRequest" : set_request_inputs + on_apply\n(parse_dd_mm_yyyy)
-"PointDataRequest" --> "Observation record" : fetch_point_data()\n→ list[Iterator[record]], one per variable
-"Series input" --> "TrendAnalysis" : LinearRegression.analyze_trend()
-"Series input" --> "MannKendallResult" : mann_kendall_test()
+"Region" -[#2f6fb3,bold]-> "AreaFeature" : <color:#2f6fb3>picked region</color>
+"Place" --> "AreaFeature" : setArea(Point)
+"Apply body" --> "UserRequest" : set_request_inputs + on_apply
+"PointDataRequest" --> "Observation record" : fetch_point_data()\none list per code
+"★ Station" --> "Observation record" : StationSource.fetch()
 
-"UserRequest" -[#2f6fb3,bold]-> "PointDataRequest" : <color:#2f6fb3>③ builds one per topic,</color>\n<color:#2f6fb3>area → centre point (G1)</color>
-"Observation record" -[#2f6fb3,bold]-> "Series input" : <color:#2f6fb3>_bin_records(): mean per interval,</color>\n<color:#2f6fb3>all variables merged (G5)</color>
-"Series input" -[#2f6fb3,bold]-> "visualization" : <color:#2f6fb3>process_user_request()</color>
+"UserRequest" -[#2f6fb3,bold]-> "PointDataRequest" : <color:#2f6fb3>③ point flow: one per topic</color>
+"UserRequest" -[#2f6fb3,bold]-> "★ Station" : <color:#2f6fb3>③ region flow: stations in bbox</color>
+"Observation record" -[#2f6fb3,bold]-> "Binned series" : <color:#2f6fb3>split_by_variable + _bin_records</color>
+"Binned series" --> "TrendAnalysis" : analyze_trend()\n(region + /api/analyze)
+"Binned series" --> "MannKendallResult" : mann_kendall_test()
+"Binned series" -[#2f6fb3,bold]-> "visualization" : <color:#2f6fb3>process_* → topics</color>
+"TrendAnalysis" -[#2f6fb3,bold]-> "visualization" : <color:#2f6fb3>region LR only (G8)</color>
 "MannKendallResult" -[#2f6fb3,bold]-> "visualization" : <color:#2f6fb3>tools["Mann-Kendall"]</color>
-"TrendAnalysis" .[#b03a2e,dashed].> "visualization" : <color:#b03a2e>G8 never used</color>
 "visualization" -[#2f6fb3,bold]-> "MapData" : <color:#2f6fb3>② → ① map_layers</color>
+"visualization" --> "analyze body" : plots.js
 @enduml

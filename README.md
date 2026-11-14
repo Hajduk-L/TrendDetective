@@ -8,9 +8,16 @@ Be An Earth System Trend Detective!
 python3 app.py
 ```
 
-Open http://127.0.0.1:8000. Choose a timestamp, an interval and topics in the sidebar, draw an
-area on the world map (or pick a single point with the 📍 tool), and click **Apply**.
-To move or reshape a selection, switch on **Edit** in the map toolbar first.
+Open http://127.0.0.1:8000. Choose a time frame, an interval and topics in the sidebar, pick a
+point on the world map with the 📍 tool (or one of the predefined regions with **Areas**), and
+click **Apply**. To move a point, switch on **Edit** in the map toolbar first.
+
+When a result card has no values (for example because the stations nearby stopped reporting
+before the chosen time frame), the card shows when the stations around the point or in the
+region do have data: stations per year, the longest-running stations, and a button that fills in
+a time frame with data. This comes from the station metadata of the NOAA Search Service
+(`POST /api/coverage`, see [`station_coverage.py`](station_coverage.py)); no observations are
+downloaded for it.
 
 ## Map widget
 
@@ -80,11 +87,48 @@ records with shared lowercase station metadata keys, a numeric `value`, and a
 lowercase `description` naming that variable. Iterators stream their records
 from the nested JSON file saved under `data/noaa_test/`.
 
+## Additional data sources
+
+Besides NOAA, these sources are registered in `api_wrapper._PROVIDERS`. None
+needs a registration or API key.
+
+| Provider | Module | Coverage | Topics |
+|---|---|---|---|
+| DWD (German weather service, Open Data) | [`dwd_api.py`](dwd_api.py) | Germany, ~1,100 climate and ~6,600 precipitation stations | `temperature`, `precipitation`, `snowfall`, `snow_depth`, `wind_speed` |
+| ECCC (Environment Canada, MSC GeoMet) | [`eccc_api.py`](eccc_api.py) | Canada | `temperature`, `precipitation`, `snowfall`, `snow_depth`, `wind_speed` (gusts) |
+| FMI (Finnish Meteorological Institute) | [`fmi_api.py`](fmi_api.py) | Finland | `temperature`, `precipitation`, `snow_depth` |
+| Open-Meteo (ERA5 reanalysis, a model) | [`openmeteo_api.py`](openmeteo_api.py) | world, 1940 to today | `temperature_era5`, `precipitation_era5`, `snowfall_era5`, `snow_depth_era5`, `wind_speed_era5` |
+| NOAA PolarWatch (VIIRS satellite) | [`polarwatch_api.py`](polarwatch_api.py) | polar seas and lakes, since 2021, point only | `ice_thickness_satellite` |
+
+The station sources deliver NOAA's variable codes and units (`tmax`, `prcp`,
+`snwd` in mm, wind in m/s), so their values join the same series as NOAA's.
+ERA5 and satellite data have their own topics and are never mixed with
+station measurements.
+
+- **Point:** every source that covers the point is asked in parallel, and the
+  station nearest to the point wins, whatever database it comes from. The
+  result card names the source.
+- **Region:** stations from all sources are merged. GHCN-Daily re-publishes
+  many national stations, so copies are removed first
+  (`station_sources.deduplicate`). Two stations are treated as the same when
+  they share a WMO number, an ECCC climate ID (GHCN `CAN0xxxxxxx`) or a GHCN
+  ID. WMO numbers for GHCN come from `ghcnd-stations.txt`, and for DWD from
+  the Bright Sky API. Many German and Finnish GHCN stations carry only an
+  ECA&D number, so stations of different databases standing within 1 km of
+  each other (and 25 m in height) also count as one. Of two copies, the one
+  covering more of the time frame is kept, and on a tie the national original
+  wins. The card shows how many stations each source contributed and how many
+  duplicates were removed.
+
+Downloaded station lists and DWD files are cached in `data/cache/`.
+
 ## Add another provider
 
 Provider clients implement the `PointDataProvider` protocol in
 `api_wrapper.py`. Register a client class in `_PROVIDERS`, then callers can
-select it with the `provider` keyword while NOAA remains the default.
+select it with the `provider` keyword while NOAA remains the default. Station
+databases can subclass `station_sources.StationSource`, which implements the
+point request and is used by the region evaluation.
 
 ## Build the API reference
 
