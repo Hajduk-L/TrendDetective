@@ -1,0 +1,13 @@
+[project]
+name = "trend-detective"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["requests>=2.31,<3", "ijson>=3.2,<4", "scipy", "torch"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

@@ -34,5 +34,6 @@
       "src": "/",
       "dest": "/index.html"
     }
-  ]
+  ],
+  "fluid": true
 }
