@@ -1,0 +1,42 @@
+name: Sync with upstream
+
+# Every 30 minutes: merge new commits from EricL06/TrendDetective into this
+# fork's main. The push makes Vercel redeploy the website automatically.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream/main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/EricL06/TrendDetective.git
+          git fetch upstream main
+
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "Commits behind upstream: $behind"
+          if [ "$behind" -eq 0 ]; then
+            echo "Already up to date."
+            exit 0
+          fi
+
+          # Fails (and GitHub notifies you) if a merge conflict needs manual work.
+          git merge --no-edit upstream/main
+          git push origin main
