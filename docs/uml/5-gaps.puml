@@ -1,0 +1,86 @@
+@startuml gaps
+!include style.iuml
+title TrendDetective (main @ a6e430f) — Feature gaps between the work areas
+skinparam componentStyle rectangle
+skinparam nodesep 30
+skinparam ranksep 90
+skinparam ArrowThickness 1.3
+skinparam ArrowFontSize 13
+skinparam ArrowFontStyle bold
+skinparam ArrowColor #b03a2e
+skinparam ArrowFontColor #b03a2e
+
+package "① MAP WIDGET" as P1 #e3eefc;line:2f6fb3;line.bold {
+  component "**Area selection**\nrectangle · polygon · freehand\nareaKm2 · bbox" as A1 #ffffff;line:2f6fb3
+  component "**crossesAntimeridian**\nbbox with west > east" as A1b #ffffff;line:2f6fb3
+  component "**DataRenderer**\ngeojson · raster · image\nfeature colours, popups" as A1c #ffffff;line:2f6fb3
+}
+
+package "② USER INTERFACE & WEB SERVER" as P2 #e2f3e6;line:2e8b57;line.bold {
+  component "**Topic list**\nshows raw keys, all 44" as B1 #ffffff;line:2e8b57
+  component "**Apply without area**\nallowed" as B2 #ffffff;line:2e8b57
+  component "**Free date range**\nany length" as B3 #ffffff;line:2e8b57
+  component "**Result cards**\nbadges: LR + t-Test only\nchart without axes" as B4 #ffffff;line:2e8b57
+  component "**Error handling**\ncatches ValueError only\ngeneric error text" as B5 #ffffff;line:2e8b57
+}
+
+package "③ DATA & CALCULATIONS" as P3 #fdeedd;line:c46a12;line.bold {
+  component "**_extract_coordinates**\narea → 1 centre point" as C1 #ffffff;line:c46a12
+  component "**_bin_records**\nparses YYYY-MM-DD only\nmerges all variables" as C2 #ffffff;line:c46a12
+  component "**Mann-Kendall result**\ntrend, p, tau" as C3 #ffffff;line:c46a12
+  component "**analyze_trend → TrendAnalysis**\np-value, CI, r" as C4 #ffffff;line:c46a12
+  component "**labels**\none date per interval" as C5 #ffffff;line:c46a12
+  component "**map_layers**\n1 feature per topic,\nsame geometry" as C6 #ffffff;line:c46a12
+}
+
+package "④ API WRAPPER" as P4 #eee6fb;line:7048b8;line.bold {
+  component "**single coordinate only**\nfetch_data_single_topic_single_coordinate\n1 station per request" as D1 #ffffff;line:7048b8
+  component "**44 TOPICS**\nmarine_*: HTTP 400\nmany: no station ≤ 2°" as D2 #ffffff;line:7048b8
+  component "**Monthly / annual datasets**\ndate YYYY-MM / YYYY" as D3 #ffffff;line:7048b8
+  component "**One iterator per variable**\ntmax · tavg · tmin ..." as D4 #ffffff;line:7048b8
+  component "**NOAATopic label + description**\nunits = metric" as D5 #ffffff;line:7048b8
+  component "**PointDataProvider registry**\nonly 'noaa'" as D6 #ffffff;line:7048b8
+  component "**One HTTP download**\nwhole range, no paging/cache" as D7 #ffffff;line:7048b8
+}
+
+A1 ..> C1 : **G1**
+C1 ..> D1 : **G1**
+A1b ..> C1 : **G11**
+D2 ..> B1 : **G2**
+B2 ..> C1 : **G6**
+B3 ..> D7 : **G4**
+D3 ..> C2 : **G3**
+D4 ..> C2 : **G5**
+C3 ..> B4 : **G7**
+C4 ..> B4 : **G8**
+C5 ..> B4 : **G9**
+D5 ..> B4 : **G9 / G12**
+D5 ..> B1 : **G12**
+C6 ..> A1c : **G10**
+D6 ..> B1 : **G14**
+B5 ..> C1 : **G13**
+
+P1 -[hidden]right- P2
+P1 -[hidden]down- P3
+P2 -[hidden]down- P4
+P3 -[hidden]right- P4
+
+legend bottom
+  |= Gap |= Offered by |= Missing in |= What happens today |= Who fixes it |
+  | G1 | ① area of any shape | ③ ④ | Area is reduced to its centre point; ④ can only fetch one coordinate and one station. No data "for an area". | ④ area / multi-station fetch, ③ aggregate |
+  | G2 | ④ 44 topics | ④ ② | At Aachen 2020, 24 of 44 topics fail: no station within 2°, all marine_* get HTTP 400. ② still offers them. | ④ availability check, ② disable |
+  | G3 | ④ monthly / annual topics | ③ | Dates "YYYY-MM" / "YYYY" fail to parse in _bin_records → 0 values, empty chart. | ③ |
+  | G4 | ② any date range | ④ | One request for the whole range; hourly and marine datasets over long ranges time out. | ④ paging / cache, ② limit |
+  | G5 | ④ one iterator per variable | ③ ② | tmax, tavg, tmin (or speed + direction) are averaged into one series; no way to pick a variable. | ③ split series, ② picker |
+  | G6 | ② Apply without area | ③ | Silently uses DEFAULT_COORDINATE (Washington DC). | ② require area or ③ error |
+  | G7 | ③ Mann-Kendall + t-Test errors | ② | Mann-Kendall only appears in the map popup; unavailable t-Test shows "undefined". | ② |
+  | G8 | ③ analyze_trend (p, CI, r) | ③ ② | Implemented and tested, but process_user_request never calls it. | ③ ② |
+  | G9 | ③ labels, ④ metric units | ② | Chart has no dates on the x-axis and no unit on the y-axis. | ② (+ ④ unit field) |
+  | G10 | ① raster / image / styling | ③ | One feature per topic on the same shape: only the top one is visible; colour = slope sign only. | ③ ① legend / toggle |
+  | G11 | ① crossesAntimeridian | ③ | bbox centre averaged naively: 170° and -170° give 0°. | ③ |
+  | G12 | ④ NOAATopic label + description | ② | get_all_topics_list returns keys only; the UI shows "wet_bulb_temperature". | ④ ② |
+  | G13 | ③ / ④ exceptions | ② | do_POST catches only ValueError / AssertionError; anything else drops the reply and the page shows a generic message. | ② |
+  | G14 | ④ provider registry | ② ③ | provider="noaa" is hard-coded; no other source selectable. | later |
+endlegend
+caption Arrows point from the area that offers a feature to the area that cannot use or deliver it.
+@enduml

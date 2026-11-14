@@ -114,5 +114,7 @@ export interface MapWidgetHandle {
   getArea: () => AreaFeature | null;
   clearArea: () => void;
   fitToArea: () => void;
+  /** Zoom the map to a bounding box, e.g. one covering the selection and the result data. */
+  fitToBounds: (bbox: BBox) => void;
   setTool: (tool: DrawTool) => void;
 }

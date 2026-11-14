@@ -1,6 +1,6 @@
 @startuml sequence
 !include style.iuml
-title TrendDetective (main @ b040fc3) — Sequence across the four work areas
+title TrendDetective (main @ a6e430f) — Sequence across the four work areas
 autonumber
 
 actor User
@@ -21,25 +21,21 @@ box "④ API wrapper" #eee6fb
   participant "NOAAClient" as NC
 end box
 
-== Server start ==
-H -> AI : import interface
-AI -[#b03a2e]> T : <color:#b03a2e>✖ from src.task import get_available_tools, process_user_request</color>
-T --[#b03a2e]> AI : <color:#b03a2e>ImportError → server exits. Steps below assume it is fixed.</color>
-
 == Page load ==
 JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> mount(el, {onAreaSelected, onAreaCleared})
 JS -> H : GET /api/topics
 H -> AI : get_sorted_topics()
 AI -[#2f6fb3]> AW : <color:#2f6fb3>② → ④</color> get_all_topics_list()
-AW --> AI : list[str] (NOAA TOPICS keys)
+AW --> AI : list[str] (44 keys, no labels, no availability)
 H --> JS : {topics: list[str]}
 JS -> H : GET /api/tools
 H -> AI : get_sorted_tools()
-AI -[#b03a2e]> T : <color:#b03a2e>✖ get_available_tools() → list[str]</color>
+AI -[#2f6fb3]> T : <color:#2f6fb3>② → ③</color> get_available_tools()
+T --> AI : ["Linear Regression", "Mann-Kendall", "t-Test"]
 H --> JS : {tools: list[str]}
 
 == Selection ==
-User -> SM : draw area or pick point
+User -> SM : draw rectangle / polygon / freehand or pick point
 SM -[#2f6fb3]-> JS : <color:#2f6fb3>① → ②</color> onAreaSelected(AreaFeature)
 
 == Apply ==
@@ -48,21 +44,29 @@ JS -> EMB : setLoading(true)
 JS -> H : POST /api/buttons/apply\n{topics, tools, timeintervall: [str,str], interval_length, area}
 H -> AI : set_request_inputs() → parse_dd_mm_yyyy()
 H -> AI : trigger_button("apply") → on_apply()
-AI -> AI : UserRequest(topics, tools, timeintervall: (date, date), ...)
-AI -[#b03a2e]> T : <color:#b03a2e>✖ process_user_request(UserRequest)</color>
-group #fff6f0 missing inside process_user_request
-  T -[#b03a2e,dashed]> AW : <color:#b03a2e>③ ⇢ ④ PointDataRequest per topic and location</color>
+AI -[#2f6fb3]> T : <color:#2f6fb3>② → ③</color> process_user_request(UserRequest)
+T -> T : _extract_coordinates(area) → one (lat, lon)\n<color:#b03a2e>G1 area reduced to its centre · G6 no area → Washington DC</color>
+loop each selected topic
+  T -[#2f6fb3]> AW : <color:#2f6fb3>③ → ④</color> PointDataRequest(lat, lon, topic, start, end)
   AW -> NC : fetch_point_data()
-  NC --> AW : list[Iterator[dict]], one per variable
-  AW --[#b03a2e,dashed]> T : <color:#b03a2e>④ ⇢ ③ records → (time, values) per interval</color>
-  T -> T : LinearRegression.analyze_trend() → TrendAnalysis\nmann_kendall_test() → MannKendallResult
-  T --[#b03a2e,dashed]> AI : <color:#b03a2e>③ ⇢ ② {topics: {...}, map_layers: [...]}</color>
+  NC -> NC : _find_station(): box 0.05° → 0.25° → 0.5° → 1° → 2°
+  alt station found
+    NC --> AW : list[Iterator[record]], one per variable
+    AW --[#2f6fb3]> T : <color:#2f6fb3>④ → ③</color> records
+    T -> T : merge all variables <color:#b03a2e>(G5)</color> → _bin_records()\n<color:#b03a2e>G3 "YYYY-MM" / "YYYY" dates dropped</color>
+    T -> T : LinearRegression / TTest / MannKendall .process()
+    T -> T : _station_from_records() → station point
+  else no station within 2° or NCEI error
+    NC --[#b03a2e]> T : <color:#b03a2e>NOAAError → topic gets "error" (G2)</color>
+  end
 end
+T --[#2f6fb3]> AI : <color:#2f6fb3>③ → ②</color> {topics: {...}, map_layers: [results, measuring-stations]}
 AI -> AI : last_task_results = result
 H --> JS : 204
 JS -> H : GET /api/user-request
 H --> JS : {user_request, visualization: last_task_results}
-JS -> JS : renderVisualization(): badges + SVG chart per topic
-JS -[#b03a2e,dashed]> EMB : <color:#b03a2e>② ⇢ ① setResultData(visualization.map_layers)</color>
+JS -> JS : renderVisualization(): station line, badges, SVG chart\n<color:#b03a2e>G7 Mann-Kendall not shown · G9 no dates or units on the chart</color>
+JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> setResultData(map_layers)
+JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> fitToBounds(selection + stations)
 JS -> EMB : setLoading(false)
 @enduml

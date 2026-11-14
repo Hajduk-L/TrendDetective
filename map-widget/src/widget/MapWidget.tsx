@@ -171,6 +171,7 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
         const a = selectionRef.current?.getArea();
         if (a) engineRef.current?.fitToBBox(a.bbox);
       },
+      fitToBounds: (bbox) => engineRef.current?.fitToBBox(bbox),
       setTool: (t) => selectionRef.current?.setTool(t),
     }),
     [],

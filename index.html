@@ -244,6 +244,7 @@
             gap: 1rem;
         }
         .topic-viz-card {
+            min-width: 0;
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             padding: 0.85rem 1rem;
@@ -252,7 +253,8 @@
         .topic-viz-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: baseline;
+            gap: 8px;
             margin-bottom: 0.5rem;
             font-weight: 600;
             font-size: 0.92rem;
@@ -263,10 +265,18 @@
             gap: 0.4rem;
             margin-bottom: 0.6rem;
         }
+        .topic-error {
+            font-size: 0.8rem;
+            color: #991b1b;
+            background: #fee2e2;
+            border-radius: 6px;
+            padding: 4px 8px;
+            margin: 6px 0;
+        }
         .station-line {
             font-size: 0.8rem;
-            color: #92400e;
-            background: #fef3c7;
+            color: #5b21b6;
+            background: #ede9fe;
             border-radius: 6px;
             padding: 4px 8px;
             margin: 6px 0;
@@ -280,13 +290,42 @@
             color: #1e40af;
             font-weight: 500;
         }
+        .metric-badge-muted {
+            background: #f1f5f9;
+            color: #64748b;
+            font-weight: 400;
+        }
+        .chart-host {
+            min-width: 0;
+        }
         .chart-svg {
-            width: 100%;
-            height: 110px;
+            max-width: 100%;
+            height: auto;
             background: #ffffff;
-            border: 1px solid #e2e8f0;
+            box-shadow: 0 0 0 1px #e2e8f0;
             border-radius: 6px;
             display: block;
+        }
+        .chart-svg text {
+            font-family: inherit;
+            font-size: 11px;
+            fill: #64748b;
+        }
+        .chart-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            font-size: 0.75rem;
+            color: #475569;
+            margin-top: 4px;
+        }
+        .chart-empty {
+            font-size: 0.8rem;
+            color: #64748b;
+            padding: 16px;
+            text-align: center;
+            border: 1px dashed #cbd5e1;
+            border-radius: 6px;
         }
         pre {
             margin: 0;
@@ -659,37 +698,160 @@
             }
         });
 
-        function buildSvgChart(values, trendLine) {
-            const width = 320;
-            const height = 110;
-            const pad = 14;
-            const allVals = trendLine ? [...values, ...trendLine] : [...values];
-            const minV = Math.min(...allVals);
-            const maxV = Math.max(...allVals);
-            const span = maxV - minV || 1;
+        // Rounds a raw step to 1, 2, 2.5 or 5 times a power of ten for readable ticks.
+        function niceStep(rawStep) {
+            const power = Math.pow(10, Math.floor(Math.log10(rawStep)));
+            const fraction = rawStep / power;
+            const nice = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10;
+            return nice * power;
+        }
 
-            const toX = (i) =>
-                values.length <= 1
-                    ? width / 2
-                    : pad + (i / (values.length - 1)) * (width - 2 * pad);
-            const toY = (v) =>
-                height - pad - ((v - minV) / span) * (height - 2 * pad);
+        function formatTick(value, step) {
+            const decimals = Math.max(0, -Math.floor(Math.log10(step)) + (step % 1 === 0 ? 0 : 1));
+            return value.toFixed(Math.min(decimals, 3));
+        }
 
-            const polyPoints = values.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ');
-            let svgContent = `<polyline fill="none" stroke="#2563eb" stroke-width="2" points="${polyPoints}" />`;
-
-            for (let i = 0; i < values.length; i++) {
-                svgContent += `<circle cx="${toX(i).toFixed(1)}" cy="${toY(values[i]).toFixed(1)}" r="2.5" fill="#1d4ed8" />`;
+        // Time-series chart: one point per interval (x = interval start date,
+        // y = mean value), with axes, gridlines, unit, tooltips and an optional
+        // dashed linear trend. It is drawn at the host's real pixel width (1 SVG
+        // unit = 1 CSS px), so text never scales and tick counts fit the space.
+        function buildSvgChart(values, trendLine, labels, unit, pixelWidth) {
+            if (!Array.isArray(values) || values.length === 0) {
+                return '<div class="chart-empty">No numeric values in the selected time range.</div>';
             }
-
-            if (Array.isArray(trendLine) && trendLine.length === values.length) {
-                const trendPoints = trendLine
-                    .map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`)
-                    .join(' ');
-                svgContent += `<polyline fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3" points="${trendPoints}" />`;
+            const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+            const series = values.map(num);
+            if (series.every((v) => v === null)) {
+                return '<div class="chart-empty">No numeric values in the selected time range.</div>';
             }
+            const n = series.length;
+            const width = Math.max(240, Math.round(pixelWidth || 640));
+            const height = 226;
+            const right = 14;
+            const top = 30;
+            const bottom = 40;
+            const charW = 6.4; // approx. width of one 11px label character (digits/dots)
+            const unitText = unit ? ` ${unit}` : '';
 
-            return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${svgContent}</svg>`;
+            const trend = Array.isArray(trendLine) && trendLine.length === n ? trendLine.map(num) : null;
+            const finite = [...series, ...(trend || [])].filter((v) => v !== null);
+            let minV = Math.min(...finite);
+            let maxV = Math.max(...finite);
+            if (maxV - minV < 1e-9) {
+                const pad = Math.abs(minV) > 1 ? Math.abs(minV) * 0.1 : 1;
+                minV -= pad;
+                maxV += pad;
+            }
+            const step = niceStep((maxV - minV) / 4);
+            const yStart = Math.floor(minV / step) * step;
+            const yEnd = Math.ceil(maxV / step) * step;
+            const yTicks = [];
+            for (let k = 0; yStart + k * step <= yEnd + step / 2; k++) {
+                yTicks.push(yStart + k * step);
+            }
+            const yLabels = yTicks.map((v) => formatTick(v, step));
+            const left = Math.ceil(Math.max(...yLabels.map((t) => t.length)) * charW) + 14;
+            const plotW = width - left - right;
+            const plotH = height - top - bottom;
+
+            const toX = (i) => n <= 1 ? left + plotW / 2 : left + (i / (n - 1)) * plotW;
+            const toY = (v) => top + plotH - ((v - yStart) / (yEnd - yStart)) * plotH;
+
+            let svg = '';
+            yTicks.forEach((v, k) => {
+                const y = toY(v).toFixed(1);
+                svg += `<line x1="${left}" x2="${width - right}" y1="${y}" y2="${y}" stroke="#eef2f7" />`;
+                svg += `<text x="${left - 6}" y="${y}" text-anchor="end" dominant-baseline="middle">${yLabels[k]}</text>`;
+            });
+            if (unit) {
+                svg += `<text x="4" y="${top - 10}" text-anchor="start">${escapeText(unit)}</text>`;
+            }
+            svg += `<line x1="${left}" x2="${left}" y1="${top}" y2="${top + plotH}" stroke="#94a3b8" />`;
+            svg += `<line x1="${left}" x2="${width - right}" y1="${top + plotH}" y2="${top + plotH}" stroke="#94a3b8" />`;
+
+            // x ticks: evenly spaced interval labels including the first and last;
+            // start with as many as could fit and use fewer until none overlap
+            const safeLabels = Array.isArray(labels) && labels.length === n ? labels.map(String) : series.map((_, i) => `#${i + 1}`);
+            const gap = 10;
+            const tickBox = (i) => {
+                const x = toX(i);
+                const w = safeLabels[i].length * charW;
+                if (n > 1 && x - w / 2 < 2) return { i, x, tx: Math.max(2, x - 4), anchor: 'start', from: Math.max(2, x - 4), to: Math.max(2, x - 4) + w };
+                if (n > 1 && x + w / 2 > width - 2) return { i, x, tx: Math.min(width - 2, x + 4), anchor: 'end', from: Math.min(width - 2, x + 4) - w, to: Math.min(width - 2, x + 4) };
+                return { i, x, tx: x, anchor: 'middle', from: x - w / 2, to: x + w / 2 };
+            };
+            const maxLabelW = Math.max(...safeLabels.map((t) => t.length)) * charW + gap;
+            let ticks = [tickBox(0)];
+            for (let k = Math.min(n, Math.floor(plotW / maxLabelW) + 1); k >= 2; k--) {
+                const indexes = [...new Set(Array.from({ length: k }, (_, j) => Math.round((j * (n - 1)) / (k - 1))))];
+                const boxes = indexes.map(tickBox);
+                if (boxes.every((box, j) => j === 0 || box.from >= boxes[j - 1].to + gap)) {
+                    ticks = boxes;
+                    break;
+                }
+            }
+            for (const t of ticks) {
+                svg += `<line x1="${t.x.toFixed(1)}" x2="${t.x.toFixed(1)}" y1="${top + plotH}" y2="${top + plotH + 4}" stroke="#94a3b8" />`;
+                svg += `<text x="${t.tx.toFixed(1)}" y="${top + plotH + 16}" text-anchor="${t.anchor}">${escapeText(safeLabels[t.i])}</text>`;
+            }
+            svg += `<text x="${(left + plotW / 2).toFixed(1)}" y="${height - 6}" text-anchor="middle">interval start date</text>`;
+
+            // series (gaps where a value is missing)
+            const polyline = (vals, attrs) => {
+                let segment = [];
+                let out = '';
+                const flush = () => {
+                    if (segment.length > 1) out += `<polyline fill="none" ${attrs} points="${segment.join(' ')}" />`;
+                    segment = [];
+                };
+                vals.forEach((v, i) => {
+                    if (v === null) { flush(); return; }
+                    segment.push(`${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+                });
+                flush();
+                return out;
+            };
+            svg += polyline(series, 'stroke="#2563eb" stroke-width="2"');
+            if (trend) {
+                svg += polyline(trend, 'stroke="#dc2626" stroke-width="2" stroke-dasharray="6,4"');
+            }
+            // smaller markers when points would touch (e.g. daily intervals)
+            const dense = n > 1 && plotW / (n - 1) < 9;
+            series.forEach((v, i) => {
+                if (v === null) return;
+                svg += `<circle cx="${toX(i).toFixed(1)}" cy="${toY(v).toFixed(1)}" r="${dense ? 1.6 : 3.5}" fill="#1d4ed8"${dense ? '' : ' stroke="#ffffff" stroke-width="1"'}>`
+                    + `<title>${escapeText(safeLabels[i])}: ${v}${escapeText(unitText)}</title></circle>`;
+            });
+
+            return `<svg class="chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img">${svg}</svg>`;
+        }
+
+        // Draws the chart at the host's current width and redraws it when the
+        // card is resized (window resize, grid reflow).
+        const chartResizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver((entries) => {
+                for (const entry of entries) drawChartInto(entry.target);
+            })
+            : null;
+
+        function drawChartInto(host) {
+            const data = host._chartData;
+            if (!data) return;
+            const w = Math.floor(host.clientWidth);
+            if (!w || w === host._chartWidth) return;
+            host._chartWidth = w;
+            host.innerHTML = buildSvgChart(data.values, data.trendLine, data.labels, data.unit, w);
+        }
+
+        function buildChartLegend(info, hasTrend) {
+            const variables = Array.isArray(info.variables) && info.variables.length
+                ? ` of ${info.variables.map(escapeText).join(', ')}`
+                : '';
+            let html = `<div class="chart-legend"><span><span style="color:#1d4ed8;">●</span> mean per interval${variables}</span>`;
+            if (hasTrend) {
+                html += '<span><span style="color:#dc2626;">╌╌</span> linear trend</span>';
+            }
+            return html + '</div>';
         }
 
         function renderVisualization(visualization) {
@@ -701,6 +863,7 @@
 
             if (window.trendMap && Array.isArray(visualization.map_layers)) {
                 window.trendMap.setResultData(visualization.map_layers);
+                fitMapToSelectionAndStations(visualization.map_layers);
             }
 
             const entries = Object.entries(visualization.topics);
@@ -709,23 +872,42 @@
                 return;
             }
 
+            if (chartResizeObserver) chartResizeObserver.disconnect();
             container.innerHTML = '';
+            const chartHosts = [];
             for (const [topic, info] of entries) {
                 const card = document.createElement('div');
                 card.className = 'topic-viz-card';
 
-                const lr = info.tools && info.tools['Linear Regression'];
-                const tt = info.tools && info.tools['t-Test'];
+                const tools = info.tools || {};
+                const lr = tools['Linear Regression'];
+                const tt = tools['t-Test'];
+                const mk = tools['Mann-Kendall'];
+                const values = Array.isArray(info.values) ? info.values : [];
+                const show = (v) => (v === null || v === undefined || v === '' ? '–' : escapeText(String(v)));
+                const badge = (text, title) => `<span class="metric-badge"${title ? ` title="${escapeText(title)}"` : ''}>${text}</span>`;
+                const unavailable = (name, result) => `<span class="metric-badge metric-badge-muted" title="${escapeText(result.error || '')}">${name}: ${escapeText(result.error || 'not available')}</span>`;
 
-                let badgesHtml = `<span class="metric-badge">Mean: ${info.mean}</span>`;
-                badgesHtml += `<span class="metric-badge">Intervals: ${info.values.length}</span>`;
+                let badgesHtml = badge(`Mean: ${show(info.mean)}${info.unit && info.mean != null ? ' ' + escapeText(info.unit) : ''}`);
+                badgesHtml += badge(`Intervals: ${values.length}`);
                 if (lr) {
-                    badgesHtml += `<span class="metric-badge">Slope (w): ${lr.slope}</span>`;
-                    badgesHtml += `<span class="metric-badge">Intercept (b): ${lr.intercept}</span>`;
+                    badgesHtml += badge(`Slope (w): ${show(lr.slope)}${info.unit ? ' ' + escapeText(info.unit) + '/interval' : ''}`);
+                    badgesHtml += badge(`Intercept (b): ${show(lr.intercept)}`);
                 }
                 if (tt) {
-                    badgesHtml += `<span class="metric-badge">t-stat: ${tt.t_statistic}</span>`;
-                    badgesHtml += `<span class="metric-badge">p-val: ${tt.p_value}</span>`;
+                    if (tt.available === false) {
+                        badgesHtml += unavailable('t-Test', tt);
+                    } else {
+                        badgesHtml += badge(`t-stat: ${show(tt.t_statistic)}`, 't-Test: first half vs. second half of the intervals');
+                        badgesHtml += badge(`t-Test p: ${show(tt.p_value)}${tt.significant ? ' (significant)' : ''}`);
+                    }
+                }
+                if (mk) {
+                    if (mk.available === false) {
+                        badgesHtml += unavailable('Mann-Kendall', mk);
+                    } else {
+                        badgesHtml += badge(`Mann-Kendall: ${show(mk.trend)}, p ${show(mk.p_value)}`, `tau ${mk.tau ?? '–'}, z ${mk.z_statistic ?? '–'}, S ${mk.s_statistic ?? '–'}`);
+                    }
                 }
 
                 const st = info.station;
@@ -734,18 +916,60 @@
                       + `${st.id ? ` (${escapeText(st.id)})` : ''}: ${Number(st.latitude).toFixed(4)}, ${Number(st.longitude).toFixed(4)}`
                       + ` · ${st.distance_km} km from the selected point</div>`
                     : '';
-                const chartSvg = buildSvgChart(info.values, lr ? lr.trend_line : null);
+                const trendLine = lr ? lr.trend_line : null;
+                const hasValues = values.some((v) => typeof v === 'number' && Number.isFinite(v));
+                const coords = Array.isArray(info.coordinates) ? info.coordinates : null;
                 card.innerHTML = `
                     <div class="topic-viz-header">
-                        <span>${topic}</span>
-                        <span style="font-size:0.78rem;color:#64748b;">[${info.coordinates[0]}, ${info.coordinates[1]}]</span>
+                        <span>${escapeText(topic)}</span>
+                        ${coords ? `<span style="font-size:0.78rem;color:#64748b;white-space:nowrap;">[${coords[0]}, ${coords[1]}]</span>` : ''}
                     </div>
                     ${stationHtml}
+                    ${info.error ? `<div class="topic-error">⚠ ${escapeText(info.error)}</div>` : ''}
                     <div class="badge-row">${badgesHtml}</div>
-                    ${chartSvg}
+                    <div class="chart-host"></div>
+                    ${hasValues ? buildChartLegend(info, Array.isArray(trendLine)) : ''}
                 `;
                 container.appendChild(card);
+                const host = card.querySelector('.chart-host');
+                host._chartData = { values, trendLine, labels: info.labels, unit: info.unit };
+                if (!hasValues) {
+                    host.innerHTML = buildSvgChart([], null, [], null);
+                } else {
+                    chartHosts.push(host);
+                }
             }
+            // Draw only after every card is in the grid, so each chart gets its final width.
+            for (const host of chartHosts) {
+                drawChartInto(host);
+                if (chartResizeObserver) chartResizeObserver.observe(host);
+            }
+        }
+
+        // Zoom so the selected area and every measuring station are visible together;
+        // a station can be tens of kilometres outside the selection.
+        function fitMapToSelectionAndStations(mapLayers) {
+            if (!window.trendMap || typeof window.trendMap.fitToBounds !== 'function') {
+                return;
+            }
+            const points = [];
+            const area = window.getSelectedArea ? window.getSelectedArea() : null;
+            if (area && Array.isArray(area.bbox) && area.bbox.length === 4) {
+                points.push([area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]);
+            }
+            for (const layer of mapLayers) {
+                if (layer.id !== 'measuring-stations' || !layer.data) continue;
+                for (const feature of layer.data.features || []) {
+                    const c = feature.geometry && feature.geometry.coordinates;
+                    if (Array.isArray(c) && c.length >= 2) points.push([c[0], c[1]]);
+                }
+            }
+            if (points.length < 2) return;
+            const lons = points.map((p) => p[0]);
+            const lats = points.map((p) => p[1]);
+            window.trendMap.fitToBounds([
+                Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats),
+            ]);
         }
 
         function escapeText(value) {

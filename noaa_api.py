@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -42,6 +44,21 @@ SEARCH_URL: str = "https://www.ncei.noaa.gov/access/services/search/v1/data"
 SEARCH_RADIUS_DEGREES: float = 0.05
 """Half-width in degrees of the first, smallest station search box."""
 
+MOVING_PLATFORM_DATASETS: frozenset[str] = frozenset({"global-marine"})
+"""Datasets whose platforms move (ships, buoys) and need a bounding box."""
+
+MARINE_BOX_DEGREES: float = 1.0
+"""Half-width of the box whose ship and buoy reports are combined.
+
+The Search Service matches a platform by the extent of its whole track, so
+it reports marine "stations" next to any point (even inland) and cannot be
+used to size the box. About 1 degree collects enough reports at sea; a
+smaller box often holds only a handful of passing ships per month.
+"""
+
+MAX_STATION_ATTEMPTS: int = 5
+"""Nearest matching stations tried until one has values in the date range."""
+
 SEARCH_RADII_DEGREES: tuple[float, ...] = (0.05, 0.25, 0.5, 1.0, 2.0)
 """Search box half-widths tried in order until a matching station is found.
 
@@ -55,6 +72,42 @@ The resulting query area is approximately 11 km north-south by 11 km east-west
 at the equator; longitude width narrows toward the poles.
 """
 
+
+_TEMPERATURE_CODES: tuple[str, ...] = (
+    "TMAX", "TMIN", "TAVG", "TOBS", "ADPT", "AWBT", "EMXT", "EMNT",
+    "MNPN", "MXPN", "AIR_TEMP", "SEA_SURF_TEMP", "DEW_PT_TEMP", "WET_BULB_TEMP",
+)
+_MILLIMETRE_CODES: tuple[str, ...] = (
+    "PRCP", "MDPR", "SNOW", "MDSF", "SNWD", "EVAP", "THIC", "WESD", "WESF",
+    "EMXP", "EMSN", "EMSD",
+)
+_SPEED_CODES: tuple[str, ...] = (
+    "AWND", "WSF1", "WSF2", "WSF5", "WSFG", "WSFI", "WSFM",
+)
+_DIRECTION_CODES: tuple[str, ...] = (
+    "AWDR", "WDF1", "WDF2", "WDF5", "WDFG", "WDFI", "WDFM",
+)
+_DAY_COUNT_CODES: tuple[str, ...] = (
+    "DP01", "DP10", "DP1X", "DSNW", "DSND", "DYFG", "DYHF", "DYTS",
+)
+
+DATA_TYPE_UNITS: dict[str, str] = {
+    **{code: "°C" for code in _TEMPERATURE_CODES},
+    **{code: "mm" for code in _MILLIMETRE_CODES},
+    **{code: "m/s" for code in _SPEED_CODES},
+    **{code: "°" for code in _DIRECTION_CODES},
+    **{code: "days" for code in _DAY_COUNT_CODES},
+    "RHAV": "%", "RHMN": "%", "RHMX": "%",
+    "ASLP": "hPa", "ASTP": "hPa", "SEA_LVL_PRES": "hPa",
+    "PSUN": "%",
+    "HTDD": "°C·days", "CLDD": "°C·days", "HDSD": "°C·days", "CDSD": "°C·days",
+}
+"""Units of the NCEI codes when requested with ``units=metric``.
+
+Hourly ISD fields get their units from :data:`_ISD_FIELDS` instead. Codes
+not listed (cloud codes, weather-type flags, most marine fields) get no unit,
+and the frontend shows none.
+"""
 
 _STANDARD_FIELDS: dict[str, str] = {
     "date": "date",
@@ -91,12 +144,121 @@ def _as_number(value: Any) -> float | int | str | None:
     return str(value)
 
 
+_IGNORED_FIELDS: frozenset[str] = frozenset(
+    {"report_type", "quality_control", "source", "call_sign"}
+)
+"""Per-report metadata columns of ``global-hourly`` that are not measurements."""
+
+_ISD_ERRONEOUS_QUALITY: frozenset[str] = frozenset({"3", "7"})
+"""ISD quality codes marking a value as erroneous."""
+
+# (output suffix, value index, quality index, divisor, missing value, unit)
+_IsdPart = tuple[str, int, int, int, str, str]
+_ISD_FIELDS: dict[str, tuple[_IsdPart, ...]] = {
+    "tmp": (("", 0, 1, 10, "+9999", "°C"),),
+    "dew": (("", 0, 1, 10, "+9999", "°C"),),
+    "slp": (("", 0, 1, 10, "99999", "hPa"),),
+    "wnd": (
+        ("_direction", 0, 1, 1, "999", "°"),
+        ("_speed", 3, 4, 10, "9999", "m/s"),
+    ),
+    "oc1": (("_gust", 0, 1, 10, "9999", "m/s"),),
+    "ma1": (
+        ("_altimeter", 0, 1, 10, "99999", "hPa"),
+        ("_station_pressure", 2, 3, 10, "99999", "hPa"),
+    ),
+    "vis": (("", 0, 1, 1, "999999", "m"),),
+    "cig": (("", 0, 1, 1, "99999", "m"),),
+    "ga1": (
+        ("_coverage", 0, 1, 1, "99", "oktas"),
+        ("_base_height", 2, 3, 1, "+99999", "m"),
+    ),
+}
+"""Layout of comma-separated ISD fields returned by ``global-hourly``.
+
+The Access Data Service returns these sections as raw ISD strings such as
+``TMP = "+0106,5"`` (10.6 °C, quality 5) or ``WND = "200,5,N,0026,5"``
+(200°, 2.6 m/s). Scaling and missing values follow the NCEI ISD format
+documentation. ``AA1`` and ``RH1`` depend on a period/kind prefix and are
+handled in :func:`_parse_isd_field`; present-weather codes (``AU1``, ``AW1``,
+``MW1``) are categorical and stay unparsed text.
+"""
+
+_RH1_KINDS: dict[str, str] = {"M": "mean", "N": "min", "X": "max"}
+
+
+def _isd_number(text: str, quality: str, divisor: int, missing: str) -> float | None:
+    """Scale one ISD number, or return ``None`` if missing or erroneous."""
+    if text == missing or text.lstrip("+-") == missing.lstrip("+-"):
+        return None
+    if quality in _ISD_ERRONEOUS_QUALITY:
+        return None
+    try:
+        number: int = int(text)
+    except ValueError:
+        return None
+    return number / divisor if divisor != 1 else float(number)
+
+
+def _parse_isd_field(
+    name: str, raw_value: Any
+) -> list[tuple[str, float, str]] | None:
+    """Split a coded ``global-hourly`` field into numeric variables.
+
+    :param name: Lowercase NCEI field name, for example ``"tmp"``.
+    :type name: str
+    :param raw_value: Raw field value from the response.
+    :type raw_value: typing.Any
+    :returns: ``(description, value, unit)`` tuples (possibly empty when the
+        value is missing), or ``None`` if ``name`` is not a known ISD field.
+    :rtype: list[tuple[str, float, str]] or None
+    """
+    if not isinstance(raw_value, str):
+        return None
+    parts: list[str] = raw_value.split(",")
+    if name == "aa1":
+        # period hours, depth (mm x 10), condition, quality
+        if len(parts) < 4:
+            return []
+        depth = _isd_number(parts[1], parts[3], 10, "9999")
+        if depth is None or parts[0] == "99":
+            return []
+        return [(f"aa1_{int(parts[0])}h", depth, "mm")]
+    if name == "rh1":
+        # period hours, kind (M/N/X), percent, derived code, quality
+        if len(parts) < 5 or parts[1] not in _RH1_KINDS:
+            return []
+        percent = _isd_number(parts[2], parts[4], 1, "999")
+        if percent is None or parts[0] == "999":
+            return []
+        return [(f"rh1_{_RH1_KINDS[parts[1]]}_{int(parts[0])}h", percent, "%")]
+    layout: tuple[_IsdPart, ...] | None = _ISD_FIELDS.get(name)
+    if layout is None:
+        return None
+    values: list[tuple[str, float, str]] = []
+    for suffix, value_index, quality_index, divisor, missing, unit in layout:
+        if max(value_index, quality_index) >= len(parts):
+            continue
+        number = _isd_number(
+            parts[value_index], parts[quality_index], divisor, missing
+        )
+        if number is None:
+            continue
+        if name == "ga1" and suffix == "_coverage" and number > 8:
+            continue  # 09 obscured, 10 partially obscured: no okta amount
+        if name == "cig" and number == 22000:
+            continue  # 22000 means "unlimited" ceiling, not a height
+        values.append((name + suffix, number, unit))
+    return values
+
+
 def _normalize_observations(payload: Any) -> list[list[dict[str, Any]]]:
     """Group observations into one record collection per measured variable.
 
     The result is a list of collections, one for each measured variable. Every
     record contains the six normalized station metadata fields, plus a numeric
-    ``value`` when NOAA provides one and lowercase variable ``description``.
+    ``value`` when NOAA provides one, lowercase variable ``description`` and
+    ``unit`` (from :data:`DATA_TYPE_UNITS`, ``None`` if unknown).
     Empty measurements are omitted; non-numeric text is preserved as text.
 
     :param payload: JSON-decoded NCEI response, normally a list of row dicts.
@@ -124,12 +286,31 @@ def _normalize_observations(payload: Any) -> list[list[dict[str, Any]]]:
 
         for key, raw_value in row.items():
             description: str = str(key).lower()
-            if description in _STANDARD_FIELDS:
+            if description in _STANDARD_FIELDS or description in _IGNORED_FIELDS:
+                continue
+            isd_values = _parse_isd_field(description, raw_value)
+            if isd_values is not None:
+                for isd_description, isd_value, isd_unit in isd_values:
+                    collections_by_description.setdefault(
+                        isd_description, []
+                    ).append(
+                        {
+                            **metadata,
+                            "value": isd_value,
+                            "description": isd_description,
+                            "unit": isd_unit,
+                        }
+                    )
                 continue
             value: float | int | str | None = _as_number(raw_value)
             if value is not None:
                 collections_by_description.setdefault(description, []).append(
-                    {**metadata, "value": value, "description": description}
+                    {
+                        **metadata,
+                        "value": value,
+                        "description": description,
+                        "unit": DATA_TYPE_UNITS.get(description.upper()),
+                    }
                 )
 
     return list(collections_by_description.values())
@@ -257,10 +438,6 @@ TOPICS: dict[str, NOAATopic] = {
         "Visibility", "global-hourly", ("VIS",),
         "Visibility observations from hourly surface reports.",
     ),
-    "weather_observations": NOAATopic(
-        "Hourly present weather", "global-hourly", ("AU1", "AW1", "MW1"),
-        "Automated and manual present-weather observations.",
-    ),
     "wind_hourly": NOAATopic(
         "Hourly wind", "global-hourly", ("WND", "OC1"),
         "Hourly wind direction/speed and gust observations.",
@@ -366,8 +543,12 @@ class NOAAError(RuntimeError):
 class NOAAClient:
     """Client for the NCEI Access Data Service.
 
-    :param timeout: Maximum time in seconds to wait for a single HTTP request.
+    :param timeout: Maximum time in seconds to connect or to wait for the next
+        bytes of a response.
     :type timeout: float
+    :param max_request_seconds: Maximum total time in seconds for one HTTP
+        request, including a slowly trickling response body.
+    :type max_request_seconds: float
     :param search_radii_degrees: Half-widths of the coordinate bounding box in
         degrees, tried in ascending order until a station is found. The
         default is :data:`SEARCH_RADII_DEGREES`.
@@ -378,11 +559,13 @@ class NOAAClient:
         self,
         *,
         timeout: float = 60.0,
+        max_request_seconds: float = 120.0,
         search_radii_degrees: tuple[float, ...] = SEARCH_RADII_DEGREES,
     ) -> None:
         if not search_radii_degrees or any(r <= 0 for r in search_radii_degrees):
             raise ValueError("search_radii_degrees must contain positive values.")
         self.timeout: float = timeout
+        self.max_request_seconds: float = max_request_seconds
         self.search_radii_degrees: tuple[float, ...] = tuple(
             sorted(search_radii_degrees)
         )
@@ -425,14 +608,8 @@ class NOAAClient:
                 f"{available_topics}"
             ) from exc
 
-        station_id: str
-        selected_types: tuple[str, ...]
-        station_id, selected_types = self._find_station(request, topic)
-
         data_params: dict[str, str] = {
             "dataset": topic.dataset,
-            "dataTypes": ",".join(selected_types),
-            "stations": station_id,
             "startDate": request.start_date.isoformat(),
             "endDate": request.end_date.isoformat(),
             "includeStationName": "true",
@@ -440,8 +617,48 @@ class NOAAClient:
             "format": "json",
             "units": "metric",
         }
-        raw_payload: Any = self._get_json(BASE_URL, data_params)
-        payload: list[list[dict[str, Any]]] = _normalize_observations(raw_payload)
+        station_id: str
+        payload: list[list[dict[str, Any]]]
+        if topic.dataset in MOVING_PLATFORM_DATASETS:
+            # Ships and buoys move, and the service requires a bounding box for
+            # these datasets. One ship rarely passes the same box twice, so all
+            # platforms inside the box are combined into one series. Bounding-
+            # box requests are limited to one month, so the range is split
+            # into calendar months and the rows are concatenated.
+            station_id = "marine"
+            data_params["dataTypes"] = ",".join(topic.data_types)
+            data_params["boundingBox"] = self._make_bounding_box(
+                request.latitude, request.longitude, MARINE_BOX_DEGREES
+            )
+            raw_payload: list[Any] = []
+            for chunk_start, chunk_end in self._month_chunks(
+                request.start_date, request.end_date
+            ):
+                data_params["startDate"] = chunk_start.isoformat()
+                data_params["endDate"] = chunk_end.isoformat()
+                chunk: Any = self._get_json(BASE_URL, data_params)
+                if isinstance(chunk, list):
+                    raw_payload.extend(chunk)
+            payload = _normalize_observations(raw_payload)
+        else:
+            # The Search Service matches a station's whole period of record,
+            # so the nearest match often stopped reporting these codes years
+            # ago. The nearest few candidates are tried until one has values
+            # in the requested range.
+            candidates: list[tuple[str, tuple[str, ...]]]
+            candidates, _ = self._find_station(request, topic)
+            for station_id, selected_types in candidates[:MAX_STATION_ATTEMPTS]:
+                data_params["dataTypes"] = ",".join(selected_types)
+                data_params["stations"] = station_id
+                payload = _normalize_observations(
+                    self._get_json(BASE_URL, data_params)
+                )
+                if any(
+                    isinstance(record["value"], (int, float))
+                    for collection in payload
+                    for record in collection
+                ):
+                    break
 
         destination: Path = Path(output_dir)
         destination.mkdir(parents=True, exist_ok=True)
@@ -502,18 +719,41 @@ class NOAAClient:
         :rtype: typing.Any
         :raises NOAAError: If the request fails or the response is not JSON.
         """
+        # ``timeout`` only limits the connect and each single socket read, so a
+        # server that keeps trickling bytes would never time out. The body is
+        # therefore read in chunks against a total deadline.
+        deadline: float = time.monotonic() + self.max_request_seconds
         response: requests.Response | None = None
         try:
-            response = self.session.get(url, params=params, timeout=self.timeout)
+            response = self.session.get(
+                url, params=params, timeout=self.timeout, stream=True
+            )
+            chunks: list[bytes] = []
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                chunks.append(chunk)
+                if time.monotonic() > deadline:
+                    raise NOAAError(
+                        "NOAA NCEI did not finish sending data within "
+                        f"{self.max_request_seconds:.0f} seconds. Try a shorter "
+                        "time range or a smaller area."
+                    )
+            body_bytes: bytes = b"".join(chunks)
             response.raise_for_status()
         except requests.RequestException as exc:
-            body: str = response.text[:1000] if response is not None else str(exc)
+            body: str = (
+                body_bytes.decode("utf-8", "replace")[:1000]
+                if response is not None and "body_bytes" in locals()
+                else str(exc)
+            )
             raise NOAAError(f"NOAA NCEI request failed: {body}") from exc
+        finally:
+            if response is not None:
+                response.close()
 
         try:
-            payload: Any = response.json()
+            payload: Any = json.loads(body_bytes)
         except ValueError as exc:
-            response_preview: str = response.text[:1000]
+            response_preview: str = body_bytes.decode("utf-8", "replace")[:1000]
             raise NOAAError(
                 f"NOAA NCEI returned a non-JSON response: {response_preview}"
             ) from exc
@@ -523,43 +763,58 @@ class NOAAClient:
         self,
         request: PointDataRequest,
         topic: NOAATopic,
-    ) -> tuple[str, tuple[str, ...]]:
-        """Search for a station in growing boxes around the requested point.
+    ) -> tuple[list[tuple[str, tuple[str, ...]]], float]:
+        """Search for stations in growing boxes around the requested point.
 
         Each radius in :attr:`search_radii_degrees` is tried in order; the
-        first box that contains a station with matching data wins, and the
-        nearest station inside it is returned.
+        first box that contains a station with matching data wins, and its
+        stations are returned ranked by :meth:`_rank_stations`.
+
+        The Search Service only returns stations that report *all* listed
+        data types. Topics such as ``precipitation`` list optional codes
+        (``MDPR``, ``DAPR``) that most stations never report, so when the
+        combined search finds nothing, every data type is searched on its
+        own and the results are merged.
 
         :param request: Point, topic and inclusive date range to retrieve.
         :type request: PointDataRequest
         :param topic: Catalog entry with dataset and observation codes.
         :type topic: NOAATopic
-        :returns: Selected station identifier and data types available there.
-        :rtype: tuple[str, tuple[str, ...]]
+        :returns: Ranked ``(station id, data types available there)`` pairs,
+            best first, and the search radius in degrees used to find them.
+        :rtype: tuple[list[tuple[str, tuple[str, ...]]], float]
         :raises NOAAError: If even the largest box contains no matching station.
         """
+        type_groups: list[tuple[str, ...]] = [topic.data_types]
+        if len(topic.data_types) > 1:
+            type_groups += [(code,) for code in topic.data_types]
         for radius in self.search_radii_degrees:
-            search_params: dict[str, str] = {
-                "dataset": topic.dataset,
-                "dataTypes": ",".join(topic.data_types),
-                "startDate": f"{request.start_date.isoformat()}T00:00:00",
-                "endDate": f"{request.end_date.isoformat()}T23:59:59",
-                "bbox": self._make_bounding_box(
-                    request.latitude, request.longitude, radius
-                ),
-                "limit": "1000",
-                "offset": "0",
-            }
-            search_payload: Any = self._get_json(SEARCH_URL, search_params)
-            try:
-                return self._select_nearest_station(
-                    search_payload,
-                    request=request,
-                    requested_types=topic.data_types,
-                    radius_degrees=radius,
-                )
-            except NOAAError:
-                continue
+            bbox: str = self._make_bounding_box(
+                request.latitude, request.longitude, radius
+            )
+            results: list[Any] = []
+            for group_index, data_types in enumerate(type_groups):
+                if group_index == 1 and results:
+                    break  # the combined search already found stations
+                search_params: dict[str, str] = {
+                    "dataset": topic.dataset,
+                    "dataTypes": ",".join(data_types),
+                    "startDate": f"{request.start_date.isoformat()}T00:00:00",
+                    "endDate": f"{request.end_date.isoformat()}T23:59:59",
+                    "bbox": bbox,
+                    "limit": "1000",
+                    "offset": "0",
+                }
+                search_payload: Any = self._get_json(SEARCH_URL, search_params)
+                if isinstance(search_payload, dict):
+                    results.extend(search_payload.get("results", []))
+            candidates: list[tuple[str, tuple[str, ...]]] = self._rank_stations(
+                {"results": results},
+                request=request,
+                requested_types=topic.data_types,
+            )
+            if candidates:
+                return candidates, radius
         raise NOAAError(
             "No NOAA station with the requested data types was found within "
             f"{self.search_radii_degrees[-1]} degrees of the selected point. "
@@ -567,14 +822,13 @@ class NOAAClient:
         )
 
     @staticmethod
-    def _select_nearest_station(
+    def _rank_stations(
         search_payload: Any,
         *,
         request: PointDataRequest,
         requested_types: tuple[str, ...],
-        radius_degrees: float = SEARCH_RADIUS_DEGREES,
-    ) -> tuple[str, tuple[str, ...]]:
-        """Choose the closest station with a requested data type.
+    ) -> list[tuple[str, tuple[str, ...]]]:
+        """Rank the stations that report at least one requested data type.
 
         When multiple requested types are supported, stations covering more
         of them are preferred before distance is used as the tie-breaker.
@@ -585,11 +839,9 @@ class NOAAClient:
         :type request: PointDataRequest
         :param requested_types: Dataset-specific NCEI observation codes.
         :type requested_types: tuple[str, ...]
-        :param radius_degrees: Search box half-width, used in the error message.
-        :type radius_degrees: float
-        :returns: Selected station identifier and data types available there.
-        :rtype: tuple[str, tuple[str, ...]]
-        :raises NOAAError: If the search returns no matching nearby stations.
+        :returns: ``(station id, matching data types)`` pairs, best first and
+            without duplicates; empty if no station matches.
+        :rtype: list[tuple[str, tuple[str, ...]]]
         """
         candidates: list[tuple[int, float, str, tuple[str, ...]]] = []
         results: list[dict[str, Any]] = (
@@ -635,14 +887,11 @@ class NOAAClient:
                             matching_types,
                         )
                     )
-        if not candidates:
-            raise NOAAError(
-                "No NOAA station with the requested data types was found inside "
-                f"the {radius_degrees}-degree search area. Try a nearby "
-                "coordinate or another topic."
-            )
         candidates.sort()
-        return candidates[0][2], candidates[0][3]
+        ranked: dict[str, tuple[str, ...]] = {}
+        for _, _, station_id, matching_types in candidates:
+            ranked.setdefault(station_id, matching_types)
+        return list(ranked.items())
 
     @staticmethod
     def _distance_km(
@@ -676,6 +925,30 @@ class NOAAClient:
             * math.sin(delta_longitude_rad / 2) ** 2
         )
         return 2 * earth_radius_km * math.asin(math.sqrt(haversine))
+
+    @staticmethod
+    def _month_chunks(start: date, end: date) -> list[tuple[date, date]]:
+        """Split an inclusive date range at calendar-month boundaries.
+
+        :param start: First date, inclusive.
+        :type start: datetime.date
+        :param end: Last date, inclusive.
+        :type end: datetime.date
+        :returns: Inclusive ``(start, end)`` pairs, each inside one month.
+        :rtype: list[tuple[datetime.date, datetime.date]]
+        """
+        chunks: list[tuple[date, date]] = []
+        chunk_start: date = start
+        while chunk_start <= end:
+            next_month: date = (
+                date(chunk_start.year + 1, 1, 1)
+                if chunk_start.month == 12
+                else date(chunk_start.year, chunk_start.month + 1, 1)
+            )
+            chunk_end: date = min(end, next_month - timedelta(days=1))
+            chunks.append((chunk_start, chunk_end))
+            chunk_start = next_month
+        return chunks
 
     @staticmethod
     def _make_bounding_box(

@@ -11,7 +11,7 @@
 //   </script>
 import { StrictMode, useImperativeHandle, useState, type Ref } from "react";
 import { createRoot } from "react-dom/client";
-import { MapWidget, type AreaFeature, type MapData, type MapWidgetHandle, type MapWidgetProps } from "./widget";
+import { MapWidget, type AreaFeature, type BBox, type MapData, type MapWidgetHandle, type MapWidgetProps } from "./widget";
 
 interface MountOptions
   extends Pick<MapWidgetProps, "initialArea" | "basemap" | "projection" | "hideToolbar"> {
@@ -26,6 +26,8 @@ interface MapController {
   getArea: () => AreaFeature | null;
   clearArea: () => void;
   fitToArea: () => void;
+  /** Zoom to `[west, south, east, north]`, e.g. to show the selection and the measuring stations. */
+  fitToBounds: (bbox: BBox) => void;
   /** Remove the widget from the page. */
   destroy: () => void;
 }
@@ -73,6 +75,7 @@ function mount(element: HTMLElement, options: MountOptions = {}): MapController 
     getArea: () => host?.widget?.getArea() ?? null,
     clearArea: () => host?.widget?.clearArea(),
     fitToArea: () => host?.widget?.fitToArea(),
+    fitToBounds: (bbox) => host?.widget?.fitToBounds(bbox),
     destroy: () => root.unmount(),
   };
 }

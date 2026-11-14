@@ -1,6 +1,6 @@
 @startuml datatypes
 !include style.iuml
-title TrendDetective (main @ b040fc3) — Data contracts between the work areas
+title TrendDetective (main @ a6e430f) — Data contracts between the work areas
 hide empty methods
 hide circle
 skinparam nodesep 40
@@ -38,13 +38,18 @@ package "② UI & web server" as D2 #e2f3e6;line:2e8b57 {
     {field} interval_length: tuple[float, str]
     {field} area: dict | None
   }
-  class "visualization" <<JSON the page reads, ③ → ②>> #fff0f0;line:b03a2e;line.dashed {
-    {field} topics.<name>.mean: number
+  class "visualization" <<JSON, ③ → ②>> {
+    {field} topics.<name>.labels: str[] DD.MM.YYYY (G9 not drawn)
     {field} topics.<name>.values: number[] (one per interval)
-    {field} topics.<name>.coordinates: [number, number] (sample location)
-    {field} topics.<name>.tools["Linear Regression"]: {slope, intercept, trend_line}
-    {field} topics.<name>.tools["t-Test"]: {t_statistic, p_value}
-    {field} map_layers: MapData[]
+    {field} topics.<name>.mean: number | null
+    {field} topics.<name>.coordinates: [lat, lon] (area centre)
+    {field} topics.<name>.station: {id, name, latitude, longitude, elevation, distance_km} | null
+    {field} topics.<name>.error: str (only if the topic failed)
+    {field} topics.<name>.tools["Linear Regression"]: {slope, intercept, trend_line, observations}
+    {field} topics.<name>.tools["t-Test"]: {available, t_statistic, p_value, significant}
+    {field} topics.<name>.tools["Mann-Kendall"]: {trend, p_value, tau, ...} (G7 not drawn)
+    {field} map_layers[0] "user-request-results": one feature per topic, colour = slope sign
+    {field} map_layers[1] "measuring-stations": Point per station
   }
 }
 
@@ -57,11 +62,12 @@ package "④ API wrapper" as D4 #eee6fb;line:7048b8 {
     {field} end_date: date (≥ start_date)
   }
   class "Observation record" <<dict yielded by an Iterator>> {
-    {field} date: str
+    {field} date: str "YYYY-MM-DD" daily · "YYYY-MM" monthly (G3) · "YYYY" annual (G3)
     {field} station / name: str
     {field} longitude / latitude / elevation: float
     {field} value: float | int | str
     {field} description: str (NCEI code, e.g. "tmax")
+    {field} no unit field (metric implied) (G9)
   }
 }
 
@@ -89,9 +95,10 @@ package "③ Data & calculations" as D3 #fdeedd;line:c46a12 {
 "Series input" --> "TrendAnalysis" : LinearRegression.analyze_trend()
 "Series input" --> "MannKendallResult" : mann_kendall_test()
 
-"UserRequest" .[#b03a2e,dashed].> "PointDataRequest" : <color:#b03a2e>② ⇢ ④ missing: area → lat/lon,\n<color:#b03a2e>one request per topic</color>
-"Observation record" .[#b03a2e,dashed].> "Series input" : <color:#b03a2e>④ ⇢ ③ missing: pick variable,\n<color:#b03a2e>parse date, bin per interval</color>
-"TrendAnalysis" .[#b03a2e,dashed].> "visualization" : <color:#b03a2e>③ ⇢ ② missing: to JSON</color>
-"MannKendallResult" .[#b03a2e,dashed].> "visualization" : <color:#b03a2e>missing: no UI field yet</color>
-"visualization" .[#b03a2e,dashed].> "MapData" : <color:#b03a2e>② ⇢ ① map_layers</color>
+"UserRequest" -[#2f6fb3,bold]-> "PointDataRequest" : <color:#2f6fb3>③ builds one per topic,</color>\n<color:#2f6fb3>area → centre point (G1)</color>
+"Observation record" -[#2f6fb3,bold]-> "Series input" : <color:#2f6fb3>_bin_records(): mean per interval,</color>\n<color:#2f6fb3>all variables merged (G5)</color>
+"Series input" -[#2f6fb3,bold]-> "visualization" : <color:#2f6fb3>process_user_request()</color>
+"MannKendallResult" -[#2f6fb3,bold]-> "visualization" : <color:#2f6fb3>tools["Mann-Kendall"]</color>
+"TrendAnalysis" .[#b03a2e,dashed].> "visualization" : <color:#b03a2e>G8 never used</color>
+"visualization" -[#2f6fb3,bold]-> "MapData" : <color:#2f6fb3>② → ① map_layers</color>
 @enduml

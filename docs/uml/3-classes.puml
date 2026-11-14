@@ -1,6 +1,6 @@
 @startuml classes
 !include style.iuml
-title TrendDetective (main @ b040fc3) — Classes and functions per work area
+title TrendDetective (main @ a6e430f) — Classes and functions per work area
 hide empty members
 skinparam nodesep 40
 skinparam ranksep 60
@@ -15,6 +15,7 @@ package "① MAP WIDGET  (TypeScript, map-widget/src)" as P1 #e3eefc;line:2f6fb3
     +getArea(): AreaFeature | null
     +clearArea()
     +fitToArea()
+    +fitToBounds(bbox: BBox)
     +destroy()
   }
   class MapWidget <<React component>> {
@@ -59,6 +60,8 @@ package "② USER INTERFACE & WEB SERVER  (index.html, app.py, interface.py)" as
     +triggerButton(buttonId)
     +renderVisualization(visualization)
     +buildSvgChart(values, trendLine)
+    +fitMapToSelectionAndStations(mapLayers)
+    +escapeText(value)
     +formatArea(area)
   }
   class WebAppHandler {
@@ -104,39 +107,55 @@ package "② USER INTERFACE & WEB SERVER  (index.html, app.py, interface.py)" as
 }
 
 package "③ DATA MANIPULATION & CALCULATIONS  (src/task.py)" as P3 #fdeedd;line:c46a12 {
+  abstract class Task {
+    {abstract} +process(X: Tensor, y: Tensor)
+  }
   class LinearRegression {
-    +train(X: Tensor, y: Tensor): (w, b)
+    +train(X, y): (w, b)
+    +process(X, y): (slope, intercept)
     +analyze_trend(time, values, confidence_level): TrendAnalysis
   }
-  class TrendAnalysis <<frozen dataclass>> {
-    +slope: float
-    +intercept: float
-    +r_value: float
-    +t_statistic: float
-    +p_value: float
-    +standard_error: float
+  class TTest {
+    +process(X, y): (t_statistic, p_value)
+    early half vs late half
+  }
+  class MannKendall {
+    +process(X, y): MannKendallResult
+  }
+  class TrendAnalysis <<frozen dataclass>> #fff6e6;line:c46a12;line.dashed {
+    +slope, intercept, r_value: float
+    +t_statistic, p_value, standard_error: float
     +confidence_interval: tuple[float, float]
     +observations: int
-  }
-  class "task.py" as TM <<module>> {
-    +mann_kendall_test(time, values, alpha): MannKendallResult
+    G8: computed by no caller
   }
   class MannKendallResult <<frozen dataclass>> {
     +s_statistic: int
-    +variance: float
-    +z_statistic: float
-    +p_value: float
-    +tau: float
+    +z_statistic, p_value, tau, variance: float
     +trend: str
     +observations: int
     +alpha: float
   }
-  class "missing in task.py" as MISS <<expected by interface.py>> #fff0f0;line:b03a2e;line.dashed {
+  class "task.py" as TM <<module>> {
+    +AVAILABLE_TOOLS: dict[str, type[Task]]
+    +INTERVAL_DAYS: {Day: 1, Month: 30.44, Year: 365.24}
+    +DEFAULT_COORDINATE = (38.8951, -77.0364)
     +get_available_tools(): list[str]
     +process_user_request(UserRequest): dict
+    +mann_kendall_test(time, values, alpha): MannKendallResult
+    -_extract_coordinates(area): (lat, lon)
+    -_load_records_for_topic(topic, lat, lon, start, end): list[dict]
+    -_bin_records(records, start, end, interval): (labels, values)
+    -_station_from_records(records, lat, lon): dict | None
+    -_distance_km(...) / _safe_float(...)
   }
-  LinearRegression ..> TrendAnalysis : returns
-  TM ..> MannKendallResult : returns
+  Task <|-- LinearRegression
+  Task <|-- TTest
+  Task <|-- MannKendall
+  LinearRegression ..> TrendAnalysis : analyze_trend()
+  MannKendall ..> MannKendallResult
+  TM --> Task : AVAILABLE_TOOLS
+  TM ..> MannKendallResult : mann_kendall_test()
 }
 
 package "④ API WRAPPER  (api_wrapper.py, noaa_api.py, noaa_test.py)" as P4 #eee6fb;line:7048b8 {
@@ -160,12 +179,16 @@ package "④ API WRAPPER  (api_wrapper.py, noaa_api.py, noaa_test.py)" as P4 #ee
     +list_topics()
     +fetch_point_data(request, output_dir): list[Iterator[dict]]
     -{static} _iter_measurements(path, description): Iterator[dict]
+    +search_radii_degrees: (0.05, 0.25, 0.5, 1, 2)
+    -_find_station(request, topic): (station_id, types)
     -_select_nearest_station(...)
   }
   class NOAATopic <<frozen dataclass>> {
     +label: str
     +dataset: str
     +data_types: tuple[str, ...]
+    +description: str
+    G12: label/description not exposed
   }
   AWM ..> PointDataProvider : _PROVIDERS
   PointDataProvider <|.. NOAAClient
@@ -175,10 +198,9 @@ package "④ API WRAPPER  (api_wrapper.py, noaa_api.py, noaa_test.py)" as P4 #ee
 
 JS -[#2f6fb3,bold]-> EMB : mount()
 SelectionManager -[#2f6fb3,bold]-> JS : onAreaSelected(AreaFeature)
+JS -[#2f6fb3,bold]-> MapController : setResultData(map_layers)\nfitToBounds(bbox)
 AppInterface -[#2f6fb3,bold]-> AWM : get_all_topics_list()
-AppInterface -[#b03a2e,bold]-> MISS : ✖ ImportError
-MISS .[#b03a2e,dashed].> PointDataRequest : to build
-MISS .[#b03a2e,dashed].> LinearRegression : to call
-MISS .[#b03a2e,dashed].> TM : to call
-JS .[#b03a2e,dashed].> MapController : setResultData(map_layers)\nno producer yet
+AppInterface -[#2f6fb3,bold]-> TM : get_available_tools()\nprocess_user_request()
+TM -[#2f6fb3,bold]-> AWM : fetch_data_single_topic_single_coordinate()
+TM -[#2f6fb3,bold]-> PointDataRequest : builds one per topic
 @enduml

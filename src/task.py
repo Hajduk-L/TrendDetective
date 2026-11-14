@@ -372,6 +372,29 @@ def _load_records_for_topic(
     return records
 
 
+def _parse_observation_period(raw_date: str) -> tuple[date, date]:
+    """Return the first and last day covered by a NOAA observation date.
+
+    Daily and hourly datasets use ``YYYY-MM-DD`` (optionally followed by a
+    time), monthly summaries use ``YYYY-MM`` and annual summaries ``YYYY``.
+
+    :raises ValueError: If the text matches none of these formats.
+    """
+    text = raw_date.strip()
+    if len(text) >= 10:
+        day = datetime.fromisoformat(text[:10]).date()
+        return day, day
+    if len(text) == 7:
+        year, month = int(text[:4]), int(text[5:7])
+        first = date(year, month, 1)
+        next_month = date(year + month // 12, month % 12 + 1, 1)
+        return first, next_month - timedelta(days=1)
+    if len(text) == 4 and text.isdigit():
+        year = int(text)
+        return date(year, 1, 1), date(year, 12, 31)
+    raise ValueError(f"Unsupported observation date: {raw_date!r}")
+
+
 def _bin_records(
     records: list[dict[str, Any]],
     start_date: date,
@@ -399,11 +422,15 @@ def _bin_records(
             continue
         try:
             value = float(raw_value)
-            observation_date = datetime.fromisoformat(raw_date[:10]).date()
+            period_start, period_end = _parse_observation_period(raw_date)
         except (TypeError, ValueError):
             continue
-        if not math.isfinite(value) or not start_date <= observation_date <= end_date:
+        # Monthly / annual values count if their period overlaps the request.
+        if not math.isfinite(value) or period_end < start_date or period_start > end_date:
             continue
+        # Place the value at the middle of its period, clamped to the range.
+        midpoint = period_start + (period_end - period_start) / 2
+        observation_date = min(max(midpoint, start_date), end_date)
         bin_index = math.floor((observation_date - start_date).days / step_days)
         bins.setdefault(bin_index, []).append(value)
 
@@ -427,9 +454,13 @@ def _station_from_records(
 ) -> dict[str, Any] | None:
     """Return id, name, position and distance of the station that measured ``records``.
 
-    All records of one request come from the same NOAA station, so the first
-    record with a valid position is used.
+    Land datasets come from one fixed station. Marine datasets combine all
+    ships and buoys in a box; then the centre of their reported positions is
+    returned and the name says how many platforms were combined.
     """
+    positions: list[tuple[float, float]] = []
+    station_ids: set[str] = set()
+    first: dict[str, Any] | None = None
     for record in records:
         try:
             station_latitude = float(record["latitude"])
@@ -438,18 +469,34 @@ def _station_from_records(
             continue
         if not (math.isfinite(station_latitude) and math.isfinite(station_longitude)):
             continue
-        elevation = record.get("elevation")
-        return {
-            "id": record.get("station"),
-            "name": record.get("name"),
-            "latitude": station_latitude,
-            "longitude": station_longitude,
-            "elevation": elevation if isinstance(elevation, (int, float)) else None,
-            "distance_km": round(
-                _distance_km(latitude, longitude, station_latitude, station_longitude), 1
-            ),
-        }
-    return None
+        positions.append((station_latitude, station_longitude))
+        station_ids.add(str(record.get("station")))
+        if first is None:
+            first = record
+    if first is None:
+        return None
+
+    if len(station_ids) > 1:
+        station_latitude = sum(lat for lat, _ in positions) / len(positions)
+        station_longitude = sum(lon for _, lon in positions) / len(positions)
+        station_id = None
+        name = f"{len(station_ids)} ships / buoys combined (centre of their positions)"
+        elevation = None
+    else:
+        station_latitude, station_longitude = positions[0]
+        station_id = first.get("station")
+        name = first.get("name")
+        elevation = first.get("elevation")
+    return {
+        "id": station_id,
+        "name": name,
+        "latitude": round(station_latitude, 5),
+        "longitude": round(station_longitude, 5),
+        "elevation": elevation if isinstance(elevation, (int, float)) else None,
+        "distance_km": round(
+            _distance_km(latitude, longitude, station_latitude, station_longitude), 1
+        ),
+    }
 
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -482,10 +529,30 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
     station_features: dict[str, dict[str, Any]] = {}
 
     for topic in selected_topics:
-        records = _load_records_for_topic(
-            topic, latitude, longitude, start_date, end_date
-        )
+        try:
+            records = _load_records_for_topic(
+                topic, latitude, longitude, start_date, end_date
+            )
+        except (RuntimeError, ValueError) as error:
+            # One topic without a nearby station must not cancel the others
+            # (NOAAError is a RuntimeError). The frontend shows the message.
+            topic_results[topic] = {
+                "labels": [],
+                "values": [],
+                "mean": None,
+                "coordinates": [latitude, longitude],
+                "station": None,
+                "variables": [],
+                "unit": None,
+                "error": str(error),
+                "tools": {},
+            }
+            continue
         station = _station_from_records(records, latitude, longitude)
+        variables = sorted({str(r["description"]) for r in records if r.get("description")})
+        units = {r.get("unit") for r in records}
+        # Only label the axis when every merged variable shares one unit.
+        unit = units.pop() if len(units) == 1 else None
         if station is not None:
             station_key = str(station["id"] or f"{station['latitude']},{station['longitude']}")
             feature = station_features.setdefault(
@@ -505,7 +572,7 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                         "elevation_m": station["elevation"],
                         "distance_km": station["distance_km"],
                         "topics": [],
-                        "color": "#f59e0b",
+                        "color": "#7c3aed",
                     },
                 },
             )
@@ -581,6 +648,8 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
             "mean": mean_value,
             "coordinates": [latitude, longitude],
             "station": station,
+            "variables": variables,
+            "unit": unit,
             "tools": tool_results,
         }
 
