@@ -1,6 +1,6 @@
 @startuml classes
 !include style.iuml
-title TrendDetective (main) — Classes and functions per work area
+title TrendDetective (main @ b040fc3) — Classes and functions per work area
 hide empty members
 skinparam nodesep 40
 skinparam ranksep 60
@@ -23,14 +23,11 @@ package "① MAP WIDGET  (TypeScript, map-widget/src)" as P1 #e3eefc;line:2f6fb3
   }
   class MapEngine {
     +map: maplibregl.Map
-    +onStyleReady(fn)
     +setStyle(style)
     +setProjection(p)
     +fitToBBox(bbox)
-    +destroy()
   }
   class SelectionManager {
-    +attach(map) / detach()
     +setTool(tool: DrawTool)
     +getArea(): AreaFeature | null
     +setArea(feature): boolean
@@ -39,13 +36,11 @@ package "① MAP WIDGET  (TypeScript, map-widget/src)" as P1 #e3eefc;line:2f6fb3
   class DataRenderer {
     +setData(data: MapData[])
     +reapply() / suspend()
-    +destroy()
   }
   class "geo.ts" as GEO <<module>> {
-    +wrapLng(lng)
-    +geodesicAreaKm2(ring)
     +normalizeRing(ring)
-    +isAxisAlignedRectangle(ring)
+    +normalizePoint(p)
+    +geodesicAreaKm2(ring)
     +splitAtAntimeridian(feature)
   }
   EMB ..> MapController : returns
@@ -58,62 +53,97 @@ package "① MAP WIDGET  (TypeScript, map-widget/src)" as P1 #e3eefc;line:2f6fb3
 
 package "② USER INTERFACE & WEB SERVER  (index.html, app.py, interface.py)" as P2 #e2f3e6;line:2e8b57 {
   class "index.html script" as JS <<JavaScript>> {
-    +loadTopics()
-    +renderTopics(filterText)
-    +updateApplyButtonState()
+    +loadTopics() / renderTopics()
+    +loadTools() / renderTools()
+    +parseDdMmYyyy(value)
     +triggerButton(buttonId)
+    +renderVisualization(visualization)
+    +buildSvgChart(values, trendLine)
     +formatArea(area)
   }
   class WebAppHandler {
-    +do_GET()
-    +do_POST()
-    +do_OPTIONS()
+    +do_GET(): /api/topics, /api/tools,\n/api/buttons, /api/user-request
+    +do_POST(): /api/buttons/<id>
     -_send_json(status_code, data)
-  }
-  class ServerConfig <<dataclass>> {
-    +host: str
-    +port: int
   }
   class AppInterface <<dataclass>> {
     +topic_states: dict[str, bool]
-    +timestamp: tuple[str, str]
+    +tool_states: dict[str, bool]
+    +timeintervall: tuple[date, date] | None
     +interval_length: tuple[float, str]
     +area: dict | None
     +last_user_request: UserRequest | None
+    +last_task_results: dict | None
     +get_sorted_topics(): list[str]
-    +set_request_inputs(states, timestamp, interval_length, area)
+    +get_sorted_tools(): list[str]
+    +set_request_inputs(states, tools, timeintervall, interval_length, area)
     +trigger_button(button_id)
     +on_apply()
+  }
+  class UserRequest <<dataclass>> {
+    +topics: dict[str, bool]
+    +tools: dict[str, bool]
+    +timeintervall: tuple[date, date]
+    +interval_length: tuple[float, str]
+    +area: dict | None
+    +to_dict(): dict
   }
   class Button <<dataclass>> {
     +button_id: str
     +label: str
     +trigger()
-    +to_metadata(): dict
   }
-  class UserRequest <<dataclass>> {
-    +topics: dict[str, bool]
-    +timestamp: tuple[str, str]
-    +interval_length: tuple[float, str]
-    +area: dict | None
-    +to_dict(): dict
-  }
-  class marten <<placeholder>> {
-    +getTopics(): list[str]
+  class "interface.py" as IFM <<module>> {
+    +parse_dd_mm_yyyy(date_str): date
   }
   JS ..> WebAppHandler : HTTP JSON
   WebAppHandler ..> AppInterface : get_interface()
-  WebAppHandler ..> ServerConfig : run(config)
-  AppInterface o-- marten
   AppInterface *-- Button
   AppInterface --> UserRequest : creates
+  AppInterface ..> IFM
+}
+
+package "③ DATA MANIPULATION & CALCULATIONS  (src/task.py)" as P3 #fdeedd;line:c46a12 {
+  class LinearRegression {
+    +train(X: Tensor, y: Tensor): (w, b)
+    +analyze_trend(time, values, confidence_level): TrendAnalysis
+  }
+  class TrendAnalysis <<frozen dataclass>> {
+    +slope: float
+    +intercept: float
+    +r_value: float
+    +t_statistic: float
+    +p_value: float
+    +standard_error: float
+    +confidence_interval: tuple[float, float]
+    +observations: int
+  }
+  class "task.py" as TM <<module>> {
+    +mann_kendall_test(time, values, alpha): MannKendallResult
+  }
+  class MannKendallResult <<frozen dataclass>> {
+    +s_statistic: int
+    +variance: float
+    +z_statistic: float
+    +p_value: float
+    +tau: float
+    +trend: str
+    +observations: int
+    +alpha: float
+  }
+  class "missing in task.py" as MISS <<expected by interface.py>> #fff0f0;line:b03a2e;line.dashed {
+    +get_available_tools(): list[str]
+    +process_user_request(UserRequest): dict
+  }
+  LinearRegression ..> TrendAnalysis : returns
+  TM ..> MannKendallResult : returns
 }
 
 package "④ API WRAPPER  (api_wrapper.py, noaa_api.py, noaa_test.py)" as P4 #eee6fb;line:7048b8 {
   class "api_wrapper" as AWM <<module>> {
     +fetch_data_single_topic_single_coordinate(request, provider, output_dir): list[Iterator[dict]]
     +get_all_topics_list(): list[str]
-    -_PROVIDERS: dict[str, type]
+    -_PROVIDERS: {"noaa": NOAAClient}
   }
   interface PointDataProvider <<Protocol>> {
     +list_topics(): Sequence[tuple[str, object]]
@@ -130,40 +160,25 @@ package "④ API WRAPPER  (api_wrapper.py, noaa_api.py, noaa_test.py)" as P4 #ee
     +list_topics()
     +fetch_point_data(request, output_dir): list[Iterator[dict]]
     -{static} _iter_measurements(path, description): Iterator[dict]
-    -_get_json(url, params)
     -_select_nearest_station(...)
-    -_make_bounding_box(...)
   }
   class NOAATopic <<frozen dataclass>> {
     +label: str
     +dataset: str
     +data_types: tuple[str, ...]
   }
-  class "noaa_test.py" as NT <<script>> {
-    +run_noaa_test(): None
-    +display_data(collections: list[Iterator[dict]])
-  }
   AWM ..> PointDataProvider : _PROVIDERS
   PointDataProvider <|.. NOAAClient
   AWM ..> PointDataRequest
-  NOAAClient ..> NOAATopic : TOPICS
-  NT ..> AWM
-}
-
-package "③ DATA MANIPULATION & CALCULATIONS  (src/task.py)" as P3 #fdeedd;line:c46a12 {
-  abstract class Task {
-    +{abstract} process(X: Tensor, y: Tensor)
-  }
-  class LinearRegression {
-    +process(X: Tensor, y: Tensor): (w, b)
-  }
-  Task <|-- LinearRegression
+  NOAAClient ..> NOAATopic : TOPICS (44)
 }
 
 JS -[#2f6fb3,bold]-> EMB : mount()
 SelectionManager -[#2f6fb3,bold]-> JS : onAreaSelected(AreaFeature)
-UserRequest .[#b03a2e,dashed].> PointDataRequest : missing converter
-marten .[#b03a2e,dashed].> AWM : should use get_all_topics_list()
-NOAAClient .[#b03a2e,dashed].> Task : records → tensors (missing)
-LinearRegression .[#b03a2e,dashed].> WebAppHandler : results → route (missing)
+AppInterface -[#2f6fb3,bold]-> AWM : get_all_topics_list()
+AppInterface -[#b03a2e,bold]-> MISS : ✖ ImportError
+MISS .[#b03a2e,dashed].> PointDataRequest : to build
+MISS .[#b03a2e,dashed].> LinearRegression : to call
+MISS .[#b03a2e,dashed].> TM : to call
+JS .[#b03a2e,dashed].> MapController : setResultData(map_layers)\nno producer yet
 @enduml

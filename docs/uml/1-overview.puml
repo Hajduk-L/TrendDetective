@@ -1,42 +1,42 @@
 @startuml overview
 !include style.iuml
-title TrendDetective (main @ c3d7550) — Four work areas and how they connect
+title TrendDetective (main @ b040fc3) — Four work areas and how they connect
 skinparam componentStyle rectangle
-skinparam nodesep 60
-skinparam ranksep 70
+skinparam nodesep 55
+skinparam ranksep 65
 
 actor User
 
 package "① MAP WIDGET\nmap-widget/  →  static/map-widget/" as P1 #e3eefc;line:2f6fb3;line.bold {
   component "**embed.tsx**  window.TrendDetectiveMap\nmount(el, options) → MapController\nsetResultData · setLoading · getArea\nclearArea · fitToArea · destroy" as T1API #ffffff;line:2f6fb3
   component "**MapWidget** (React)\nprops: onAreaSelected · resultData · loading" as MWc #ffffff;line:2f6fb3
-  component "**SelectionManager**\nsetTool · getArea · setArea · clear" as SM #ffffff;line:2f6fb3
+  component "**SelectionManager**\ntools: rectangle · polygon · freehand · point · edit\ngetArea · setArea · clear" as SM #ffffff;line:2f6fb3
   component "**DataRenderer**\nsetData(MapData[])" as DR #ffffff;line:2f6fb3
   component "**MapEngine**\nMapLibre map · setStyle\nsetProjection · fitToBBox" as ME #ffffff;line:2f6fb3
   component "**geo.ts**\nnormalizeRing · geodesicAreaKm2\nwrapLng · splitAtAntimeridian" as GEO #ffffff;line:2f6fb3
 }
 
 package "② USER INTERFACE & WEB SERVER\nindex.html · app.py · interface.py" as P2 #e2f3e6;line:2e8b57;line.bold {
-  component "**index.html form**\ndates · interval · topic dropdown" as Form #ffffff;line:2e8b57
-  component "**index.html script**\nloadTopics · renderTopics\ntriggerButton · formatArea" as JS #ffffff;line:2e8b57
-  component "**app.py  WebAppHandler**\nGET /api/topics · /api/buttons · /api/user-request\nPOST /api/buttons/<id>" as H #ffffff;line:2e8b57
-  component "**interface.AppInterface**\nget_sorted_topics · set_request_inputs\ntrigger_button · on_apply" as AI #ffffff;line:2e8b57
-  component "**interface.marten**\ngetTopics() — placeholder list" as M #ffffff;line:2e8b57
-  database "**UserRequest**\nlast_user_request" as UR #ffffff;line:2e8b57
+  component "**index.html form**\ntopics · tools · DD.MM.YYYY dates · interval" as Form #ffffff;line:2e8b57
+  component "**index.html script**\nloadTopics · loadTools · triggerButton\nrenderVisualization · buildSvgChart" as JS #ffffff;line:2e8b57
+  component "**app.py  WebAppHandler**\nGET /api/topics · /api/tools · /api/buttons\nGET /api/user-request · POST /api/buttons/<id>" as H #ffffff;line:2e8b57
+  component "**interface.AppInterface**\nget_sorted_topics · get_sorted_tools\nset_request_inputs · on_apply" as AI #ffffff;line:2e8b57
+  database "**UserRequest** + last_task_results" as UR #ffffff;line:2e8b57
+}
+
+package "③ DATA MANIPULATION & CALCULATIONS\nsrc/task.py · src/test_task.py" as P3 #fdeedd;line:c46a12;line.bold {
+  component "**LinearRegression**\nanalyze_trend(time, values) → TrendAnalysis\n(OLS slope, t-test, confidence interval)\ntrain(X, y) → (w, b)" as LR #ffffff;line:c46a12
+  component "**mann_kendall_test**(time, values)\n→ MannKendallResult\n(S, Z, tau, p, trend)" as MK #ffffff;line:c46a12
+  component "**get_available_tools()**\n**process_user_request()**\nNOT PRESENT" as MISS #fff0f0;line:b03a2e;line.dashed
 }
 
 package "④ API WRAPPER\napi_wrapper.py · noaa_api.py · noaa_test.py" as P4 #eee6fb;line:7048b8;line.bold {
-  component "**api_wrapper**\nfetch_data_single_topic_single_coordinate()\nget_all_topics_list() · _PROVIDERS" as AW #ffffff;line:7048b8
+  component "**api_wrapper**\nget_all_topics_list() → list[str]\nfetch_data_single_topic_single_coordinate()\n→ list[Iterator[dict]]" as AW #ffffff;line:7048b8
   component "**NOAAClient**\nfetch_point_data · _select_nearest_station\n_normalize_observations · _iter_measurements" as NC #ffffff;line:7048b8
-  component "**noaa_test.py**\nrun_noaa_test() — manual check" as CLI #ffffff;line:7048b8
-  database "**data/noaa_test/*.json**\nnested JSON: one list per variable" as F #ffffff;line:7048b8
+  component "**noaa_test.py**\nrun_noaa_test · display_data" as CLI #ffffff;line:7048b8
+  database "**data/<provider>/*.json**\nnested: one list per variable" as F #ffffff;line:7048b8
 }
 cloud "NOAA NCEI\nsearch/v1 · data/v1" as NCEI
-
-package "③ DATA MANIPULATION & CALCULATIONS\nsrc/task.py" as P3 #fdeedd;line:c46a12;line.bold {
-  component "**Task** (abstract)\nprocess(X, y)" as T #ffffff;line:c46a12
-  component "**LinearRegression**\nprocess → (w, b)\ntorch.linalg.lstsq" as LR #ffffff;line:c46a12
-}
 
 ' ---------- inside ① ----------
 T1API --> MWc : props
@@ -44,16 +44,15 @@ MWc --> ME : creates
 MWc --> SM : creates
 MWc --> DR : creates
 SM --> GEO : ring → bbox, km²
-DR --> ME : adds sources / layers
+DR --> ME : sources / layers
 
 ' ---------- inside ② ----------
 User --> Form : input
 Form --> JS : str · float · bool
 JS --> H : HTTP + JSON
 H --> AI : set_request_inputs()\ntrigger_button()
-AI --> M : getTopics()\n→ list[str]
 AI --> UR : on_apply()
-UR --> H : to_dict()
+UR --> H : to_dict() +\nlast_task_results
 
 ' ---------- inside ④ ----------
 CLI --> AW : PointDataRequest
@@ -61,37 +60,37 @@ AW --> NC : PointDataRequest
 NC --> NCEI : HTTPS GET
 NCEI --> NC : raw JSON rows
 NC --> F : list[list[dict]]
-F --> NC : streamed with ijson
-AW --> CLI : list[Iterator[dict]]\none per variable (tmax, tmin, ...)
+F --> NC : streamed (ijson)
 
-' ---------- inside ③ ----------
-T <|-- LR
+' ---------- between areas: works ----------
+User --> MWc : draws area / point
+JS -[#2f6fb3,bold]-> T1API : <color:#2f6fb3>**② → ①  mount(el, {onAreaSelected})**</color>
+T1API -[#2f6fb3,bold]-> JS : <color:#2f6fb3>**① → ②  AreaFeature**</color>\n<color:#2f6fb3>GeoJSON Polygon or Point + bbox</color>
+AI -[#2f6fb3,bold]-> AW : <color:#2f6fb3>**② → ④  get_all_topics_list()**</color>\n<color:#2f6fb3>list[str], 44 NOAA topics</color>
 
-' ---------- between areas: working today ----------
-User --> MWc : draws area
-JS -[#2f6fb3,bold]-> T1API : <color:#2f6fb3>**② → ①  mount(el, {onAreaSelected, onAreaCleared})**</color>
-T1API -[#2f6fb3,bold]-> JS : <color:#2f6fb3>**① → ②  onAreaSelected(AreaFeature)**</color>\n<color:#2f6fb3>GeoJSON Polygon + bbox + properties</color>
+' ---------- between areas: broken ----------
+AI -[#b03a2e,bold]-> MISS : <color:#b03a2e>**✖ ② → ③  get_available_tools()**</color>\n<color:#b03a2e>**✖ process_user_request(UserRequest)**</color>\n<color:#b03a2e>ImportError: server cannot start</color>
 
-' ---------- between areas: missing (dashed) ----------
-M .[#b03a2e,dashed].> AW : <color:#b03a2e>② ⇢ ④  get_all_topics_list(): list[str]</color>\n<color:#b03a2e>exists, not called</color>
-UR .[#b03a2e,dashed].> AW : <color:#b03a2e>② ⇢ ④  UserRequest → PointDataRequest(s)</color>\n<color:#b03a2e>no converter yet</color>
-F .[#b03a2e,dashed].> T : <color:#b03a2e>④ ⇢ ③  Iterator[dict] per variable → Tensor X, y</color>\n<color:#b03a2e>no loader yet</color>
-LR .[#b03a2e,dashed].> H : <color:#b03a2e>③ ⇢ ②  results (trend, w, b) → JSON</color>\n<color:#b03a2e>no route yet</color>
-JS .[#b03a2e,dashed].> T1API : <color:#b03a2e>② ⇢ ①  setResultData(MapData)</color>\n<color:#b03a2e>API ready, never called</color>
+' ---------- between areas: missing ----------
+MISS .[#b03a2e,dashed].> AW : <color:#b03a2e>③ ⇢ ④  UserRequest → PointDataRequest(s)</color>\n<color:#b03a2e>fetch per topic and location</color>
+F .[#b03a2e,dashed].> LR : <color:#b03a2e>④ ⇢ ③  Iterator[dict] → (time, values)</color>\n<color:#b03a2e>parse dates, pick variable, bin per interval</color>
+MISS .[#b03a2e,dashed].> UR : <color:#b03a2e>③ ⇢ ②  {topics: {...}, map_layers: [...]}</color>\n<color:#b03a2e>shape the page expects</color>
+JS .[#b03a2e,dashed].> T1API : <color:#b03a2e>② ⇢ ①  setResultData(map_layers)</color>\n<color:#b03a2e>page calls it, nothing produces layers</color>
 
 P1 -[hidden]right- P2
-P2 -[hidden]right- P4
-P2 -[hidden]down- P3
+P2 -[hidden]right- P3
+P2 -[hidden]down- P4
 
 legend right
-  |= Area |= Owner |= Folder / files |
-  |<back:#e3eefc> ① Map widget </back>| Dev 1 | map-widget/src/widget, embed.tsx |
+  |= Area |= Owner |= Files |
+  |<back:#e3eefc> ① Map widget </back>| Dev 1 | map-widget/, static/map-widget/ |
   |<back:#e2f3e6> ② UI & web server </back>| Dev 2 | index.html, app.py, interface.py |
-  |<back:#fdeedd> ③ Data & calculations </back>| Dev 3 | src/task.py |
+  |<back:#fdeedd> ③ Data & calculations </back>| Dev 3 | src/task.py, src/test_task.py |
   |<back:#eee6fb> ④ API wrapper </back>| Dev 4 | api_wrapper.py, noaa_api.py, noaa_test.py |
-  | **──►** | | call or data flow inside one area |
-  | <color:#2f6fb3>**━━►**</color> | | connection between areas that works today |
-  | <color:#b03a2e>**┄┄►**</color> | | connection between areas still missing |
+  | **──►** | | inside one area |
+  | <color:#2f6fb3>**━━►**</color> | | between areas, works |
+  | <color:#b03a2e>**━━► ✖**</color> | | between areas, called but broken |
+  | <color:#b03a2e>**┄┄►**</color> | | between areas, not implemented yet |
 endlegend
-caption On main, only ① ↔ ② are connected. The red dashed arrows are the interfaces the four areas still have to agree on.
+caption Working: ① ↔ ② (map selection) and ② → ④ (topic list). Broken: ② → ③ (missing functions in src/task.py).\nMissing: the data path ④ → ③ → ② → ① that turns a request into statistics and coloured map layers.
 @enduml

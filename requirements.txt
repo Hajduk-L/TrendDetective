@@ -1,2 +1,4 @@
 requests>=2.31,<3
 ijson>=3.2,<4
+scipy>=1.11,<2
+torch>=2.2,<3

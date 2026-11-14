@@ -1,6 +1,6 @@
 @startuml sequence
 !include style.iuml
-title TrendDetective (main) — Sequence across the four work areas
+title TrendDetective (main @ b040fc3) — Sequence across the four work areas
 autonumber
 
 actor User
@@ -13,52 +13,56 @@ box "② UI & web server" #e2f3e6
   participant "app.py\nWebAppHandler" as H
   participant "interface.py\nAppInterface" as AI
 end box
+box "③ Data & calculations" #fdeedd
+  participant "src/task.py" as T
+end box
 box "④ API wrapper" #eee6fb
   participant "api_wrapper" as AW
   participant "NOAAClient" as NC
 end box
-box "③ Data & calculations" #fdeedd
-  participant "Task /\nLinearRegression" as T
-end box
+
+== Server start ==
+H -> AI : import interface
+AI -[#b03a2e]> T : <color:#b03a2e>✖ from src.task import get_available_tools, process_user_request</color>
+T --[#b03a2e]> AI : <color:#b03a2e>ImportError → server exits. Steps below assume it is fixed.</color>
 
 == Page load ==
 JS -[#2f6fb3]> EMB : <color:#2f6fb3>② → ①</color> mount(el, {onAreaSelected, onAreaCleared})
-EMB -> SM : render MapWidget, create SelectionManager
 JS -> H : GET /api/topics
 H -> AI : get_sorted_topics()
-AI -> AI : marten.getTopics() → list[str]
-H --> JS : 200 JSON {topics: list[str]}
+AI -[#2f6fb3]> AW : <color:#2f6fb3>② → ④</color> get_all_topics_list()
+AW --> AI : list[str] (NOAA TOPICS keys)
+H --> JS : {topics: list[str]}
+JS -> H : GET /api/tools
+H -> AI : get_sorted_tools()
+AI -[#b03a2e]> T : <color:#b03a2e>✖ get_available_tools() → list[str]</color>
+H --> JS : {tools: list[str]}
 
-== Area selection (① → ②) ==
-User -> SM : draw rectangle / polygon / freehand
-SM -> SM : normalizeRing(), geodesicAreaKm2()
+== Selection ==
+User -> SM : draw area or pick point
 SM -[#2f6fb3]-> JS : <color:#2f6fb3>① → ②</color> onAreaSelected(AreaFeature)
 
-== Apply (inside ②) ==
-User -> JS : fill dates, interval, topics; click Apply
-JS -> H : POST /api/buttons/apply\n{topics: dict[str,bool], timestamp: [str,str],\n interval_length: [float,str], area: AreaFeature | null}
-H -> AI : set_request_inputs(...) + trigger_button("apply")
-AI -> AI : on_apply() → last_user_request = UserRequest
-alt valid
-  H --> JS : 204
-  JS -> H : GET /api/user-request
-  H --> JS : 200 JSON {user_request: dict}
-  JS -> JS : print UserRequest in output box
-else invalid
-  H --> JS : 400
+== Apply ==
+User -> JS : topics, tools, DD.MM.YYYY dates, interval; click Apply
+JS -> EMB : setLoading(true)
+JS -> H : POST /api/buttons/apply\n{topics, tools, timeintervall: [str,str], interval_length, area}
+H -> AI : set_request_inputs() → parse_dd_mm_yyyy()
+H -> AI : trigger_button("apply") → on_apply()
+AI -> AI : UserRequest(topics, tools, timeintervall: (date, date), ...)
+AI -[#b03a2e]> T : <color:#b03a2e>✖ process_user_request(UserRequest)</color>
+group #fff6f0 missing inside process_user_request
+  T -[#b03a2e,dashed]> AW : <color:#b03a2e>③ ⇢ ④ PointDataRequest per topic and location</color>
+  AW -> NC : fetch_point_data()
+  NC --> AW : list[Iterator[dict]], one per variable
+  AW --[#b03a2e,dashed]> T : <color:#b03a2e>④ ⇢ ③ records → (time, values) per interval</color>
+  T -> T : LinearRegression.analyze_trend() → TrendAnalysis\nmann_kendall_test() → MannKendallResult
+  T --[#b03a2e,dashed]> AI : <color:#b03a2e>③ ⇢ ② {topics: {...}, map_layers: [...]}</color>
 end
-
-== Not connected yet (contracts to agree on) ==
-AI -[#b03a2e,dashed]> AW : <color:#b03a2e>② ⇢ ④  UserRequest → PointDataRequest per topic / point</color>
-AW -> NC : fetch_point_data(request, output_dir)
-NC -> NC : save nested JSON, one list per variable
-NC --> AW : list[Iterator[dict]], one per variable\n(records streamed from the file with ijson)
-AW -[#b03a2e,dashed]> T : <color:#b03a2e>④ ⇢ ③  Iterator[dict] per variable → Tensor X (time), y (value)</color>
-T -[#b03a2e,dashed]> H : <color:#b03a2e>③ ⇢ ②  trend results (w, b per cell / point)</color>
-H -[#b03a2e,dashed]> JS : <color:#b03a2e>new route, e.g. GET /api/map-data → JSON</color>
-JS -[#b03a2e,dashed]> EMB : <color:#b03a2e>② ⇢ ①  setResultData(MapData)</color>
-note right of AW
-  Today ④ only runs from
-  noaa_test.py on the command line.
-end note
+AI -> AI : last_task_results = result
+H --> JS : 204
+JS -> H : GET /api/user-request
+H --> JS : {user_request, visualization: last_task_results}
+JS -> JS : renderVisualization(): badges + SVG chart per topic
+JS -[#b03a2e,dashed]> EMB : <color:#b03a2e>② ⇢ ① setResultData(visualization.map_layers)</color>
+JS -> EMB : setLoading(false)
 @enduml

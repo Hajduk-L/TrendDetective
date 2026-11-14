@@ -1,8 +1,11 @@
+from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
 import unittest
 
 import torch
 
-from src.task import LinearRegression, mann_kendall_test
+from src.task import LinearRegression, _load_records_for_topic, get_available_tools, mann_kendall_test, process_user_request
 
 
 class MannKendallTests(unittest.TestCase):
@@ -42,6 +45,63 @@ class MannKendallTests(unittest.TestCase):
             mann_kendall_test([1, 1, 2], [1, 2, 3])
         with self.assertRaisesRegex(ValueError, "alpha"):
             mann_kendall_test([1, 2, 3], [1, 2, 3], alpha=1)
+
+
+class RequestProcessingTests(unittest.TestCase):
+    def test_all_analysis_tools_are_available(self):
+        self.assertEqual(
+            get_available_tools(),
+            ["Linear Regression", "Mann-Kendall", "t-Test"],
+        )
+
+    @patch("src.task._load_records_for_topic")
+    def test_request_returns_regression_ttest_and_mann_kendall(self, load_records):
+        start_date = date(2024, 1, 1)
+        load_records.return_value = [
+            {"date": f"2024-01-0{day}", "value": float(day)}
+            for day in range(1, 7)
+        ]
+        request = SimpleNamespace(
+            topics={"temperature": True},
+            tools={
+                "Linear Regression": True,
+                "t-Test": True,
+                "Mann-Kendall": True,
+            },
+            timeintervall=(start_date, date(2024, 1, 6)),
+            interval_length=(1.0, "Day"),
+            area={"geometry": {"type": "Point", "coordinates": [-77.0, 38.9]}},
+        )
+
+        result = process_user_request(request)
+        topic_result = result["topics"]["temperature"]
+
+        self.assertEqual(topic_result["values"], [1, 2, 3, 4, 5, 6])
+        self.assertEqual(topic_result["coordinates"], [38.9, -77.0])
+        self.assertAlmostEqual(topic_result["tools"]["Linear Regression"]["slope"], 1.0)
+        self.assertTrue(topic_result["tools"]["t-Test"]["available"])
+        self.assertTrue(topic_result["tools"]["Mann-Kendall"]["available"])
+        self.assertEqual(topic_result["tools"]["Mann-Kendall"]["trend"], "increasing")
+        self.assertEqual(len(result["map_layers"]), 1)
+        load_records.assert_called_once_with(
+            "temperature", 38.9, -77.0, start_date, date(2024, 1, 6)
+        )
+
+    @patch("src.task.api_wrapper.fetch_data_single_topic_single_coordinate")
+    def test_noaa_loader_consumes_each_measurement_iterator(self, fetch_data):
+        first = {"date": "2024-01-01", "value": 1.0}
+        second = {"date": "2024-01-02", "value": 2.0}
+        fetch_data.return_value = [iter([first]), iter([second])]
+
+        records = _load_records_for_topic(
+            "temperature", 38.9, -77.0, date(2024, 1, 1), date(2024, 1, 2)
+        )
+
+        self.assertEqual(records, [first, second])
+        fetch_data.assert_called_once()
+        request = fetch_data.call_args.args[0]
+        self.assertEqual(request.topic, "temperature")
+        self.assertEqual(fetch_data.call_args.kwargs["provider"], "noaa")
 
 
 class TrendAnalysisTests(unittest.TestCase):

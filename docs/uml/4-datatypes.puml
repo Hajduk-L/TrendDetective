@@ -1,23 +1,22 @@
 @startuml datatypes
 !include style.iuml
-title TrendDetective (main) — Data contracts between the work areas
+title TrendDetective (main @ b040fc3) — Data contracts between the work areas
 hide empty methods
 hide circle
 skinparam nodesep 40
 skinparam ranksep 50
 
-package "① Map widget produces / consumes" as D1 #e3eefc;line:2f6fb3 {
-  class "AreaFeature" <<GeoJSON Feature>> {
-    {field} type: "Feature"
-    {field} geometry: Polygon (CCW ring, [lng, lat], WGS84)
+package "① Map widget" as D1 #e3eefc;line:2f6fb3 {
+  class "AreaFeature" <<GeoJSON Feature, ① → ②>> {
+    {field} geometry: Polygon (CCW ring) or Point, [lng, lat] WGS84
     {field} bbox: [west, south, east, north]
     {field} properties.selectionId: string
-    {field} properties.shape: "rectangle" | "polygon" | "freehand"
+    {field} properties.shape: rectangle | polygon | freehand | point
     {field} properties.crossesAntimeridian: boolean
-    {field} properties.areaKm2: number
+    {field} properties.areaKm2: number (0 for a point)
   }
   class "MapData" <<TS union, consumed by ①>> {
-    {field} geojson: {type, data: FeatureCollection, outline?, fillOpacity?}
+    {field} geojson: {type, id?, data: FeatureCollection, outline?, fillOpacity?}
     {field} raster: {type, tiles: string[], bounds?, ...}
     {field} image: {type, url, bounds}
     {field} feature.properties.color: CSS colour (optional)
@@ -27,20 +26,25 @@ package "① Map widget produces / consumes" as D1 #e3eefc;line:2f6fb3 {
 package "② UI & web server" as D2 #e2f3e6;line:2e8b57 {
   class "Apply body" <<JSON  POST /api/buttons/apply>> {
     {field} topics: {name: bool}
-    {field} timestamp: [start: str, end: str]
+    {field} tools: {name: bool}
+    {field} timeintervall: ["DD.MM.YYYY", "DD.MM.YYYY"]
     {field} interval_length: [float > 0, "Day" | "Month" | "Year"]
     {field} area: AreaFeature | null
   }
   class "UserRequest" <<Python dataclass>> {
     {field} topics: dict[str, bool]
-    {field} timestamp: tuple[str, str]
+    {field} tools: dict[str, bool]
+    {field} timeintervall: tuple[date, date]
     {field} interval_length: tuple[float, str]
     {field} area: dict | None
   }
-  class "API responses" <<JSON  GET>> {
-    {field} /api/topics → {topics: list[str]}
-    {field} /api/buttons → [{id, label}]
-    {field} /api/user-request → {user_request: dict | null}
+  class "visualization" <<JSON the page reads, ③ → ②>> #fff0f0;line:b03a2e;line.dashed {
+    {field} topics.<name>.mean: number
+    {field} topics.<name>.values: number[] (one per interval)
+    {field} topics.<name>.coordinates: [number, number] (sample location)
+    {field} topics.<name>.tools["Linear Regression"]: {slope, intercept, trend_line}
+    {field} topics.<name>.tools["t-Test"]: {t_statistic, p_value}
+    {field} map_layers: MapData[]
   }
 }
 
@@ -52,34 +56,42 @@ package "④ API wrapper" as D4 #eee6fb;line:7048b8 {
     {field} start_date: date
     {field} end_date: date (≥ start_date)
   }
-  class "Observation record" <<JSON, yielded by an Iterator>> {
+  class "Observation record" <<dict yielded by an Iterator>> {
     {field} date: str
-    {field} station: str
+    {field} station / name: str
     {field} longitude / latitude / elevation: float
-    {field} name: str
     {field} value: float | int | str
-    {field} description: str (NCEI code, e.g. "tavg")
+    {field} description: str (NCEI code, e.g. "tmax")
   }
 }
 
 package "③ Data & calculations" as D3 #fdeedd;line:c46a12 {
-  class "Task input" <<torch.Tensor>> {
-    {field} X: Tensor [n, k] (e.g. time)
-    {field} y: Tensor [n] (measured value)
+  class "Series input" <<list | tuple | Tensor>> {
+    {field} time: 1-D numbers (e.g. days since start), unique
+    {field} values: 1-D finite numbers, same length, n ≥ 3
   }
-  class "LinearRegression output" <<tuple>> {
-    {field} w: Tensor (slope / trend)
-    {field} b: Tensor (intercept)
+  class "TrendAnalysis" <<frozen dataclass>> {
+    {field} slope, intercept, r_value: float
+    {field} t_statistic, p_value, standard_error: float
+    {field} confidence_interval: (low, high)
+    {field} observations: int
+  }
+  class "MannKendallResult" <<frozen dataclass>> {
+    {field} s_statistic: int
+    {field} z_statistic, p_value, tau, variance: float
+    {field} trend: "increasing" | "decreasing" | "no significant trend"
   }
 }
 
 "AreaFeature" -[#2f6fb3,bold]-> "Apply body" : <color:#2f6fb3>① → ② onAreaSelected</color>
-"Apply body" --> "UserRequest" : set_request_inputs + on_apply
-"UserRequest" --> "API responses" : to_dict()
-"PointDataRequest" --> "Observation record" : fetch_point_data() → list[Iterator[record]]\none iterator per variable; file = [[var 1 records], [var 2 records], ...]
-"Task input" --> "LinearRegression output" : process(X, y)
+"Apply body" --> "UserRequest" : set_request_inputs + on_apply\n(parse_dd_mm_yyyy)
+"PointDataRequest" --> "Observation record" : fetch_point_data()\n→ list[Iterator[record]], one per variable
+"Series input" --> "TrendAnalysis" : LinearRegression.analyze_trend()
+"Series input" --> "MannKendallResult" : mann_kendall_test()
 
-"UserRequest" .[#b03a2e,dashed].> "PointDataRequest" : <color:#b03a2e>② ⇢ ④ missing: one per topic and point</color>
-"Observation record" .[#b03a2e,dashed].> "Task input" : <color:#b03a2e>④ ⇢ ③ missing: iterators → tensors</color>
-"LinearRegression output" .[#b03a2e,dashed].> "MapData" : <color:#b03a2e>③ ⇢ ② ⇢ ① missing: results → coloured layer</color>
+"UserRequest" .[#b03a2e,dashed].> "PointDataRequest" : <color:#b03a2e>② ⇢ ④ missing: area → lat/lon,\n<color:#b03a2e>one request per topic</color>
+"Observation record" .[#b03a2e,dashed].> "Series input" : <color:#b03a2e>④ ⇢ ③ missing: pick variable,\n<color:#b03a2e>parse date, bin per interval</color>
+"TrendAnalysis" .[#b03a2e,dashed].> "visualization" : <color:#b03a2e>③ ⇢ ② missing: to JSON</color>
+"MannKendallResult" .[#b03a2e,dashed].> "visualization" : <color:#b03a2e>missing: no UI field yet</color>
+"visualization" .[#b03a2e,dashed].> "MapData" : <color:#b03a2e>② ⇢ ① map_layers</color>
 @enduml
