@@ -6,7 +6,7 @@ at ``POST /api/buttons/<button_id>`` to the single method bound to that button.
 """
 
 from dataclasses import dataclass
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 import importlib
 import json
 from pathlib import Path
@@ -152,8 +152,9 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         """Handle HTTP POST requests to trigger a specific button's bound method.
 
         Expects paths matching ``/api/buttons/<button_id>``. Updates the topic
-        selection, timestamp brackets, and interval length tuple from the JSON
-        body before invoking the button trigger.
+        selection, timestamp brackets, interval length tuple, and map area
+        (GeoJSON Feature or ``null``) from the JSON body before invoking the
+        button trigger.
 
         :return: None
         :rtype: None
@@ -191,10 +192,14 @@ class WebAppHandler(SimpleHTTPRequestHandler):
                                 "interval_length must be a [float, str] pair."
                             )
 
+                        raw_area = body.get("area")
+                        area = raw_area if isinstance(raw_area, dict) else None
+
                         app_interface.set_request_inputs(
                             states=topics,
                             timestamp=timestamp,
                             interval_length=interval_length,
+                            area=area,
                         )
                 except (json.JSONDecodeError, ValueError, TypeError, AssertionError) as exc:
                     self.send_error(400, str(exc))
@@ -224,7 +229,9 @@ def run(config: ServerConfig = ServerConfig()) -> None:
     :return: None
     :rtype: None
     """
-    server = HTTPServer((config.host, config.port), WebAppHandler)
+    # Threaded: the map widget loads several files in parallel (e.g. its web workers), and
+    # browsers keep idle pre-opened connections that would block a single-threaded server.
+    server = ThreadingHTTPServer((config.host, config.port), WebAppHandler)
     print(f"Server running at http://{config.host}:{config.port}")
     try:
         server.serve_forever()

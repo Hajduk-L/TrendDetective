@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TrendDetective</title>
+    <link rel="stylesheet" href="/static/map-widget/map-widget.css">
     <style>
         * {
             box-sizing: border-box;
@@ -20,6 +21,7 @@
         /* Left Sidebar */
         .sidebar {
             width: 340px;
+            flex-shrink: 0;
             background-color: #ffffff;
             border-right: 1px solid #e2e8f0;
             padding: 1.25rem;
@@ -202,27 +204,25 @@
         /* Main Visualization Workspace */
         .main-content {
             flex: 1;
+            min-width: 0; /* let the map canvas shrink instead of squeezing the sidebar */
             padding: 2rem;
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
         }
-        .map-placeholder {
+        /* World map box: hosts the interactive map widget (map-widget/, built to static/map-widget/) */
+        .map-box {
+            position: relative;
             flex: 1;
+            min-height: 480px;
             background: #ffffff;
-            border: 2px dashed #cbd5e1;
+            border: 1px solid #e2e8f0;
             border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #64748b;
-            padding: 2rem;
-            text-align: center;
+            overflow: hidden;
         }
-        .map-placeholder h2 {
-            margin: 0 0 0.5rem 0;
-            color: #1e293b;
+        .map-box #map-widget {
+            position: absolute;
+            inset: 0;
         }
         .status-card {
             background: #ffffff;
@@ -321,9 +321,9 @@
 
     <!-- Main Content Area -->
     <main class="main-content">
-        <div class="map-placeholder">
-            <h2>TrendDetective World Map</h2>
-            <p>Fill in the timestamp, set an interval length &gt; 0, select at least one topic, and click <strong>Apply</strong>.</p>
+        <!-- World map: draw an area with the tools on the left of the map; it is sent with "Apply" -->
+        <div class="map-box" aria-label="TrendDetective World Map">
+            <div id="map-widget"></div>
         </div>
 
         <div class="status-card">
@@ -331,6 +331,22 @@
             <pre id="user-request-output">Fill timestamp, interval length (> 0), and select at least one topic, then click "Apply"...</pre>
         </div>
     </main>
+
+    <script type="module" src="/static/map-widget/map-widget.js"></script>
+    <script type="module">
+        // Mount the map widget into the map box. The selected area (GeoJSON) is kept in
+        // selectedArea and sent to Python with the Apply request.
+        let selectedArea = null;
+        window.trendMap = window.TrendDetectiveMap.mount(document.getElementById('map-widget'), {
+            onAreaSelected: (area) => {
+                selectedArea = area;
+            },
+            onAreaCleared: () => {
+                selectedArea = null;
+            },
+        });
+        window.getSelectedArea = () => selectedArea;
+    </script>
 
     <script>
         // Same origin on Vercel and on the local Python server (port 8000); otherwise talk to the local server.
@@ -469,6 +485,15 @@
             }
         });
 
+        // Short summary of the selected map area for the status card
+        function formatArea(area) {
+            if (!area) {
+                return 'None';
+            }
+            const p = area.properties || {};
+            return `${p.selectionId} (${p.shape}, ${Math.round(p.areaKm2).toLocaleString('en-US')} km², bbox=${JSON.stringify(area.bbox)})`;
+        }
+
         // Trigger the connected Python Button method
         async function triggerButton(buttonId) {
             try {
@@ -487,6 +512,8 @@
                         intervalFloat,
                         intervalUnitSelect.value,
                     ],
+                    // Area drawn on the map (GeoJSON Feature) or null; see map-widget/API.md
+                    area: window.getSelectedArea ? window.getSelectedArea() : null,
                 };
 
                 const postRes = await fetch(`${API_BASE}/api/buttons/${encodeURIComponent(buttonId)}`, {
@@ -504,7 +531,7 @@
                 const [val, unit] = data.user_request.interval_length;
                 const formattedFloat = Number.isInteger(val) ? `${val}.0` : String(val);
                 document.getElementById('user-request-output').textContent =
-                    `UserRequest(\n  topics=${JSON.stringify(data.user_request.topics, null, 2)},\n  timestamp=(${JSON.stringify(data.user_request.timestamp[0])}, ${JSON.stringify(data.user_request.timestamp[1])}),\n  interval_length=(${formattedFloat}, ${JSON.stringify(unit)})\n)`;
+                    `UserRequest(\n  topics=${JSON.stringify(data.user_request.topics, null, 2)},\n  timestamp=(${JSON.stringify(data.user_request.timestamp[0])}, ${JSON.stringify(data.user_request.timestamp[1])}),\n  interval_length=(${formattedFloat}, ${JSON.stringify(unit)}),\n  area=${formatArea(data.user_request.area)}\n)`;
             } catch (error) {
                 document.getElementById('user-request-output').textContent =
                     'Error: Could not submit UserRequest. Ensure at least one topic, both timestamp brackets, and an interval length > 0 are provided.';

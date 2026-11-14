@@ -53,11 +53,16 @@ class UserRequest:
     :param interval_length: Tuple of ``(value, unit)`` where ``value`` is a ``float``
         strictly greater than ``0`` and ``unit`` is ``"Day"``, ``"Month"``, or ``"Year"``.
     :type interval_length: tuple[float, str]
+    :param area: Area drawn on the map widget as a GeoJSON Feature (Polygon, ``[lng, lat]``,
+        with ``bbox`` = ``[west, south, east, north]``), or ``None`` if no area is selected.
+        See ``map-widget/API.md``.
+    :type area: dict[str, Any] | None
     """
 
     topics: dict[str, bool]
     timestamp: tuple[str, str] = ("", "")
     interval_length: tuple[float, str] = (1.0, "Day")
+    area: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         """Validate the interval length value and unit after initialization.
@@ -79,13 +84,14 @@ class UserRequest:
     def to_dict(self) -> dict[str, Any]:
         """Serialize the user request into a JSON-compatible dictionary.
 
-        :return: Dictionary containing ``topics``, ``timestamp``, and ``interval_length``.
+        :return: Dictionary containing ``topics``, ``timestamp``, ``interval_length``, and ``area``.
         :rtype: dict[str, Any]
         """
         return {
             "topics": self.topics,
             "timestamp": list(self.timestamp),
             "interval_length": [self.interval_length[0], self.interval_length[1]],
+            "area": self.area,
         }
 
 
@@ -157,6 +163,8 @@ class AppInterface:
     :type timestamp: tuple[str, str]
     :param interval_length: Current ``(value, unit)`` interval length tuple from the UI.
     :type interval_length: tuple[float, str]
+    :param area: Current map area (GeoJSON Feature) from the map widget, or ``None``.
+    :type area: dict[str, Any] | None
     :param last_user_request: Most recent :class:`UserRequest` created when 'Apply' was clicked.
     :type last_user_request: UserRequest | None
     """
@@ -166,6 +174,7 @@ class AppInterface:
     topic_states: dict[str, bool] = field(default_factory=dict, init=False)
     timestamp: tuple[str, str] = field(default=("", ""), init=False)
     interval_length: tuple[float, str] = field(default=(1.0, "Day"), init=False)
+    area: dict[str, Any] | None = field(default=None, init=False)
     last_user_request: UserRequest | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -192,8 +201,9 @@ class AppInterface:
         states: dict[str, bool],
         timestamp: tuple[str, str],
         interval_length: tuple[float, str],
+        area: dict[str, Any] | None = None,
     ) -> None:
-        """Update the current topic selection, timestamp brackets, and interval length.
+        """Update the current topic selection, timestamp brackets, interval length, and map area.
 
         :param states: Mapping of topic names to their checked boolean state.
         :type states: dict[str, bool]
@@ -202,6 +212,8 @@ class AppInterface:
         :param interval_length: Tuple of ``(float_value, unit)`` where ``float_value > 0``
             and ``unit`` is ``"Day"``, ``"Month"``, or ``"Year"``.
         :type interval_length: tuple[float, str]
+        :param area: GeoJSON Feature of the area drawn on the map, or ``None``.
+        :type area: dict[str, Any] | None
         :raises AssertionError: If ``interval_length[0] <= 0`` or ``interval_length[1]``
             is not a valid unit.
         :return: None
@@ -220,6 +232,7 @@ class AppInterface:
             f"Interval unit must be one of {VALID_INTERVAL_UNITS}."
         )
         self.interval_length = (interval_val, interval_unit)
+        self.area = area
 
     def register_button(self, button: Button) -> None:
         """Register a button instance in the interface.
@@ -285,5 +298,6 @@ class AppInterface:
             topics=request_dict,
             timestamp=self.timestamp,
             interval_length=self.interval_length,
+            area=self.area,
         )
         print(f"Created UserRequest: {self.last_user_request}")

@@ -1,0 +1,228 @@
+/* All rules are scoped under .mw-root so the widget does not leak styles into the host page. */
+.mw-root {
+  --mw-accent: #ff6b2c;
+  --mw-surface: rgba(255, 255, 255, 0.96);
+  --mw-text: #1f2933;
+  --mw-muted: #5b6875;
+  --mw-border: rgba(15, 23, 42, 0.14);
+  --mw-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  background: #06101f; /* space behind the globe */
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--mw-text);
+}
+
+.mw-root .mw-map {
+  position: absolute;
+  inset: 0;
+}
+
+.mw-root canvas[data-mw-hover] {
+  cursor: pointer;
+}
+
+/* ---- Toolbar ---- */
+.mw-root .mw-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--mw-surface);
+  border-radius: 8px;
+  box-shadow: var(--mw-shadow);
+  z-index: 2;
+}
+
+.mw-root .mw-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mw-text);
+  cursor: pointer;
+}
+
+.mw-root .mw-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.mw-root .mw-btn:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.07);
+}
+
+.mw-root .mw-btn[aria-pressed="true"] {
+  background: var(--mw-accent);
+  color: #fff;
+}
+
+.mw-root .mw-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mw-root .mw-btn:focus-visible,
+.mw-root .mw-segmented button:focus-visible,
+.mw-root .mw-field select:focus-visible {
+  outline: 2px solid var(--mw-accent);
+  outline-offset: 1px;
+}
+
+.mw-root .mw-sep {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--mw-border);
+}
+
+/* ---- Basemap / projection panel ---- */
+.mw-root .mw-panel {
+  position: absolute;
+  top: 10px;
+  left: 60px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--mw-surface);
+  border-radius: 8px;
+  box-shadow: var(--mw-shadow);
+  z-index: 2;
+}
+
+.mw-root .mw-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mw-muted);
+}
+
+.mw-root .mw-field select {
+  font: inherit;
+  color: var(--mw-text);
+  padding: 3px 4px;
+  border: 1px solid var(--mw-border);
+  border-radius: 5px;
+  background: #fff;
+}
+
+.mw-root .mw-segmented {
+  display: flex;
+  border: 1px solid var(--mw-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.mw-root .mw-segmented button {
+  font: inherit;
+  padding: 3px 9px;
+  border: 0;
+  background: #fff;
+  color: var(--mw-text);
+  cursor: pointer;
+}
+
+.mw-root .mw-segmented button + button {
+  border-left: 1px solid var(--mw-border);
+}
+
+.mw-root .mw-segmented button[aria-pressed="true"] {
+  background: var(--mw-text);
+  color: #fff;
+}
+
+/* ---- Status line ---- */
+.mw-root .mw-status {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  background: var(--mw-surface);
+  border-radius: 999px;
+  box-shadow: var(--mw-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 2;
+}
+
+/* ---- Loading ---- */
+.mw-root .mw-loading {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--mw-text);
+  color: #fff;
+  border-radius: 999px;
+  box-shadow: var(--mw-shadow);
+  z-index: 3;
+}
+
+.mw-root .mw-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: mw-spin 0.8s linear infinite;
+}
+
+@keyframes mw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Feature popup ---- */
+.mw-popup .maplibregl-popup-content {
+  padding: 8px 10px;
+  font: 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.mw-popup-table {
+  border-collapse: collapse;
+}
+
+.mw-popup-table th {
+  text-align: left;
+  padding: 1px 10px 1px 0;
+  color: #5b6875;
+  font-weight: 500;
+}
+
+.mw-popup-table td {
+  padding: 1px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  .mw-root .mw-panel {
+    top: auto;
+    bottom: 70px;
+    left: 10px;
+  }
+  .mw-root .mw-status {
+    bottom: 34px;
+    white-space: normal;
+    border-radius: 10px;
+  }
+}
