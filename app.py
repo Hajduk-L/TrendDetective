@@ -7,7 +7,8 @@ button click events at ``POST /api/buttons/<button_id>`` to the single method
 bound to that button; 'Apply' answers with its result in the same response and
 the server keeps no state between requests. ``GET /api/places?q=<name>`` looks up
 cities and regions; ``POST /api/coverage`` tells when the stations of a selection
-have data; ``GET /api/examples`` lists famous events to start from (:mod:`examples`).
+have data; ``POST /api/evolution`` describes how a value per year changes (:mod:`evolution`); ``POST /api/correlate``
+correlates the topics of one request, also at lags (:mod:`correlation`); ``GET /api/examples`` lists famous events to start from (:mod:`examples`).
 """
 
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import area_analysis
+import correlation
+import evolution
 import examples
 import station_coverage
 import interface
@@ -260,6 +263,55 @@ class WebAppHandler(SimpleHTTPRequestHandler):
             return
         self._send_json(200, result)
 
+    def _handle_evolution(self) -> None:
+        """Describe how one value per year changes (``POST /api/evolution``).
+
+        Expects ``{"years": [...], "values": [...], "n"?: [...], "sd"?: [...],
+        "window_years"?: int, "baseline"?: [start_year, end_year]}`` and answers
+        with :func:`evolution.evolution`, or 400 ``{"error"}`` for bad input.
+
+        :return: None
+        :rtype: None
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            if not isinstance(body, dict):
+                raise plot_analysis.AnalysisError("Body must be a JSON object.")
+            result = evolution.evolution(
+                body.get("years", []),
+                body.get("values", []),
+                n=body.get("n"),
+                sd=body.get("sd"),
+                window_years=body.get("window_years", 10),
+                baseline=body.get("baseline"),
+            )
+        except (json.JSONDecodeError, ValueError) as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        self._send_json(200, result)
+
+    def _handle_correlate(self) -> None:
+        """Correlate two or more series of one request (``POST /api/correlate``).
+
+        Expects ``{"series": [{"name", "x": [interval index], "values"}, ...],
+        "max_lag"?: int}`` and answers with :func:`correlation.correlate`, or
+        400 ``{"error"}`` for bad input.
+
+        :return: None
+        :rtype: None
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            if not isinstance(body, dict):
+                raise correlation.CorrelationError("Body must be a JSON object.")
+            result = correlation.correlate(body.get("series", []), body.get("max_lag", 12))
+        except (json.JSONDecodeError, ValueError) as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+        self._send_json(200, result)
+
     def _handle_coverage(self) -> None:
         """Answer when a result card's topic has data (``POST /api/coverage``).
 
@@ -354,6 +406,14 @@ class WebAppHandler(SimpleHTTPRequestHandler):
 
         if self.path == "/api/coverage":
             self._handle_coverage()
+            return
+
+        if self.path == "/api/evolution":
+            self._handle_evolution()
+            return
+
+        if self.path == "/api/correlate":
+            self._handle_correlate()
             return
 
         # A fresh interface per request: inputs and results are never shared

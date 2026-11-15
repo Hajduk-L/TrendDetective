@@ -74,7 +74,7 @@ cd map-widget && npm install && npm run build:embed
 |---|---|---|---|
 | `onAreaSelected` | `(area: AreaFeature) => void` | **yes** (React) | Called when the user places or moves a point, or picks a region. |
 | `onAreaCleared` | `() => void` | no | Called when the user deletes the selection. |
-| `regions` | `Region[]` | no | Regions offered by the Areas button (bundle: `setRegions`). `{id, name, bbox, note?}`; `note` is shown on hover. |
+| `regions` | `Region[]` | no | Regions offered by the Areas button (bundle: `setRegions`). `{id, name, bbox, note?, outline?}`; `note` is shown on hover; `outline` (GeoJSON Polygon, e.g. the hull of the region's stations) is drawn and selected instead of the `bbox` box. |
 | `resultData` | `MapData` or `MapData[]` | no | React only (bundle: `setResultData`). The data to show (§4). |
 | `loading` | `boolean` | no | React only (bundle: `setLoading`). Shows "Loading data…". |
 | `initialArea` | GeoJSON point feature | no | A point to show when the page opens. |

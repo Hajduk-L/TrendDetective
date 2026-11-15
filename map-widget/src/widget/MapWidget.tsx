@@ -7,7 +7,7 @@ import type { StyleSpecification } from "maplibre-gl";
 import { BASEMAPS, resolveBasemap } from "./basemaps";
 import { DataRenderer, DATA_LAYER_PREFIX } from "./DataRenderer";
 import { MapEngine } from "./MapEngine";
-import { bboxPolygon, RegionLayer, REGION_LAYER_PREFIX } from "./RegionLayer";
+import { regionGeometry, RegionLayer, REGION_LAYER_PREFIX } from "./RegionLayer";
 import { SelectionManager, SELECTION_LAYER_PREFIX } from "./SelectionManager";
 import { geodesicAreaKm2 } from "./geo";
 import type {
@@ -405,7 +405,7 @@ function formatArea(km2: number): string {
 
 /** The selection handed to `onAreaSelected` when a predefined region is picked. */
 function regionFeature(region: Region): AreaFeature {
-  const geometry = bboxPolygon(region.bbox);
+  const geometry = regionGeometry(region);
   return {
     type: "Feature",
     bbox: region.bbox,

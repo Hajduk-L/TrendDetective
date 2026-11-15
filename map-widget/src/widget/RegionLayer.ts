@@ -5,6 +5,7 @@ import {
   type Map as MapLibreMap,
   type MapLayerMouseEvent,
 } from "maplibre-gl";
+import type { Polygon } from "geojson";
 import type { Region } from "./types";
 
 /** Prefix of the MapLibre source and layers that show the predefined regions. */
@@ -107,7 +108,7 @@ export class RegionLayer {
         const properties = { id: r.id, selected: r.id === this.selectedId };
         const [w, south, e, n] = r.bbox;
         return [
-          { type: "Feature" as const, properties, geometry: bboxPolygon(r.bbox) },
+          { type: "Feature" as const, properties, geometry: regionGeometry(r) },
           {
             type: "Feature" as const,
             properties,
@@ -200,6 +201,11 @@ export class RegionLayer {
     this.hover.remove();
     delete this.map.getCanvas().dataset.mwRegion;
   };
+}
+
+/** The station outline of a region when the server sent one, else its box. */
+export function regionGeometry(region: Region): Polygon {
+  return region.outline ?? bboxPolygon(region.bbox);
 }
 
 /** Closed counter-clockwise ring of a [west, south, east, north] box. */

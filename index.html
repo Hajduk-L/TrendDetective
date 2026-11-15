@@ -6,6 +6,8 @@
     <title>TrendDetective</title>
     <link rel="stylesheet" href="/static/map-widget/map-widget.css">
     <link rel="stylesheet" href="/static/plots/plots.css">
+    <link rel="stylesheet" href="/static/plots/evolution.css">
+    <link rel="stylesheet" href="/static/plots/compare.css">
     <style>
         * {
             box-sizing: border-box;
@@ -311,20 +313,24 @@
         .coverage-use:hover { background: #0f766e; color: #fff; }
         .station-line {
             font-size: 0.8rem;
-            color: #5b21b6;
-            background: #ede9fe;
-            border-radius: 6px;
+            color: #334155;
+            background: #f8fafc;
+            border-left: 2px solid #94a3b8;
+            border-radius: 0;
             padding: 4px 8px;
             margin: 6px 0;
+            font-variant-numeric: tabular-nums;
         }
 
         .metric-badge {
-            font-size: 0.78rem;
-            padding: 0.2rem 0.55rem;
-            border-radius: 999px;
-            background: #e0e7ff;
-            color: #1e40af;
+            font-size: 0.76rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 3px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
             font-weight: 500;
+            font-variant-numeric: tabular-nums;
         }
         .metric-badge-muted {
             background: #f1f5f9;
@@ -438,14 +444,6 @@
         .top-bar { gap: 0.6rem; flex-wrap: wrap; }
 
         /* Grouped topic list */
-        .topic-group-title {
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            color: #64748b;
-            padding: 0.55rem 0.5rem 0.2rem;
-        }
         .topic-item .topic-text { display: flex; flex-direction: column; min-width: 0; }
         .topic-item .topic-name { color: #0f172a; }
         .topic-item .topic-meta { font-size: 0.7rem; color: #94a3b8; }
@@ -464,44 +462,92 @@
         .topic-kind.hourly { background: #f1f5f9; color: #475569; }
         .dropdown-count { margin-left: auto; margin-right: 0.5rem; font-size: 0.75rem; color: #2563eb; font-weight: 600; }
 
-        /* Famous events gallery */
-        .examples-card { padding-bottom: 0.75rem; }
-        .examples-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-        .examples-head h3 { margin: 0; }
-        .examples-head p { margin: 0; font-size: 0.8rem; color: #64748b; }
-        .examples-toggle { font: inherit; font-size: 0.8rem; background: none; border: none; color: #2563eb; cursor: pointer; }
-        .examples-list {
-            display: grid;
-            grid-auto-flow: column;
-            grid-auto-columns: minmax(210px, 1fr);
-            gap: 0.6rem;
-            overflow-x: auto;
-            padding: 0.6rem 0 0.25rem;
-            scroll-snap-type: x proximity;
+        /* Suggested case studies (GET /api/examples): a compact, table-like list at the top */
+        .examples-card {
+            padding: 0.7rem 1.1rem 0.6rem;
+            container-type: inline-size;
+            --cs-heat: #a4553d;
+            --cs-cold: #3d6a93;
+            --cs-rain: #3e7a70;
+            --cs-snow: #6b7088;
         }
+        .examples-head { display: flex; align-items: baseline; gap: 0.4rem 1rem; flex-wrap: wrap; }
+        .examples-head h3 {
+            margin: 0;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #334155;
+        }
+        .examples-head p { margin: 0; font-size: 0.76rem; color: #64748b; flex: 1 1 16rem; }
+        .examples-toggle { font: inherit; font-size: 0.76rem; background: none; border: none; color: #475569; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
         .examples-card.collapsed .examples-list { display: none; }
+        .examples-list {
+            margin-top: 0.45rem;
+            border-top: 1.5px solid #334155;
+            border-bottom: 1.5px solid #334155;
+            font-size: 0.78rem;
+            line-height: 1.3;
+        }
+        .examples-cols,
         .example {
-            scroll-snap-align: start;
+            display: grid;
+            grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.25fr) minmax(0, 0.95fr);
+            column-gap: 1rem;
+        }
+        .examples-cols {
+            padding: 0.25rem 0.5rem;
+            border-bottom: 1px solid #94a3b8;
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+        }
+        .example {
+            width: 100%;
             text-align: left;
             font: inherit;
-            border: 1px solid #e2e8f0;
-            border-top: 4px solid var(--ex-color, #2563eb);
-            border-radius: 10px;
-            background: #fff;
-            padding: 0.6rem 0.7rem;
+            color: inherit;
+            background: none;
+            border: 0;
+            border-left: 2px solid var(--ex-color, #64748b);
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0.3rem 0.5rem 0.3rem 0.6rem;
             cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-            transition: box-shadow 0.15s ease, transform 0.1s ease;
+            align-items: baseline;
         }
-        .example:hover { box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12); }
-        .example:active { transform: scale(0.99); }
-        .example:disabled { opacity: 0.6; cursor: progress; }
-        .example-title { font-weight: 700; color: #0f172a; font-size: 0.9rem; }
-        .example-place { font-size: 0.75rem; color: #475569; }
-        .example-summary { font-size: 0.75rem; color: #64748b; line-height: 1.35; }
-        .example-fact { font-size: 0.72rem; color: var(--ex-color, #2563eb); font-weight: 600; margin-top: auto; }
+        .example:last-child { border-bottom: 0; }
+        .example:hover,
+        .example:focus-visible { background: #f5f7fa; outline: none; }
+        .example:focus-visible { box-shadow: inset 0 0 0 1px #64748b; }
+        .example:disabled { opacity: 0.55; cursor: progress; }
+        .example.is-running { background: #f1f5f9; opacity: 1; }
+        .example > span { display: flex; flex-direction: column; min-width: 0; }
+        .example-title { font-weight: 600; color: #0f172a; }
+        .example-tag {
+            font-size: 0.64rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--ex-color, #64748b);
+        }
+        .example-place { color: #1e293b; }
+        .example-source,
+        .example-variable { color: #64748b; font-size: 0.72rem; }
+        .example-value { color: #0f172a; font-variant-numeric: tabular-nums; }
+        .example-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @container (max-width: 620px) {
+            .examples-cols { display: none; }
+            .example { grid-template-columns: minmax(0, 1fr); row-gap: 1px; padding: 0.35rem 0.5rem 0.35rem 0.6rem; }
+            .example > span { display: block; }
+            .example > span > span { display: inline; }
+            .example-tag { margin-left: 0.4rem; }
+            .example-source::before { content: " · "; }
+            .example-value::before { content: ": "; color: #64748b; }
+            .example-ellipsis { white-space: normal; }
+        }
 
         /* Map legend and satellite bar (inside .map-box) */
         .map-legend {
@@ -551,23 +597,97 @@
         .satellite-bar button:hover { background: rgba(255, 255, 255, 0.32); }
 
         /* Result cards: trend headline and events */
-        .trend-headline { font-size: 0.85rem; margin: 4px 0; color: #0f172a; }
-        .trend-headline .sig { font-size: 0.72rem; padding: 0 6px; border-radius: 999px; margin-left: 4px; }
-        .trend-headline .sig.yes { background: #dcfce7; color: #166534; }
-        .trend-headline .sig.no { background: #f1f5f9; color: #64748b; }
+        .trend-headline { font-size: 0.85rem; margin: 4px 0; color: #0f172a; font-variant-numeric: tabular-nums; }
+        .trend-headline .sig { font-size: 0.74rem; margin-left: 6px; color: #475569; }
+        .trend-headline .sig.no { color: #94a3b8; }
         .event-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
         .event-chip {
             font: inherit;
             font-size: 0.74rem;
-            border: 1px solid #fed7aa;
-            background: #fff7ed;
-            color: #9a3412;
-            border-radius: 999px;
-            padding: 1px 8px;
+            font-variant-numeric: tabular-nums;
+            border: 1px solid #cbd5e1;
+            border-left: 2px solid #a4553d;
+            background: #fff;
+            color: #334155;
+            border-radius: 3px;
+            padding: 1px 7px;
             cursor: pointer;
         }
-        .event-chip.cold { border-color: #bfdbfe; background: #eff6ff; color: #1e40af; }
-        .event-chip:hover { filter: brightness(0.96); }
+        .event-chip.cold { border-left-color: #3d6a93; }
+        .event-chip:hover { background: #f5f7fa; }
+
+        /* The sidebar is one screen high and stays in place; the topic list fills
+           everything below the inputs and scrolls on its own. */
+        .sidebar {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .sidebar > * { flex-shrink: 0; }
+        .sidebar > #topics-dropdown {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #topics-dropdown .dropdown-menu { max-height: none; flex: 1 1 auto; min-height: 0; padding: 0; }
+        #topics-dropdown:not(.open) { flex: 0 0 auto; }
+
+        /* Topic categories: one collapsible section each */
+        .topic-group { border-bottom: 1px solid #eef2f6; }
+        .topic-group:last-child { border-bottom: 0; }
+        .topic-group > summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 0.85rem;
+            cursor: pointer;
+            user-select: none;
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: #0f172a;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .topic-group > summary::-webkit-details-marker { display: none; }
+        .topic-group > summary:hover { background: #f8fafc; }
+        .topic-group > summary:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+        .topic-group-chevron {
+            width: 12px;
+            height: 12px;
+            flex: 0 0 12px;
+            color: #64748b;
+            transition: transform 0.15s ease;
+        }
+        .topic-group[open] > summary .topic-group-chevron { transform: rotate(90deg); }
+        .topic-group-count { margin-left: auto; font-size: 0.72rem; font-weight: 500; color: #94a3b8; font-variant-numeric: tabular-nums; }
+        .topic-group-count .sel { color: #2563eb; font-weight: 600; }
+        .topic-group .topic-item { padding-left: 1.6rem; }
+        .topic-group-items { padding-bottom: 0.3rem; }
+        .topics-tools {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            padding: 0.35rem 0.85rem;
+            border-bottom: 1px solid #eef2f6;
+            font-size: 0.72rem;
+        }
+        .topics-tools button { font: inherit; background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; }
+
+        /* Narrow screens: the sidebar goes above the content, nothing scrolls sideways */
+        @media (max-width: 860px) {
+            body { flex-direction: column; }
+            .sidebar { width: auto; border-right: 0; border-bottom: 1px solid #e2e8f0; box-shadow: none; position: static; height: auto; overflow: visible; }
+            #topics-dropdown .dropdown-menu { max-height: 60vh; }
+            .main-content { padding: 1rem; }
+            .status-card { padding: 0.8rem 0.9rem; }
+            .viz-grid { grid-template-columns: minmax(0, 1fr); }
+        }
     </style>
 </head>
 <body>
@@ -651,10 +771,10 @@
 
     <!-- Main Content Area -->
     <main class="main-content">
-        <section class="status-card examples-card" id="examples-card" aria-label="Famous weather events">
+        <section class="status-card examples-card" id="examples-card" aria-label="Suggested case studies">
             <div class="examples-head">
-                <h3>Explore a famous event</h3>
-                <p>One click loads ten years of data around it and jumps to the day it happened.</p>
+                <h3>Suggested case studies</h3>
+                <p>Documented extremes. Selecting one loads ten years of daily data at the site and zooms the plot to the event.</p>
                 <button type="button" class="examples-toggle" id="examples-toggle" aria-expanded="true">Hide</button>
             </div>
             <div class="examples-list" id="examples-list"></div>
@@ -840,6 +960,8 @@
         })();
     </script>
     <script src="/static/plots/plots.js"></script>
+    <script src="/static/plots/evolution.js"></script>
+    <script src="/static/plots/compare.js"></script>
     <script>
         if (window.TrendPlots) window.TrendPlots.mount(document.getElementById('plot-panel'));
     </script>
@@ -860,6 +982,8 @@
         }
         window.getSelectedArea = () => selectedArea;
         // The regions of the map's Areas button are loaded per selected topic (refreshRegions below).
+        // Module scripts run after the classic script below, so tell it the map is ready now.
+        window.dispatchEvent(new Event('trend:map-ready'));
     </script>
 
     <script>
@@ -874,6 +998,7 @@
         // applied, so a slow reply for an earlier selection cannot overwrite it.
         let regionsRequest = 0;
         function refreshRegions() {
+            // The map is mounted by a module script, which runs after this one.
             if (!window.trendMap) return;
             const request = ++regionsRequest;
             const topics = Object.keys(selectedTopics).filter((topic) => selectedTopics[topic]);
@@ -886,6 +1011,7 @@
                 .catch(() => {});
         }
         refreshRegions();
+        window.addEventListener('trend:map-ready', refreshRegions);
 
         let allTools = [];
         const selectedTools = {};
@@ -975,7 +1101,7 @@
             );
             // Say what is still missing instead of a silently disabled button.
             const missing = [];
-            if (!hasArea) missing.push('pick a point on the map (📍) or a region (Areas)');
+            if (!hasArea) missing.push('pick a point on the map or a region (Areas)');
             if (!hasSelectedTopic) missing.push('choose a topic');
             if (!startValid || !endValid) missing.push('enter a valid time range');
             if (!validInterval) missing.push('enter an interval length');
@@ -1064,6 +1190,9 @@
             return d && d.label ? d.label : topic;
         }
 
+        // Open / closed state of the topic categories the user toggled (group -> open).
+        const openTopicGroups = new Map();
+
         function renderTopics(filterText = '') {
             const listContainer = document.getElementById('topics-list');
             listContainer.innerHTML = '';
@@ -1089,11 +1218,53 @@
                 groups.get(group).push(topic);
             }
             const order = [...groups.keys()].sort((a, b) => GROUP_ORDER.indexOf(a) - GROUP_ORDER.indexOf(b));
+            const searching = normalizedFilter.length > 0;
+
+            const tools = document.createElement('div');
+            tools.className = 'topics-tools';
+            tools.innerHTML = '<button type="button" data-groups="open">Expand all</button><button type="button" data-groups="close">Collapse all</button>';
+            tools.addEventListener('click', (event) => {
+                const button = event.target.closest('button[data-groups]');
+                if (!button) return;
+                const open = button.dataset.groups === 'open';
+                listContainer.querySelectorAll('details.topic-group').forEach((details) => { details.open = open; });
+            });
+            listContainer.appendChild(tools);
+
             for (const group of order) {
-                const title = document.createElement('div');
-                title.className = 'topic-group-title';
-                title.textContent = group;
-                listContainer.appendChild(title);
+                const topics = groups.get(group);
+                // Closed by default; open while searching, when the user opened it, or when it holds a selected topic.
+                const hasSelected = topics.some((t) => selectedTopics[t]);
+                const details = document.createElement('details');
+                details.className = 'topic-group';
+                details.open = searching || (openTopicGroups.has(group) ? openTopicGroups.get(group) : hasSelected);
+                details.addEventListener('toggle', () => {
+                    if (!searching) openTopicGroups.set(group, details.open);
+                });
+
+                const summary = document.createElement('summary');
+                const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                chevron.setAttribute('class', 'topic-group-chevron');
+                chevron.setAttribute('viewBox', '0 0 12 12');
+                chevron.setAttribute('aria-hidden', 'true');
+                chevron.innerHTML = '<path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
+                const name = document.createElement('span');
+                name.textContent = group;
+                const count = document.createElement('span');
+                count.className = 'topic-group-count';
+                summary.append(chevron, name, count);
+                details.appendChild(summary);
+
+                const items = document.createElement('div');
+                items.className = 'topic-group-items';
+                details.appendChild(items);
+
+                const updateCount = () => {
+                    const selected = topics.filter((t) => selectedTopics[t]).length;
+                    count.innerHTML = selected ? `<span class="sel">${selected} selected</span> · ${topics.length}` : String(topics.length);
+                };
+                updateCount();
+
                 // Station data first, then model / satellite / marine; daily before hourly.
                 const FEATURED = ['temperature', 'precipitation', 'snowfall', 'snow_depth', 'wind_speed'];
                 const rank = (t) => {
@@ -1102,7 +1273,7 @@
                     const coarse = /_(monthly|annual)$/.test(t) ? 1 : 0;
                     return featured * 100 + (d.kind === 'station' ? 0 : d.kind === 'model' ? 1 : 2) * 10 + (d.hourly ? 2 : coarse);
                 };
-                for (const topic of groups.get(group).sort((a, b) => rank(a) - rank(b) || topicLabel(a).localeCompare(topicLabel(b)))) {
+                for (const topic of topics.sort((a, b) => rank(a) - rank(b) || topicLabel(a).localeCompare(topicLabel(b)))) {
                     const d = topicDetails[topic] || {};
                     const label = document.createElement('label');
                     label.className = 'topic-item';
@@ -1113,32 +1284,34 @@
                     checkbox.checked = Boolean(selectedTopics[topic]);
                     checkbox.addEventListener('change', (event) => {
                         selectedTopics[topic] = event.target.checked;
+                        updateCount();
                         updateApplyButtonState();
                         refreshRegions();
                     });
 
                     const text = document.createElement('span');
                     text.className = 'topic-text';
-                    const name = document.createElement('span');
-                    name.className = 'topic-name';
-                    name.textContent = topicLabel(topic).replace(/ \((ERA5 model|VIIRS satellite)\)$/, '');
+                    const topicName = document.createElement('span');
+                    topicName.className = 'topic-name';
+                    topicName.textContent = topicLabel(topic).replace(/ \((ERA5 model|VIIRS satellite)\)$/, '');
                     const badge = KIND_BADGE[d.kind] || (d.hourly ? ['hourly', 'Hourly reports: large downloads for long time ranges'] : null);
                     if (badge) {
                         const b = document.createElement('span');
                         b.className = `topic-kind ${d.kind in KIND_BADGE ? d.kind : 'hourly'}`;
                         b.textContent = badge[0];
                         b.title = badge[1];
-                        name.appendChild(b);
+                        topicName.appendChild(b);
                     }
                     const meta = document.createElement('span');
                     meta.className = 'topic-meta';
                     meta.textContent = d.sources && d.sources.length ? d.sources.join(' · ') : topic;
-                    text.append(name, meta);
+                    text.append(topicName, meta);
 
                     label.appendChild(checkbox);
                     label.appendChild(text);
-                    listContainer.appendChild(label);
+                    items.appendChild(label);
                 }
+                listContainer.appendChild(details);
             }
         }
 
@@ -1438,9 +1611,10 @@
                 let headline = '';
                 if (trend) {
                     const v = Number(trend.slope_per_decade);
-                    const arrow = v > 0 ? '↗' : v < 0 ? '↘' : '→';
-                    headline = `<div class="trend-headline">${arrow} Trend: <strong>${v > 0 ? '+' : ''}${escapeText(v.toPrecision(2))}${unitText} per decade</strong>`
-                        + `<span class="sig ${trend.significant ? 'yes' : 'no'}" title="${escapeText(`p = ${trend.p_value ?? '–'}${trend.effective_n ? `, about ${Math.round(trend.effective_n)} independent values after accounting for autocorrelation` : ''}`)}">${trend.significant ? 'significant' : 'not significant'}</span></div>`;
+                    const p = Number(trend.p_value);
+                    const pText = Number.isFinite(p) ? (p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`) : '';
+                    headline = `<div class="trend-headline">Trend: <strong>${v > 0 ? '+' : v < 0 ? '−' : ''}${escapeText(Math.abs(v).toPrecision(2))}${unitText} per decade</strong>`
+                        + `<span class="sig ${trend.significant ? 'yes' : 'no'}" title="${escapeText(trend.effective_n ? `About ${Math.round(trend.effective_n)} independent values after accounting for autocorrelation` : 'Significance at the 5 % level')}">(${pText ? `${pText}, ` : ''}${trend.significant ? 'significant at 5 %' : 'not significant'})</span></div>`;
                 }
                 if (lr && lr.available !== false) {
                     badgesHtml += badge(`Slope: ${show(lr.slope)}${info.unit ? ' ' + escapeText(info.unit) + ' per interval' : ' per interval'}`, `Value of the trend line at the first interval: ${lr.intercept}`);
@@ -1469,12 +1643,12 @@
 
                 const st = info.station;
                 const stationHtml = st
-                    ? `<div class="station-line">📍 Measured at ${escapeText(st.name || st.id || 'station')}`
+                    ? `<div class="station-line">Station: ${escapeText(st.name || st.id || 'station')}`
                       + `${st.id ? ` (${escapeText(st.id)})` : ''}: ${Number(st.latitude).toFixed(4)}, ${Number(st.longitude).toFixed(4)}`
                       + ` · ${st.distance_km} km from the selected point`
                       + `${st.source ? ` · source: ${escapeText(st.source)}` : ''}</div>`
                     : info.region && !info.error
-                    ?`<div class="station-line">▦ Area mean of ${info.station_count ?? 'the'} stations in ${escapeText(info.region.name)}`
+                    ?`<div class="station-line">Area mean of ${info.station_count ?? 'the'} stations in ${escapeText(info.region.name)}`
                       + (info.sources && Object.keys(info.sources).length
                           ? ` (${Object.entries(info.sources).map(([name, n]) => `${escapeText(name)} ${n}`).join(', ')})`
                           : '')
@@ -1490,7 +1664,7 @@
                         ${coords ? `<span style="font-size:0.78rem;color:#64748b;white-space:nowrap;">[${coords[0]}, ${coords[1]}]</span>` : ''}
                     </div>
                     ${stationHtml}
-                    ${info.error ? `<div class="topic-error">⚠ ${escapeText(info.error)}</div>` : ''}
+                    ${info.error ? `<div class="topic-error">Error: ${escapeText(info.error)}</div>` : ''}
                     ${headline}
                     <div class="badge-row">${badgesHtml}</div>
                     ${eventChipsHtml(info, topic)}
@@ -1512,7 +1686,7 @@
                 card.className = 'topic-viz-card';
                 card.innerHTML = `<div class="topic-viz-header"><span>${escapeText(topic)}</span></div>`
                     + (opts.failed
-                        ? `<div class="topic-error">⚠ Not loaded: ${escapeText(opts.failed)}</div>`
+                        ? `<div class="topic-error">Not loaded: ${escapeText(opts.failed)}</div>`
                         : '<div class="empty-message">Still loading…</div>');
                 container.appendChild(card);
             }
@@ -1777,7 +1951,7 @@
                     renderVisualization(shown, { pending, failed: error.message || String(error) });
                 } else if (container) {
                     const message = error && error.message ? error.message : String(error);
-                    container.innerHTML = `<div class="empty-message">⚠ The request failed: ${escapeText(message)}`
+                    container.innerHTML = `<div class="empty-message">Error: the request failed: ${escapeText(message)}`
                         + `${/fetch|network/i.test(message) ? ' – is the Python server (python3 app.py) running?' : ''}</div>`;
                 }
             } finally {
@@ -1798,10 +1972,10 @@
         });
     </script>
     <script>
-        // ---- Famous events gallery (GET /api/examples, examples.py) ----
+        // ---- Suggested case studies (GET /api/examples, examples.py) ----
         (function () {
-            const COLORS = { heat: '#dc2626', cold: '#2563eb', rain: '#0f766e', snow: '#6366f1' };
-            const ICONS = { heat: '🔥', cold: '🥶', rain: '🌧', snow: '❄️' };
+            const COLORS = { heat: 'var(--cs-heat)', cold: 'var(--cs-cold)', rain: 'var(--cs-rain)', snow: 'var(--cs-snow)' };
+            const LABELS = { heat: 'Heat', cold: 'Cold', rain: 'Precipitation', snow: 'Snow' };
             // Which variable of the topic shows the event best (TMAX for heat, TMIN for cold, …).
             const PREFER = { heat: ['tmax', 'tavg', 'tmin'], cold: ['tmin', 'tavg', 'tmax'], rain: ['prcp'], snow: ['snwd', 'snow'] };
             const card = document.getElementById('examples-card');
@@ -1826,12 +2000,13 @@
                 .then((r) => (r.ok ? r.json() : { examples: [] }))
                 .then((data) => {
                     examples = data.examples || [];
-                    list.innerHTML = examples.map((ex, i) => `
-                        <button type="button" class="example" data-i="${i}" style="--ex-color:${COLORS[ex.category] || '#2563eb'}">
-                            <span class="example-title">${ICONS[ex.category] || '⚑'} ${escapeText(ex.title)}</span>
-                            <span class="example-place">${escapeText(ex.place)} · ${escapeText(ex.focus.slice(0, 4))}</span>
-                            <span class="example-summary">${escapeText(ex.summary)}</span>
-                            <span class="example-fact">${escapeText(ex.verified)}</span>
+                    const head = '<div class="examples-cols" aria-hidden="true"><span>Case study</span><span>Site · data source</span><span>Variable · verified value</span></div>';
+                    list.innerHTML = head + examples.map((ex, i) => `
+                        <button type="button" class="example" data-i="${i}" style="--ex-color:${COLORS[ex.category] || '#64748b'}"
+                            title="${escapeText(`${ex.summary} Data: ${ex.verified}`)}">
+                            <span><span class="example-title">${escapeText(ex.title)}</span> <span class="example-tag">${escapeText(LABELS[ex.category] || ex.category)}</span></span>
+                            <span><span class="example-place example-ellipsis">${escapeText(ex.place)}</span><span class="example-source example-ellipsis">${escapeText(ex.source || '')}</span></span>
+                            <span><span class="example-variable example-ellipsis">${escapeText(ex.variable || '')}</span><span class="example-value example-ellipsis">${escapeText(ex.value || ex.verified)}</span></span>
                         </button>`).join('');
                     if (!examples.length) card.hidden = true;
                 })
@@ -1870,9 +2045,11 @@
                 const ex = examples[Number(button.dataset.i)];
                 if (!ex) return;
                 list.querySelectorAll('.example').forEach((b) => { b.disabled = true; });
+                button.classList.add('is-running');
                 try {
                     await runExample(ex);
                 } finally {
+                    button.classList.remove('is-running');
                     list.querySelectorAll('.example').forEach((b) => { b.disabled = false; });
                 }
             });
@@ -1902,7 +2079,7 @@
                 };
                 window.trendMap.setResultData([window.satelliteLayer, ...(window.lastMapLayers || [])]);
                 const date = new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-                text.textContent = `🛰 Satellite image of ${date} (MODIS, ~10:30 local time)`;
+                text.textContent = `Satellite image (MODIS Terra true colour), ${date}, ~10:30 local time`;
                 bar.hidden = false;
                 const area = window.getSelectedArea ? window.getSelectedArea() : null;
                 const c = area && area.geometry && area.geometry.type === 'Point' ? area.geometry.coordinates : null;

@@ -72,14 +72,14 @@
         'Change Point': 'Pettitt test: the moment where the level of the series shifted most clearly.',
         't-Test': 'Compares the mean of the first half with the second half.',
     };
-    // Notable events (events.py): icon and marker colour per kind.
+    // Notable events (events.py): symbol, marker colour and neutral label per kind.
     const EVENT_STYLE = {
-        record_high: { icon: '▲', color: '#c2410c' },
-        record_low: { icon: '▼', color: '#1d4ed8' },
-        high: { icon: '↑', color: '#ea580c' },
-        low: { icon: '↓', color: '#2563eb' },
-        warm_spell: { icon: '≋', color: '#dc2626' },
-        cold_spell: { icon: '≋', color: '#0284c7' },
+        record_high: { icon: '▲', color: '#a1452f', label: 'Record high' },
+        record_low: { icon: '▼', color: '#2f5f8f', label: 'Record low' },
+        high: { icon: '↑', color: '#b5654c', label: 'Positive anomaly' },
+        low: { icon: '↓', color: '#4f7ba6', label: 'Negative anomaly' },
+        warm_spell: { icon: '▬', color: '#a1452f', label: 'Warm spell' },
+        cold_spell: { icon: '▬', color: '#2f5f8f', label: 'Cold spell' },
     };
     // Diverging ramps for the stripes view (blue = below the mean, red = above; brown/green for wetness).
     const STRIPES_WARM = ['#08306b', '#08519c', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#a50f15', '#67000d'];
@@ -424,8 +424,8 @@
         return pieces.filter((piece) => piece.length >= 2);
     }
 
-    function buildModel() {
-        const info = state.viz && state.viz.topics && state.viz.topics[state.topic];
+    function buildModel(topic = state.topic) {
+        const info = state.viz && state.viz.topics && state.viz.topics[topic];
         if (!info) return null;
         const req = state.request || {};
         const [ivValue, ivUnit] = Array.isArray(req.interval_length) ? req.interval_length : [1, 'Day'];
@@ -631,7 +631,18 @@
     // The notable events of the shown topic (events.py), numbered in their order of importance.
     function eventsOf(model) {
         const list = Array.isArray(model.info.events) ? model.info.events : [];
-        return list.map((ev, i) => ({ ...ev, n: i + 1, style: EVENT_STYLE[ev.kind] || EVENT_STYLE.high }));
+        return list.map((ev, i) => ({ ...ev, n: i + 1, style: EVENT_STYLE[ev.kind] || EVENT_STYLE.high, label: eventLabel(ev) }));
+    }
+
+    // "Record high", "Warm spell (5 d)", …; spells of non-temperature series are "runs" above / below normal.
+    function eventLabel(ev) {
+        const style = EVENT_STYLE[ev.kind] || EVENT_STYLE.high;
+        if (ev.kind === 'warm_spell' || ev.kind === 'cold_spell') {
+            const temp = /warm|cold/i.test(ev.title || '');
+            const base = temp ? style.label : ev.kind === 'warm_spell' ? 'Run above normal' : 'Run below normal';
+            return isNum(ev.days) ? `${base} (${ev.days} d)` : base;
+        }
+        return style.label;
     }
 
     // Event markers and spell bands for the timeline, placed on the plotted value of the event's interval.
@@ -645,9 +656,9 @@
                 if (!isNum(p.y) || p.meta.start > at || p.meta.start + model.stepDays * DAY_MS <= at - DAY_MS / 2) continue;
                 if (!best || Math.abs(p.x - at) < Math.abs(best.x - at)) best = p;
             }
-            if (best) marks.push({ x: best.x, y: best.y, n: ev.n, color: ev.style.color, active: state.activeEvent === ev.n, title: `${ev.title}: ${fmtIsoDate(ev.date)}` });
+            if (best) marks.push({ x: best.x, y: best.y, n: ev.n, color: ev.style.color, active: state.activeEvent === ev.n, title: `${ev.label}: ${fmtIsoDate(ev.date)}` });
             if (ev.end) {
-                bands.push({ x0: isoToTime(ev.date), x1: isoToTime(ev.end) + DAY_MS, fill: ev.kind === 'cold_spell' ? 'rgba(2, 132, 199, 0.13)' : 'rgba(220, 38, 38, 0.11)' });
+                bands.push({ x0: isoToTime(ev.date), x1: isoToTime(ev.end) + DAY_MS, fill: ev.kind === 'cold_spell' ? 'rgba(47, 95, 143, 0.10)' : 'rgba(161, 69, 47, 0.09)' });
             }
         }
         return { marks, bands };
@@ -740,7 +751,7 @@
         }
 
         const ev = eventMarks(model, pts);
-        if (ev.marks.length) legend.push({ name: 'Notable events (numbered, see list below the plot)', color: EVENT_STYLE.record_high.color, style: 'hollow' });
+        if (ev.marks.length) legend.push({ name: 'Notable events (numbered, see Table 1 below the plot)', color: EVENT_STYLE.record_high.color, style: 'hollow' });
         return {
             kind: 'time',
             xDomain: model.domain,
@@ -906,7 +917,7 @@
                     year, label: seasonYearLabel(year, period), n: v.length, expected,
                     t: mean(valid.map((it) => it.t)),
                     complete: v.length >= Math.max(1, Math.floor(expected * 0.5)),
-                    mean: periodMean, min: v.length ? v.reduce((a, b) => Math.min(a, b)) : null, max: v.length ? v.reduce((a, b) => Math.max(a, b)) : null,
+                    mean: periodMean, sd: v.length > 1 ? stdDev(v) : null, min: v.length ? v.reduce((a, b) => Math.min(a, b)) : null, max: v.length ? v.reduce((a, b) => Math.max(a, b)) : null,
                 };
             })
             .filter((r) => r.n > 0);
@@ -1022,6 +1033,8 @@
 
     // ------------------------------------------------------------- renderer
 
+    let clipSeq = 0;
+
     function renderChart(host, spec) {
         host._spec = spec;
         host._w = 0;
@@ -1034,7 +1047,12 @@
         const width = Math.max(300, Math.floor(host.clientWidth));
         if (width === host._w) return;
         host._w = width;
-        const { svg, geom } = svgFor(spec, width);
+        // Every chart needs its own clip-path id: with a shared one the browser clips
+        // all charts on the page with the first chart's rectangle.
+        if (!host._clipId) host._clipId = `tp-clip-${++clipSeq}`;
+        const drawn = svgFor(spec, width);
+        const svg = drawn.svg.replace(/tp-clip\b/g, host._clipId);
+        const geom = drawn.geom;
         const reset = spec.zoomed && geom
             ? `<button type="button" class="tp-zoom-reset" title="Show the whole time range (or double-click the plot)">Reset zoom</button>`
             : '';
@@ -1441,7 +1459,7 @@
             </div></div>
         </div>
         <div class="tp-chips" data-ref="functions">
-            <span class="tp-chip-label">Functions</span>
+            <span class="tp-chip-label">Transform</span>
             <button type="button" class="tp-chip" data-fn="anomaly" title="Subtract the multi-year mean of the same time of year (needs ≥ 2 years)">Anomaly</button>
             <button type="button" class="tp-chip" data-fn="ma" title="Centred moving average">Moving average
                 <input type="number" min="2" max="60" step="1" data-ref="maWindow" aria-label="Moving average window"></button>
@@ -1453,12 +1471,15 @@
         <div class="tp-summary" data-ref="summary" aria-live="polite"></div>
         <div class="tp-chart" data-ref="chart"></div>
         <div class="tp-legend" data-ref="legend"></div>
+        <p class="tp-caption" data-ref="caption"></p>
         <div class="tp-table-wrap" data-ref="table" hidden></div>
         <div class="tp-footer" data-ref="footer">
             <span class="tp-footer-note">Drag across the plot to zoom in · scroll with the bar below it (or Shift + wheel) · double-click to reset</span>
             <button type="button" class="tp-link-btn" data-ref="tableBtn">Show table</button>
             <button type="button" class="tp-link-btn" data-ref="csvBtn">Download CSV</button>
         </div>
+        <div class="tp-compare" data-ref="compare"></div>
+        <div class="tp-evolution" data-ref="evolution"></div>
         <div class="tp-events" data-ref="events"></div>
         <div class="tp-analysis" data-ref="analysis"></div>`;
 
@@ -1659,14 +1680,17 @@
         if (document.activeElement !== r.customEnd) r.customEnd.value = state.custom.end;
         if (document.activeElement !== r.maWindow) r.maWindow.value = state.fn.maWindow;
 
+        renderCompare();
         const model = buildModel();
         if (!model) {
             r.subtitle.textContent = '';
             r.chart._spec = null;
             r.chart.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose topics and click “Apply” to plot the data here.'}</div>`;
             r.legend.innerHTML = '';
+            r.caption.innerHTML = '';
             r.hint.innerHTML = '';
             r.analysis.innerHTML = '';
+            clearEvolution();
             r.summary.innerHTML = '';
             r.events.innerHTML = '';
             r.table.hidden = true;
@@ -1689,7 +1713,7 @@
             // Topics arrive one by one (setData while loading): say that more is coming.
             state.loading ? 'still loading other topics…' : '',
         ].filter(Boolean).join(' · ');
-        r.title.textContent = `Plot: ${state.topic}`;
+        r.title.textContent = state.topic;
 
         const hints = [];
         if (model.info.error) hints.push(model.info.error);
@@ -1700,13 +1724,15 @@
         else if (!model.canCompare) hints.push(`Comparing years needs intervals of up to 2 months; the current interval is ${model.ivText}. Choose Day or Month intervals.`);
         else if (model.years.length < 2) hints.push('The time range covers only one year. Choose a range over several years to compare them.');
         if (period && period.invalid) hints.push('Enter the custom period as DD.MM – DD.MM, e.g. 01.06 – 31.08 or 01.12 – 28.02.');
-        r.hint.innerHTML = hints.map((h) => `<div class="tp-hint">${esc(h)}</div>`).join('');
+        r.hint.innerHTML = hints.map((h) => `<div class="tp-hint"><span class="tp-hint-label">Note</span>${esc(h)}</div>`).join('');
 
         if (!model.points.length) {
             r.chart._spec = null;
             r.chart.innerHTML = '<div class="tp-empty">No data to plot.</div>';
             r.legend.innerHTML = '';
+            r.caption.innerHTML = '';
             r.analysis.innerHTML = '';
+            clearEvolution();
             r.summary.innerHTML = '';
             r.events.innerHTML = '';
             r.table.hidden = true;
@@ -1722,11 +1748,13 @@
         setControlStates(model, period);
 
         renderSummary(model, wins);
+        renderEvolution(model, wins);
         renderEvents(model);
         if (state.view === 'stripes') {
             const out = renderStripes(r.chart, model, usablePeriod);
             state.lastTable = out ? out.table : null;
             r.legend.innerHTML = '';
+            r.caption.innerHTML = out ? figureCaption(model, usablePeriod) : '';
             r.footer.hidden = !out;
             r.footer.classList.add('tp-footer-stripes');
             renderTable(state.lastTable);
@@ -1766,6 +1794,7 @@
         r.footer.classList.remove('tp-footer-stripes');
         renderChart(r.chart, spec);
         r.legend.innerHTML = legendHtml(spec.legend);
+        r.caption.innerHTML = figureCaption(model, usablePeriod);
         renderTable(spec.table);
         renderAnalysis(model, wins);
     }
@@ -1831,23 +1860,29 @@
             return;
         }
         const unit = model.unit;
-        const cards = list.map((ev) => {
+        const rows = list.map((ev) => {
             const when = ev.end ? `${fmtIsoDate(ev.date)} – ${fmtIsoDate(ev.end)}` : fmtIsoDate(ev.date);
-            const value = ev.end ? `${ev.days} days` : withUnit(fmt(ev.value), unit);
-            const delta = isNum(ev.anomaly) ? `${ev.end ? 'peak ' : ''}${withUnit(fmtSigned(ev.anomaly), unit)} vs. normal` : '';
-            const satellite = isoToTime(ev.peak_date || ev.date) >= Date.UTC(2000, 1, 24)
-                ? `<button type="button" class="tp-link-btn" data-sat="${esc(ev.peak_date || ev.date)}" title="Show the satellite image (NASA MODIS) of this day on the map">🛰 Satellite image</button>` : '';
-            return `<li class="tp-event${state.activeEvent === ev.n ? ' is-active' : ''}" style="--tp-ev:${ev.style.color}">
-                <button type="button" class="tp-event-main" data-event="${ev.n}" title="Show this event in the plot">
-                    <span class="tp-event-num-badge">${ev.n}</span>
-                    <span class="tp-event-body"><span class="tp-event-title">${esc(ev.style.icon)} ${esc(ev.title)} · <span class="tp-event-date">${esc(when)}</span></span>
-                    <span class="tp-event-value">${esc(value)}${delta ? ` <span class="tp-event-delta">${esc(delta)}</span>` : ''}</span>
-                    <span class="tp-event-desc">${esc(ev.description)}</span></span>
-                </button>${satellite}</li>`;
+            const peak = ev.end && ev.peak_date ? `<span class="tp-cell-sub">peak ${esc(fmtIsoDate(ev.peak_date))}</span>` : '';
+            const normal = isNum(ev.normal) ? `<span class="tp-cell-sub">normal ${esc(withUnit(fmt(ev.normal), unit))}</span>` : '';
+            const sat = ev.peak_date || ev.date;
+            const satellite = isoToTime(sat) >= Date.UTC(2000, 1, 24)
+                ? `<button type="button" class="tp-link-btn tp-sat-btn" data-sat="${esc(sat)}" title="Show the NASA MODIS Terra true-colour image of ${esc(fmtIsoDate(sat))} on the map">Satellite image (MODIS)</button>` : '';
+            return `<tr class="tp-event${state.activeEvent === ev.n ? ' is-active' : ''}" data-event="${ev.n}" style="--tp-ev:${ev.style.color}" title="${esc(`${ev.title}: ${ev.description}`)}">
+                <td><button type="button" class="tp-event-num-badge" data-event="${ev.n}" aria-label="Show event ${ev.n} in the plot">${ev.n}</button></td>
+                <td class="tp-event-kind"><span class="tp-event-sym" aria-hidden="true">${esc(ev.style.icon)}</span>${esc(ev.label)}</td>
+                <td class="tp-event-when">${esc(when)}${peak}</td>
+                <td>${esc(withUnit(fmt(ev.value), unit))}${normal}</td>
+                <td>${isNum(ev.anomaly) ? esc(withUnit(fmtSigned(ev.anomaly), unit)) : '–'}</td>
+                <td>${isNum(ev.z) ? esc(signed1(ev.z)) : '–'}</td>
+                <td>${isNum(ev.percentile) ? esc(fmt(ev.percentile, 1)) : '–'}</td>
+                <td>${satellite}</td>
+            </tr>`;
         }).join('');
         r.events.innerHTML = `<div class="tp-analysis-title">Notable events</div>
-            <div class="tp-analysis-note">The values that stand out most from the normal of their time of year (mean of the same calendar days over all years), the records of the time range and the strongest warm / cold spells. Click one to zoom the plot to it.</div>
-            <ol class="tp-event-list">${cards}</ol>`;
+            <p class="tp-caption tp-table-caption"><span class="tp-caption-num">Table 1</span> — Notable events of the series, ordered by how far they depart from normal. Normal: mean of the same time of year over all years; anomaly = value − normal; z = anomaly in standard deviations of that time of year; percentile among all values. Select a row to zoom the plot to the event.</p>
+            <div class="tp-table-wrap tp-event-wrap"><table class="tp-table tp-event-table">
+                <thead><tr><th>#</th><th class="tp-th-left">Type</th><th class="tp-th-left">Date</th><th>Value</th><th>Anomaly</th><th>z</th><th>Pctl.</th><th><span class="tp-visually-hidden">Satellite image</span></th></tr></thead>
+                <tbody>${rows}</tbody></table></div>`;
     }
 
     // Zoom the timeline to ±`days` around an event and mark it.
@@ -1913,7 +1948,7 @@
 
     // ------------------------------------------------------------ summary
 
-    // One or two sentences in plain language about the whole series.
+    // One or two sentences about the whole series, worded like the results line of a paper.
     function renderSummary(model, wins) {
         const r = state.refs;
         const win = wins.find((w) => !w.period && w.results);
@@ -1929,28 +1964,57 @@
         const parts = [];
         const spanYears = (model.points[model.points.length - 1].t - model.points[0].t) / (365.2425 * DAY_MS);
         if (trend && spanYears < 2 && model.stepDays < 200) {
-            parts.push('ℹ The time range covers less than two years, so a slope here mostly follows the seasons, not a long-term change. Choose several years (ideally 30) to look for a trend.');
+            parts.push('<span class="tp-summary-label">Note</span>The time range covers less than two years, so a fitted slope mainly reflects the seasonal cycle, not a long-term change. Several years (ideally 30) are needed to estimate a trend.');
         } else if (trend) {
             const perDecade = trend.slope * 10;
             const sig = trend.significant;
-            const dir = perDecade > 0 ? 'rose' : perDecade < 0 ? 'fell' : 'stayed level';
-            const icon = !sig ? '〰' : perDecade > 0 ? '📈' : '📉';
-            const what = state.fn.anomaly ? 'the anomaly' : 'the value';
-            let text = `${icon} Over ${years}, ${what} ${dir}${perDecade ? ` by <strong>${esc(withUnit(fmt(Math.abs(perDecade)), unit))} per decade</strong>` : ''}`;
-            const evidence = isNum(trend.p_value) ? pLabel(trend.p_value) : '95 % interval of the slope excludes 0';
-            if (sig) text += ` — a <strong>statistically significant</strong> trend (${evidence}${mk && mk.available ? `; Mann-Kendall: ${esc(mk.trend)}` : ''}).`;
-            else text += ` — but this is <strong>not statistically significant</strong>: natural ups and downs alone could produce such a slope${model.years.length < 20 ? `; ${model.years.length} years are short for a climate trend (30 are common)` : ''}.`;
-            if (trend.deseasonalised) text += ' <span class="tp-muted">(tested without the seasonal cycle)</span>';
+            const method = trend === lr ? 'Linear trend' : "Sen's slope";
+            const what = state.fn.anomaly ? ' of the anomaly' : '';
+            const evidence = isNum(trend.p_value) ? pLabel(trend.p_value) : '95 % CI of the slope excludes 0';
+            let text = `<span class="tp-summary-label">Trend</span>${method}${what}, ${esc(years)}: <strong>${esc(withUnit(fmtSigned(perDecade), unit))} per decade</strong>`;
+            if (sig) text += ` (${evidence}, significant at the 5 % level${mk && mk.available ? `; Mann-Kendall: ${esc(mk.trend)}` : ''}).`;
+            else text += ` (${isNum(trend.p_value) ? `${evidence}, ` : ''}not significant at the 5 % level; internal variability alone could produce such a slope${model.years.length < 20 ? `; ${model.years.length} years is short for a climate trend, 30 are customary` : ''}).`;
+            if (trend.deseasonalised) text += ' <span class="tp-muted">Tested after removing the seasonal cycle.</span>';
             parts.push(text);
         }
         if (cp && cp.available && cp.significant) {
             const row = win.rows.find((rw) => rw.year === cp.x_after);
-            parts.push(`⇅ The level shifted by <strong>${esc(withUnit(fmtSigned(cp.shift), unit))}</strong> around ${esc(row ? row.label : String(Math.floor(cp.x_after)))} (change-point test, ${pLabel(cp.p_value)}).`);
+            parts.push(`<span class="tp-summary-label">Change point</span>Level shift of <strong>${esc(withUnit(fmtSigned(cp.shift), unit))}</strong> around ${esc(row ? row.label : String(Math.floor(cp.x_after)))} (Pettitt test, ${pLabel(cp.p_value)}).`);
         }
         const evs = eventsOf(model);
         const top = evs[0];
-        if (top) parts.push(`⚑ Most notable: <button type="button" class="tp-inline-link" data-event="${top.n}">${esc(top.title.toLowerCase())} on ${esc(fmtIsoDate(top.peak_date || top.date))}</button> (${esc(withUnit(fmt(top.value), unit))}).`);
+        if (top) parts.push(`<span class="tp-summary-label">Extreme</span>Most notable event: <button type="button" class="tp-inline-link" data-event="${top.n}">${esc(top.label.toLowerCase())}, ${esc(fmtIsoDate(top.peak_date || top.date))}</button> (${esc(withUnit(fmt(top.value), unit))}${isNum(top.z) ? `, z = ${esc(signed1(top.z))}` : ''}).`);
         r.summary.innerHTML = parts.length ? parts.map((t) => `<p>${t}</p>`).join('') : '';
+    }
+
+    // A z-score always with one decimal and its sign: "+9.0", "−2.4".
+    function signed1(v) {
+        return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(1);
+    }
+
+    // "Fig. 1 — Topic [unit], site, years. What the view shows." below the main plot.
+    function figureCaption(model, period) {
+        const info = model.info;
+        const st = info.station;
+        let site = '';
+        if (st && (st.name || st.id)) site = `station ${st.name || st.id}${st.source ? ` (${st.source})` : ''}`;
+        else if (info.region && info.region.name) site = `area mean of ${isNum(info.station_count) ? `${info.station_count} stations` : 'the stations'} in ${info.region.name}`;
+        else if (Array.isArray(info.coordinates)) site = `${fmt(Number(info.coordinates[0]), 2)}°, ${fmt(Number(info.coordinates[1]), 2)}°`;
+        const years = model.years.length ? `${model.years[0]}–${model.years[model.years.length - 1]}` : '';
+        const anomaly = state.fn.anomaly && model.anomalyOk;
+        const periodText = period && !period.invalid ? period.label : '';
+        const views = {
+            timeline: `Time series of ${({ '1 Day': 'daily', '1 Month': 'monthly', '1 Year': 'annual' })[model.ivText] || `${model.ivText.toLowerCase()} mean`} values${periodText ? `; ${periodText} shaded in every year` : ''}.`,
+            overlay: `Each year drawn as a separate line on a common January–December axis${periodText ? `; ${periodText} highlighted` : ''}.`,
+            period: 'One value per year: the mean of each analysis time frame.',
+            stripes: `Each stripe is one year, coloured by the departure of its ${periodText && periodText !== 'Whole year' ? periodText : 'annual'} mean from the mean of all years.`,
+        };
+        const extras = [];
+        if (anomaly) extras.push('values shown as anomalies from the multi-year mean of the same time of year');
+        if (state.fn.ma) extras.push(`${state.fn.maWindow}-interval centred moving average`);
+        if (state.fn.clim) extras.push('band: multi-year mean ± 1 σ');
+        const head = [esc(state.topic) + (model.unit ? ` [${esc(model.unit)}]` : ''), esc(site), esc(years)].filter(Boolean).join(', ');
+        return `<span class="tp-caption-num">Fig. 1</span> — ${head}. ${esc(views[state.view] || '')}${extras.length ? ` ${esc(extras.join('; ').replace(/^./, (c) => c.toUpperCase()))}.` : ''}`;
     }
 
     function setControlStates(model, period) {
@@ -2038,7 +2102,7 @@
 
     function statCard(name, value, detail, flag) {
         const help = TOOL_HELP[name] || TOOL_HELP[Object.keys(TOOL_SHORT).find((k) => TOOL_SHORT[k] === name)] || '';
-        const flagHtml = flag === undefined ? '' : `<span class="tp-stat-flag ${flag ? 'is-significant' : 'is-not-significant'}">${flag ? 'significant' : 'not significant'}</span>`;
+        const flagHtml = flag === undefined ? '' : `<span class="tp-stat-flag ${flag ? 'is-significant' : 'is-not-significant'}" title="${flag ? 'Significant at the 5 % level' : 'Not significant at the 5 % level'}">${flag ? 'significant, α = 0.05' : 'n.s.'}</span>`;
         return `<div class="tp-stat"${help ? ` title="${esc(help)}"` : ''}><div class="tp-stat-name">${esc(name)}</div><div class="tp-stat-value">${value}${flagHtml}</div>${detail ? `<div class="tp-stat-detail">${detail}</div>` : ''}</div>`;
     }
 
@@ -2085,10 +2149,10 @@
         return pLabel(p);
     }
 
-    // "p 0.042", or "p < 0.001" instead of a rounded "p 0".
+    // "p = 0.042", or "p < 0.001" instead of a rounded "p = 0".
     function pLabel(p) {
         if (!isNum(p)) return '';
-        return p < 0.001 ? 'p < 0.001' : `p ${fmt(p, 3)}`;
+        return p < 0.001 ? 'p < 0.001' : `p = ${fmt(p, 3)}`;
     }
 
     function sigMark(res) {
@@ -2143,7 +2207,7 @@
         if (mks.length) {
             const inc = mks.filter((res) => res.trend === 'increasing').length;
             const dec = mks.filter((res) => res.trend === 'decreasing').length;
-            cards.push(statCard('Mann-Kendall', `${inc} ↑ · ${dec} ↓`, `significant trend inside the period in ${inc + dec} of ${mks.length} years (increasing / decreasing)`));
+            cards.push(statCard('Mann-Kendall', `${inc} incr. · ${dec} decr.`, `significant trend inside the period in ${inc + dec} of ${mks.length} years (increasing / decreasing)`));
         }
         const tts = done.map((yr) => yr.res['t-Test']).filter((res) => res && res.available);
         if (tts.length) {
@@ -2235,10 +2299,133 @@
             } else for (const name of win.tools) if (win.results[name]) cards.push(toolCard(name, win.results[name], win.rows, unit));
             return `<div class="tp-analysis-block" style="--tp-win:${win.color}">${head}<div class="tp-analysis-note">${note}</div><div class="tp-stats">${cards.join('')}</div>${extra}</div>`;
         }).join('');
-        r.analysis.innerHTML = html || '<div class="tp-analysis-note">Add a time frame under “Analyses” to run the tools.</div>';
+        r.analysis.innerHTML = (html ? '<div class="tp-section-label">Statistical analysis</div>' : '') + (html || '<div class="tp-analysis-note">Add a time frame under “Analyses” to run the tools.</div>');
         const slopeHost = r.analysis.querySelector('[data-ref-slope]');
         if (slopeHost && slopeSpec) renderChart(slopeHost, slopeSpec);
     }
 
-    window.TrendPlots = { mount, setData, setLoading, focusDate, focusExample };
+    // ------------------------------------------------------- change over time
+    //
+    // The "Change over time" section (static/plots/evolution.js, window.TrendEvolution)
+    // gets one frame per analysis time frame: one value per year plus, for a period,
+    // the regression slope inside every year's period.
+
+    function annualRows(model) {
+        if (model.stepDays >= 300) {
+            // Yearly intervals: every interval already is one year.
+            return model.points
+                .map((p) => ({ year: p.year, label: String(p.year), mean: transformed(model, p), n: 1, expected: 1, complete: true, sd: null, min: null, max: null }))
+                .filter((row) => isNum(row.mean));
+        }
+        if (!model.canCompare || model.years.length < 2) return [];
+        return periodSeries(model, makePeriod([1, 1], [12, 31], 'Year'));
+    }
+
+    function evolutionContext(model, wins) {
+        const frames = wins.map((win) => {
+            const isPeriod = !!win.period;
+            const rows = (isPeriod ? win.allRows : annualRows(model)).map((row) => ({
+                year: row.year, label: row.label, value: row.mean, n: row.n, expected: row.expected,
+                complete: row.complete, sd: isNum(row.sd) ? row.sd : null, min: row.min, max: row.max,
+            }));
+            const inside = isPeriod
+                ? win.years
+                    .map((yr) => ({ yr, res: yr.res && yr.res['Linear Regression'] }))
+                    .filter((q) => q.res && q.res.available)
+                    .map((q) => ({ year: q.yr.year, label: q.yr.label, slope: q.res.slope, lo: q.res.confidence_interval[0], hi: q.res.confidence_interval[1], p: q.res.p_value, significant: q.res.significant }))
+                : null;
+            return {
+                id: win.w.id, label: isPeriod ? win.label : 'Annual mean', color: win.color, isPeriod,
+                wraps: !!(win.period && win.period.wraps), lengthDays: win.lengthDays || null, rows, inside,
+                insidePending: !!(isPeriod && win.analysis && win.analysis.pending),
+            };
+        }).filter((f) => f.rows.length);
+        const st = model.info.station;
+        return {
+            topic: state.topic, unit: model.unit, anomaly: !!(state.fn.anomaly && model.anomalyOk),
+            intervalText: model.ivText, stepDays: model.stepDays, station: st && st.name ? st.name : null,
+            years: model.years.slice(), frames,
+        };
+    }
+
+    function renderEvolution(model, wins) {
+        const host = state.refs.evolution;
+        if (!host) return;
+        if (!window.TrendEvolution) { host.innerHTML = ''; return; }
+        try {
+            window.TrendEvolution.render(host, evolutionContext(model, wins));
+        } catch (err) {
+            host.innerHTML = `<div class="tp-hint">Change over time could not be drawn: ${esc(err.message || err)}</div>`;
+        }
+    }
+
+    function clearEvolution() {
+        const host = state.refs.evolution;
+        if (!host) return;
+        if (window.TrendEvolution && window.TrendEvolution.clear) window.TrendEvolution.clear(host);
+        else host.innerHTML = '';
+    }
+
+    // ------------------------------------------------------ compare variables
+    //
+    // The "Compare variables" section (static/plots/compare.js, window.TrendCompare) gets
+    // every topic of the request with its values and anomalies. The context object is
+    // rebuilt only when new data arrives, so compare.js can skip redraws by identity.
+
+    let compareCache = { viz: null, request: null, loading: null, ctx: null };
+
+    function compareContext() {
+        if (compareCache.ctx && compareCache.viz === state.viz && compareCache.request === state.request && compareCache.loading === state.loading) {
+            return compareCache.ctx;
+        }
+        const names = state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
+        const topics = [];
+        let stepDays = null;
+        let domain = null;
+        for (const name of names) {
+            const model = buildModel(name);
+            if (!model) continue;
+            stepDays = stepDays ?? model.stepDays;
+            if (model.points.length) {
+                domain = domain ? [Math.min(domain[0], model.domain[0]), Math.max(domain[1], model.domain[1])] : model.domain.slice();
+            }
+            const info = model.info;
+            const st = info.station;
+            let site = '';
+            if (st && (st.name || st.id)) site = `station ${st.name || st.id}`;
+            else if (info.region && info.region.name) site = `area mean, ${info.region.name}`;
+            topics.push({
+                name, unit: model.unit, site, error: info.error || null,
+                anomalyOk: model.anomalyOk,
+                points: model.points.map((p) => {
+                    const c = model.anomalyOk ? model.clim.get(model.bucketOf(p)) : null;
+                    const normal = c ? (model.exactBuckets ? c.exact : c.mean) : null;
+                    return { t: p.t, start: p.start, label: p.label, value: p.value, anomaly: isNum(normal) ? p.value - normal : null };
+                }),
+            });
+        }
+        const ctx = {
+            topics, stepDays: stepDays || 1, domain, loading: state.loading,
+            monthly: (stepDays || 1) >= 20, yearly: (stepDays || 1) >= 300,
+        };
+        compareCache = { viz: state.viz, request: state.request, loading: state.loading, ctx };
+        return ctx;
+    }
+
+    function renderCompare() {
+        const host = state.refs.compare;
+        if (!host) return;
+        if (!window.TrendCompare) { host.innerHTML = ''; return; }
+        try {
+            window.TrendCompare.render(host, compareContext());
+        } catch (err) {
+            host.innerHTML = `<div class="tp-hint">Compare variables could not be drawn: ${esc(err.message || err)}</div>`;
+        }
+    }
+
+    window.TrendPlots = {
+        mount, setData, setLoading, focusDate, focusExample,
+        // Drawing helpers shared with evolution.js, so every chart looks the same.
+        kit: { renderChart, legendHtml, esc, fmt, fmtSigned, withUnit, pLabel, mean, stdDev, isNum, COLOR, timeTicks, niceStep, tickDecimals },
+    };
 })();

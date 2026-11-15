@@ -1,0 +1,238 @@
+/* "Change over time" section of the plot panel (static/plots/evolution.js).
+   Sober, journal-figure style: thin rules, small captions, tabular numbers. */
+
+.tp-evolution:empty { display: none; }
+
+.te-root {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-width: 0;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 0.75rem;
+    color: var(--tp-ink, #0b0b0b);
+}
+
+.te-head { display: flex; flex-direction: column; gap: 2px; }
+/* Same look as the plot panel's section labels (.tp-section-label). */
+.te-title {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--tp-ink, #0b0b0b);
+}
+.te-lede {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--tp-ink-2, #52514e);
+}
+
+/* Controls */
+.te-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.1rem;
+    align-items: flex-end;
+}
+.te-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.te-field-inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+.te-field-label,
+.te-field-unit {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--tp-ink-2, #52514e);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.te-field-unit { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 0.74rem; }
+.te-field select {
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--tp-ink, #0b0b0b);
+    padding: 4px 7px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #fff;
+    max-width: 100%;
+}
+.te-seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    overflow: hidden;
+    background: #fff;
+    max-width: 100%;
+}
+.te-seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    border: 0;
+    background: none;
+    color: var(--tp-ink-2, #52514e);
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+.te-seg button + button { border-left: 1px solid #cbd5e1; }
+.te-seg button[aria-pressed="true"] {
+    background: #eef2f7;
+    color: var(--tp-ink, #0b0b0b);
+    font-weight: 600;
+}
+.te-seg button:disabled { color: #b8b7b0; cursor: not-allowed; }
+.te-seg button:focus-visible { outline: 2px solid var(--tp-series, #2a78d6); outline-offset: -2px; }
+.te-seg-small button { padding: 2px 8px; font-size: 0.76rem; }
+.te-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+}
+
+/* Text */
+.te-headline {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    color: var(--tp-ink, #0b0b0b);
+    font-variant-numeric: tabular-nums;
+}
+.te-note,
+.te-inside {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--tp-ink-2, #52514e);
+    font-variant-numeric: tabular-nums;
+}
+.te-state {
+    font-size: 0.8rem;
+    color: var(--tp-ink-2, #52514e);
+    padding: 0.7rem 0.8rem;
+    border: 1px dashed #d4d3cc;
+    border-radius: 6px;
+}
+.te-error {
+    color: #8a1c1c;
+    border-color: #e8b4b4;
+    border-style: solid;
+    background: #fdf6f6;
+}
+
+/* Key figures */
+.te-facts {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+    border-top: 1px solid var(--tp-grid, #e1e0d9);
+    border-bottom: 1px solid var(--tp-grid, #e1e0d9);
+}
+.te-fact {
+    padding: 0.4rem 0.6rem 0.45rem 0;
+    min-width: 0;
+}
+.te-fact dt {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--tp-ink-2, #52514e);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.te-fact dd { margin: 1px 0 0; display: flex; flex-direction: column; }
+.te-fact-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--tp-ink, #0b0b0b);
+}
+.te-fact-sub {
+    font-size: 0.72rem;
+    color: var(--tp-muted, #898781);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Figures */
+.te-figs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 0.9rem 1.2rem;
+    min-width: 0;
+}
+.te-fig {
+    margin: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.te-fig figcaption {
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: var(--tp-ink-2, #52514e);
+}
+.te-fig-no {
+    font-weight: 700;
+    color: var(--tp-ink, #0b0b0b);
+    margin-right: 0.15rem;
+}
+.te-fig-no::after { content: " \2014"; font-weight: 400; color: var(--tp-ink-2, #52514e); }
+.te-fig-controls { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.te-chart { border-radius: 4px; }
+.te-chart svg text { font-variant-numeric: tabular-nums; }
+.te-chart .te-bar:hover { opacity: 0.75; }
+.te-legend { font-size: 0.74rem; }
+
+/* Decadal table: scrolls inside its own wrapper on narrow screens. */
+.te-table-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+.te-table-wrap:focus-visible { outline: 2px solid var(--tp-series, #2a78d6); outline-offset: 1px; }
+.te-table { width: 100%; }
+.te-table tbody th {
+    text-align: left;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-bottom: 1px solid #f1f5f9;
+    white-space: nowrap;
+}
+.te-table .te-muted { color: var(--tp-muted, #898781); font-style: italic; }
+.te-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.te-methods {
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--tp-muted, #898781);
+}
+.te-methods-head { font-weight: 600; color: var(--tp-ink-2, #52514e); }
+
+@media (max-width: 520px) {
+    .te-figs { grid-template-columns: minmax(0, 1fr); }
+    .te-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

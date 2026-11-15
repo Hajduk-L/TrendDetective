@@ -20,6 +20,11 @@ export interface Region {
   bbox: BBox;
   /** Short text shown on hover, e.g. how many stations the region has. */
   note?: string;
+  /**
+   * Outline of the region's measuring stations (convex hull with a border). Drawn
+   * instead of the box when given, so the user sees which area the stations cover.
+   */
+  outline?: Polygon;
 }
 
 export interface AreaProperties {

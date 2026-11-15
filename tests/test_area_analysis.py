@@ -88,5 +88,44 @@ class StationHullTest(unittest.TestCase):
         self.assertEqual(box, [[west, south], [east, south], [east, north], [west, north], [west, south]])
 
 
+class RegionOutlineTest(unittest.TestCase):
+    """The map draws each region as the outline of its stations (data/region_outlines.json)."""
+
+    def setUp(self) -> None:
+        self.saved = area_analysis._outlines
+        self.region = area_analysis.REGIONS[0]
+        self.temperature = area_analysis.hull_polygon([(-77.0, 39.0), (-76.8, 39.2), (-77.2, 39.3)], self.region)
+        self.precipitation = area_analysis.hull_polygon([(-77.4, 38.8), (-76.5, 39.5), (-77.0, 39.4)], self.region)
+        area_analysis._outlines = {self.region.id: {"temperature": self.temperature, "precipitation": self.precipitation}}
+
+    def tearDown(self) -> None:
+        area_analysis._outlines = self.saved
+
+    def _listed(self, topics: list[str] | None) -> dict:
+        return next(r for r in area_analysis.list_regions(topics) if r["id"] == self.region.id)
+
+    def test_outline_follows_the_selected_topic(self) -> None:
+        self.assertEqual(self._listed(["precipitation"])["outline"], self.precipitation)
+        self.assertEqual(self._listed(["temperature", "precipitation"])["outline"], self.temperature)
+        self.assertEqual(self._listed(["precipitation"])["outline_topic"], "precipitation")
+
+    def test_other_topics_and_no_topics_use_the_temperature_outline(self) -> None:
+        self.assertEqual(self._listed(None)["outline"], self.temperature)
+        self.assertEqual(self._listed(["snowfall"])["outline"], self.temperature)
+
+    def test_regions_without_outline_keep_only_their_box(self) -> None:
+        other = next(r for r in area_analysis.list_regions(None) if r["id"] != self.region.id)
+        self.assertNotIn("outline", other)
+        self.assertEqual(len(other["bbox"]), 4)
+
+    def test_shipped_outlines_cover_every_region(self) -> None:
+        area_analysis._outlines = None
+        outlines = area_analysis.region_outlines()
+        for region in area_analysis.REGIONS:
+            ring = outlines[region.id]["temperature"]["coordinates"][0]
+            self.assertEqual(ring[0], ring[-1])
+            self.assertGreaterEqual(len(ring), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

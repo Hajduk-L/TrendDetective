@@ -28,10 +28,12 @@ NOAA requests go through :class:`noaa_api.NOAAClient`, binning through
 
 from __future__ import annotations
 
+import json
 import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import api_wrapper
@@ -168,6 +170,41 @@ def _area_capable(region: Region, topic_key: str) -> bool:
     return False
 
 
+OUTLINES_PATH: Path = Path(__file__).resolve().parent / "data" / "region_outlines.json"
+"""Station outlines per region and topic, written by ``python region_outlines.py``."""
+
+_outlines: dict[str, Any] | None = None
+
+
+def region_outlines() -> dict[str, Any]:
+    """``{region id: {topic: GeoJSON polygon}}`` from :data:`OUTLINES_PATH`; empty if missing."""
+    global _outlines
+    if _outlines is None:
+        try:
+            data = json.loads(OUTLINES_PATH.read_text(encoding="utf-8"))
+            _outlines = data.get("regions", {}) if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            _outlines = {}
+    return _outlines
+
+
+def _with_outline(result: dict[str, Any], region: Region, topics: list[str]) -> dict[str, Any]:
+    """Add the outline of the stations of the first selected topic that has one.
+
+    The map draws it instead of the region's box, so the user sees before
+    applying which area the stations actually cover (the area result is
+    outlined the same way, around the stations used).
+    """
+    known = region_outlines().get(region.id, {})
+    for topic in [*topics, "temperature", "precipitation"]:
+        outline = known.get(topic.lower())
+        if outline:
+            result["outline"] = outline
+            result["outline_topic"] = topic.lower()
+            return result
+    return result
+
+
 def _region_for_topics(region: Region, topics: list[str]) -> dict[str, Any] | None:
     """``region`` as a dict with a note for the selected topics, or ``None`` if none can be evaluated there."""
     usable: list[str] = []
@@ -183,7 +220,7 @@ def _region_for_topics(region: Region, topics: list[str]) -> dict[str, Any] | No
         return None
     result = region.to_dict()
     result["note"] = " · ".join(usable)
-    return result
+    return _with_outline(result, region, topics)
 
 
 def list_regions(topics: list[str] | None = None) -> list[dict[str, Any]]:
@@ -194,7 +231,7 @@ def list_regions(topics: list[str] | None = None) -> list[dict[str, Any]]:
         those topics; without topics every region is listed.
     """
     if not topics:
-        return [region.to_dict() for region in REGIONS]
+        return [_with_outline(region.to_dict(), region, []) for region in REGIONS]
     listed = (_region_for_topics(region, topics) for region in REGIONS)
     return [region for region in listed if region is not None]
 
@@ -553,7 +590,12 @@ def _convex_hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]
 
 
 def _station_hull(stations: list[dict[str, Any]], region: Region) -> dict[str, Any]:
-    """Polygon around the stations used for an area result, with a border.
+    """Polygon around the station features used for an area result (see :func:`hull_polygon`)."""
+    return hull_polygon([tuple(f["geometry"]["coordinates"][:2]) for f in stations], region)
+
+
+def hull_polygon(positions: list[tuple[float, float]], region: Region) -> dict[str, Any]:
+    """Polygon around station positions ``(longitude, latitude)``, with a border.
 
     Each station is replaced by a circle of :data:`HULL_BORDER_KM` and the
     convex hull of all circles is returned, so the outline keeps the same
@@ -561,8 +603,7 @@ def _station_hull(stations: list[dict[str, Any]], region: Region) -> dict[str, A
     station positions the region's box is returned.
     """
     circle: list[tuple[float, float]] = []
-    for feature in stations:
-        longitude, latitude = feature["geometry"]["coordinates"][:2]
+    for longitude, latitude in positions:
         degrees_latitude = HULL_BORDER_KM / 111.32
         degrees_longitude = degrees_latitude / max(math.cos(math.radians(latitude)), 0.01)
         for k in range(_HULL_CIRCLE_POINTS):
