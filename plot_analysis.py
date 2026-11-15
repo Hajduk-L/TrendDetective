@@ -15,11 +15,19 @@ from typing import Any, Sequence
 
 import torch
 
+from scipy import stats
+
 from src.task import (
     LinearRegression,
     TTest,
+    effective_sample_size,
     get_available_tools,
+    hamed_rao_variance_factor,
+    lag1_autocorrelation,
     mann_kendall_test,
+    pettitt_test,
+    remove_seasonal_cycle,
+    theil_sen,
 )
 
 MAX_POINTS: int = 10_000
@@ -37,6 +45,16 @@ def _round(value: float, digits: int = 4) -> float | None:
     """Round a finite number for JSON; encode NaN and infinity as ``None``."""
     value = float(value)
     return round(value, digits) if math.isfinite(value) else None
+
+
+def _round_sig(value: float, digits: int = 5) -> float | None:
+    """Round to significant digits, so tiny slopes (e.g. 0.00003 °C/day) survive."""
+    value = float(value)
+    if not math.isfinite(value):
+        return None
+    if value == 0:
+        return 0.0
+    return round(value, max(digits - 1 - int(math.floor(math.log10(abs(value)))), 0))
 
 
 def _clean_series(x: Sequence[Any], values: Sequence[Any]) -> tuple[list[float], list[float]]:
@@ -68,8 +86,18 @@ def _clean_series(x: Sequence[Any], values: Sequence[Any]) -> tuple[list[float],
     return xs, ys
 
 
-def _linear_regression(xs: list[float], ys: list[float]) -> dict[str, Any]:
-    """Slope per x unit, intercept, fit quality and slope test."""
+def _linear_regression(
+    xs: list[float], ys: list[float], season_length: float | None = None
+) -> dict[str, Any]:
+    """Slope per x unit, intercept, fit quality and slope test.
+
+    The p-value accounts for autocorrelation of the residuals: with lag-1
+    autocorrelation ``r1`` the series holds only ``n_eff = n(1-r1)/(1+r1)``
+    independent values (Santer et al. 2000), so the slope's standard error
+    is widened accordingly. Without this, ten years of daily temperatures
+    (r1 ≈ 0.8) would call almost any wiggle "significant".
+    ``p_value_unadjusted`` keeps the textbook value.
+    """
     if len(xs) < 3 or len(set(xs)) < 2:
         return {
             "available": False,
@@ -77,23 +105,40 @@ def _linear_regression(xs: list[float], ys: list[float]) -> dict[str, Any]:
             "observations": len(xs),
         }
     trend = LinearRegression().analyze_trend(xs, ys)
+    order = sorted(range(len(xs)), key=xs.__getitem__)
+    residuals = [ys[i] - (trend.slope * xs[i] + trend.intercept) for i in order]
+    n = len(xs)
+    # The seasonal cycle is not noise around the trend: estimate the
+    # autocorrelation without it.
+    r1 = lag1_autocorrelation(remove_seasonal_cycle([xs[i] for i in order], residuals, season_length))
+    n_eff = effective_sample_size(n, r1)
+    p_value = trend.p_value
+    low, high = trend.confidence_interval
+    if n_eff < n and n_eff > 2 and trend.standard_error > 0:
+        stderr = trend.standard_error * math.sqrt((n - 2) / (n_eff - 2))
+        t_value = trend.slope / stderr
+        p_value = float(2 * stats.t.sf(abs(t_value), n_eff - 2))
+        margin = float(stats.t.ppf(0.975, n_eff - 2)) * stderr
+        low, high = trend.slope - margin, trend.slope + margin
     return {
         "available": True,
-        "slope": _round(trend.slope),
+        "slope": _round_sig(trend.slope),
         "intercept": _round(trend.intercept),
         "r_squared": _round(trend.r_value**2),
-        "p_value": _round(trend.p_value),
-        "confidence_interval": [
-            _round(trend.confidence_interval[0]),
-            _round(trend.confidence_interval[1]),
-        ],
-        "significant": bool(trend.p_value < 0.05),
+        "p_value": _round(p_value),
+        "p_value_unadjusted": _round(trend.p_value),
+        "autocorrelation": _round(r1, 3),
+        "effective_n": _round(n_eff, 1),
+        "confidence_interval": [_round_sig(low), _round_sig(high)],
+        "significant": bool(p_value < 0.05),
         "trend_line": [_round(trend.slope * x + trend.intercept, 3) for x in xs],
         "observations": trend.observations,
     }
 
 
-def _t_test(xs: list[float], ys: list[float]) -> dict[str, Any]:
+def _t_test(
+    xs: list[float], ys: list[float], season_length: float | None = None
+) -> dict[str, Any]:
     """Welch t-test of the first half against the second half of the series."""
     if len(ys) < 4:
         return {
@@ -103,11 +148,28 @@ def _t_test(xs: list[float], ys: list[float]) -> dict[str, Any]:
         }
     statistic, p_value = TTest().process(torch.tensor(xs), torch.tensor(ys))
     middle = len(ys) // 2
+    t_value = float(statistic.item())
+    p_plain = float(p_value.item())
+    # Autocorrelated values (and the seasonal cycle) carry less independent
+    # information than their count: scale t by sqrt(n_eff / n).
+    n = len(ys)
+    residual = remove_seasonal_cycle(xs, ys, season_length)
+    residual = [
+        v - (sum(residual[:middle]) / middle if i < middle else sum(residual[middle:]) / (n - middle))
+        for i, v in enumerate(residual)
+    ]
+    n_eff = effective_sample_size(n, lag1_autocorrelation(residual))
+    p_adjusted = p_plain
+    if n_eff < n and math.isfinite(t_value):
+        t_value *= math.sqrt(n_eff / n)
+        p_adjusted = float(2 * stats.t.sf(abs(t_value), max(n_eff - 2, 1)))
     return {
         "available": True,
-        "t_statistic": _round(float(statistic.item())),
-        "p_value": _round(float(p_value.item())),
-        "significant": bool(float(p_value.item()) < 0.05),
+        "t_statistic": _round(t_value),
+        "p_value": _round(p_adjusted),
+        "p_value_unadjusted": _round(p_plain),
+        "effective_n": _round(n_eff, 1),
+        "significant": bool(p_adjusted < 0.05),
         "early_mean": _round(sum(ys[:middle]) / middle, 3),
         "late_mean": _round(sum(ys[middle:]) / (len(ys) - middle), 3),
         "split_x": xs[middle],
@@ -115,23 +177,114 @@ def _t_test(xs: list[float], ys: list[float]) -> dict[str, Any]:
     }
 
 
-def _mann_kendall(xs: list[float], ys: list[float]) -> dict[str, Any]:
-    """Mann-Kendall test for a monotonic trend."""
+def _mann_kendall(
+    xs: list[float], ys: list[float], season_length: float | None = None
+) -> dict[str, Any]:
+    """Mann-Kendall test for a monotonic trend.
+
+    ``trend``, ``p_value`` and ``significant`` use the variance correction of
+    Hamed & Rao (1998) for autocorrelated data; ``p_value_unadjusted`` is the
+    classic test, which assumes independent values.
+    """
     if len(ys) < 3:
         return {
             "available": False,
             "error": "At least three values are required for the Mann-Kendall test.",
             "observations": len(ys),
         }
+    if len(set(xs)) != len(xs):
+        return {
+            "available": False,
+            "error": "Every value needs its own x for the Mann-Kendall test.",
+            "observations": len(ys),
+        }
     result = mann_kendall_test(xs, ys)
+    factor = hamed_rao_variance_factor(xs, list(remove_seasonal_cycle(xs, ys, season_length)))
+    p_value, z_value = result.p_value, result.z_statistic
+    if factor != 1.0 and result.variance > 0:
+        z_value = result.z_statistic / math.sqrt(factor)
+        p_value = float(2 * stats.norm.sf(abs(z_value)))
+    significant = p_value < result.alpha
+    trend = (
+        ("increasing" if result.s_statistic > 0 else "decreasing")
+        if significant and result.s_statistic != 0
+        else "no significant trend"
+    )
     return {
         "available": True,
-        "trend": result.trend,
-        "p_value": _round(result.p_value),
+        "trend": trend,
+        "p_value": _round(p_value),
+        "p_value_unadjusted": _round(result.p_value),
+        "variance_factor": _round(factor, 3),
         "tau": _round(result.tau),
-        "z_statistic": _round(result.z_statistic),
+        "z_statistic": _round(z_value),
         "s_statistic": result.s_statistic,
-        "significant": bool(result.p_value < result.alpha),
+        "significant": bool(significant),
+        "observations": result.observations,
+    }
+
+
+def _sens_slope(
+    xs: list[float], ys: list[float], season_length: float | None = None
+) -> dict[str, Any]:
+    """Theil-Sen slope with its 95 % interval; significant if the interval excludes 0."""
+    if len(xs) < 3 or len(set(xs)) < 2:
+        return {
+            "available": False,
+            "error": "At least three values at different x are required.",
+            "observations": len(xs),
+        }
+    factor = (
+        hamed_rao_variance_factor(xs, list(remove_seasonal_cycle(xs, ys, season_length)))
+        if len(set(xs)) == len(xs)
+        else 1.0
+    )
+    result = theil_sen(xs, ys, variance_factor=factor)
+    return {
+        "available": True,
+        "slope": _round_sig(result.slope),
+        "intercept": _round(result.intercept),
+        "confidence_interval": [_round_sig(result.low_slope), _round_sig(result.high_slope)],
+        "significant": bool(result.low_slope > 0 or result.high_slope < 0),
+        "trend_line": [_round(result.slope * x + result.intercept, 3) for x in xs],
+        "exact": result.exact,
+        "observations": result.observations,
+    }
+
+
+def _change_point(
+    xs: list[float], ys: list[float], season_length: float | None = None
+) -> dict[str, Any]:
+    """Pettitt change point: where the level of the series shifts most clearly.
+
+    With ``season_length`` (one year in x units) the seasonal cycle is removed
+    first; otherwise a series starting in winter "shifts" every spring.
+    """
+    if len(ys) < 4:
+        return {
+            "available": False,
+            "error": "At least four values are required to find a change point.",
+            "observations": len(ys),
+        }
+    order = sorted(range(len(xs)), key=xs.__getitem__)
+    sx = [xs[i] for i in order]
+    sy = [ys[i] for i in order]
+    tested = remove_seasonal_cycle(sx, sy, season_length)
+    result = pettitt_test(sx, tested)
+    before = sy[: result.index + 1]
+    after = sy[result.index + 1 :]
+    return {
+        "available": True,
+        "index": result.index,
+        "x_before": sx[result.index],
+        "x_after": sx[result.index + 1],
+        "p_value": _round(result.p_value),
+        "significant": bool(result.p_value < 0.05),
+        "mean_before": _round(sum(before) / len(before), 3),
+        "mean_after": _round(sum(after) / len(after), 3),
+        "shift": _round(sum(after) / len(after) - sum(before) / len(before), 3),
+        "deseasonalised": bool(season_length and season_length > 1.5),
+        "k_statistic": _round(result.k_statistic, 1),
         "observations": result.observations,
     }
 
@@ -140,18 +293,46 @@ _RUNNERS = {
     "Linear Regression": _linear_regression,
     "t-Test": _t_test,
     "Mann-Kendall": _mann_kendall,
+    "Sen's Slope": _sens_slope,
+    "Change Point": _change_point,
 }
+
+
+def _add_rates(results: dict[str, Any], per_year: float, labels: Sequence[str] | None, xs: list[float]) -> None:
+    """Add slopes per year/decade and, with ``labels``, the change-point date."""
+    for name in ("Linear Regression", "Sen's Slope"):
+        result = results.get(name)
+        if result and result.get("available") and result.get("slope") is not None:
+            result["slope_per_year"] = _round_sig(result["slope"] * per_year, 4)
+            result["slope_per_decade"] = _round_sig(result["slope"] * per_year * 10, 4)
+            low, high = result.get("confidence_interval") or [None, None]
+            if low is not None and high is not None:
+                result["confidence_interval_per_decade"] = [
+                    _round_sig(low * per_year * 10, 3), _round_sig(high * per_year * 10, 3)
+                ]
+    change = results.get("Change Point")
+    if labels is not None and change and change.get("available"):
+        position = {x: i for i, x in enumerate(xs)}
+        after = position.get(change["x_after"])
+        if after is not None and after < len(labels):
+            change["date"] = labels[after]
 
 
 def run_tools(
     x: Sequence[Any],
     values: Sequence[Any],
     tools: Sequence[str],
+    per_year: float | None = None,
+    labels: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Run the named tools on a series without the size limit for posted data.
 
-    Used by :mod:`area_analysis` for series built on the server.
+    Used by :mod:`area_analysis` and :func:`src.task.process_user_request`
+    for series built on the server.
 
+    :param per_year: x units per year; adds ``slope_per_year`` and
+        ``slope_per_decade`` to the slope tools.
+    :param labels: One date label per value; adds the date of a change point.
     :raises AnalysisError: If a tool name is unknown or the input is malformed.
     """
     unknown = [name for name in tools if name not in _RUNNERS]
@@ -159,15 +340,29 @@ def run_tools(
         raise AnalysisError(f"Unknown tool(s): {', '.join(map(str, unknown))}.")
     if len(x) != len(values):
         raise AnalysisError("x and values must have the same length.")
-    xs = [float(v) for v, y in zip(x, values) if y is not None]
-    ys = [float(y) for y in values if y is not None]
-    return {name: _RUNNERS[name](xs, ys) for name in tools}
+    pairs = [
+        (float(v), float(y))
+        for v, y in zip(x, values)
+        if y is not None and math.isfinite(float(v)) and math.isfinite(float(y))
+    ]
+    kept_labels = (
+        [label for label, y in zip(labels, values) if y is not None and math.isfinite(float(y))]
+        if labels is not None and len(labels) == len(values)
+        else None
+    )
+    xs = [p[0] for p in pairs]
+    ys = [p[1] for p in pairs]
+    results = {name: _RUNNERS[name](xs, ys, per_year) for name in tools}
+    if per_year:
+        _add_rates(results, per_year, kept_labels, xs)
+    return results
 
 
 def analyze_series(
     x: Sequence[Any],
     values: Sequence[Any],
     tools: Sequence[str] | None = None,
+    season_length: float | None = None,
 ) -> dict[str, Any]:
     """Run the selected analysis tools on one series.
 
@@ -176,6 +371,8 @@ def analyze_series(
     :param values: One value per ``x``; ``None`` marks a missing value.
     :param tools: Tool names from :func:`src.task.get_available_tools`.
         ``None`` or an empty list runs every tool.
+    :param season_length: One year in units of ``x`` (e.g. 1 for decimal
+        years); the change-point test then ignores the seasonal cycle.
     :return: ``{"observations": n, "tools": {name: result}}``. A result has
         ``available: False`` and an ``error`` if the series is too short.
     :raises AnalysisError: If the input is malformed or names an unknown tool.
@@ -188,7 +385,7 @@ def analyze_series(
         raise AnalysisError(f"Unknown tool(s): {', '.join(map(str, unknown))}. Available: {', '.join(known)}")
     return {
         "observations": len(ys),
-        "tools": {name: _RUNNERS[name](xs, ys) for name in names},
+        "tools": {name: _RUNNERS[name](xs, ys, season_length) for name in names},
     }
 
 

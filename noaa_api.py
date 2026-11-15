@@ -252,6 +252,10 @@ def _parse_isd_field(
     return values
 
 
+GOOD_RECORD_COVERAGE: float = 0.8
+"""Share of the requested range a station's record must span to be ranked by distance."""
+
+
 def _normalize_observations(payload: Any) -> list[list[dict[str, Any]]]:
     """Group observations into one record collection per measured variable.
 
@@ -830,8 +834,14 @@ class NOAAClient:
     ) -> list[tuple[str, tuple[str, ...]]]:
         """Rank the stations that report at least one requested data type.
 
-        When multiple requested types are supported, stations covering more
-        of them are preferred before distance is used as the tie-breaker.
+        Stations whose period of record spans at least
+        :data:`GOOD_RECORD_COVERAGE` of the requested range come first,
+        nearest first; then stations with shorter records, longest first. A
+        station reporting the topic's main code (e.g. ``PRCP``) beats one
+        that only reports secondary codes. The number of matching codes only
+        breaks ties: counting it first made short-lived volunteer rain gauges
+        (which also report ``MDPR``/``DAPR``) win over long-running airport
+        stations nearby.
 
         :param search_payload: Decoded response from the NOAA Search Service.
         :type search_payload: typing.Any
@@ -843,7 +853,8 @@ class NOAAClient:
             without duplicates; empty if no station matches.
         :rtype: list[tuple[str, tuple[str, ...]]]
         """
-        candidates: list[tuple[int, float, str, tuple[str, ...]]] = []
+        candidates: list[tuple[tuple[Any, ...], str, tuple[str, ...]]] = []
+        requested_days = (request.end_date - request.start_date).days + 1
         results: list[dict[str, Any]] = (
             search_payload.get("results", [])
             if isinstance(search_payload, dict)
@@ -864,6 +875,15 @@ class NOAAClient:
                 station_latitude,
                 station_longitude,
             )
+            coverage = 1.0
+            try:
+                first = date.fromisoformat(str(result.get("startDate"))[:10])
+                last = date.fromisoformat(str(result.get("endDate"))[:10])
+                overlap = (min(last, request.end_date) - max(first, request.start_date)).days + 1
+                coverage = max(0.0, overlap / requested_days)
+            except ValueError:
+                pass  # no period given: rank by distance only
+            good = coverage >= GOOD_RECORD_COVERAGE
             stations: list[dict[str, Any]] = result.get("stations", [])
             for station in stations:
                 station_id_value: Any = station.get("id")
@@ -879,17 +899,17 @@ class NOAAClient:
                 )
                 matching_type_count: int = len(matching_types)
                 if matching_type_count > 0:
-                    candidates.append(
-                        (
-                            -matching_type_count,
-                            distance_km,
-                            str(station_id_value),
-                            matching_types,
-                        )
+                    key = (
+                        not good,
+                        requested_types[0] not in available_types,
+                        distance_km if good else -coverage,
+                        -matching_type_count,
+                        distance_km,
                     )
-        candidates.sort()
+                    candidates.append((key, str(station_id_value), matching_types))
+        candidates.sort(key=lambda candidate: candidate[0])
         ranked: dict[str, tuple[str, ...]] = {}
-        for _, _, station_id, matching_types in candidates:
+        for _, station_id, matching_types in candidates:
             ranked.setdefault(station_id, matching_types)
         return list(ranked.items())
 

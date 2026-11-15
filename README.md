@@ -19,6 +19,39 @@ a time frame with data. This comes from the station metadata of the NOAA Search 
 (`POST /api/coverage`, see [`station_coverage.py`](station_coverage.py)); no observations are
 downloaded for it.
 
+## Famous events, notable events and the analysis tools
+
+**Explore a famous event** (top of the page, [`examples.py`](examples.py), `GET /api/examples`):
+eleven well-known events, e.g. the 2021 Pacific Northwest heat dome, the Berlin cloudburst of
+29 June 2017 or Hurricane Harvey. One click fills in the form, runs the request and zooms the
+plot to the day. Every example was checked against the data the app delivers.
+
+**Notable events** ([`events.py`](events.py)): every result carries `events`, the values that
+stand out most from the *normal of their time of year* (mean of the same calendar days over all
+years), the records of the time range and the strongest warm / cold spells. The plot marks them
+with numbers, the list below the plot explains each one, and *Satellite image* shows the NASA
+MODIS true-colour image of that day on the map (NASA GIBS tiles, available since 24 Feb 2000).
+
+**Analysis tools** ([`src/task.py`](src/task.py), [`plot_analysis.py`](plot_analysis.py)):
+
+| Tool | Answers |
+|---|---|
+| Linear regression | average change per year / decade |
+| Sen's slope | the same, but robust to single extremes (median of all pairwise slopes) |
+| Mann-Kendall | does the series keep rising or falling? |
+| Change point (Pettitt) | when did the level shift most clearly? |
+| t-Test | is the second half different from the first? |
+
+Daily climate data is autocorrelated (a warm day follows a warm day), so the textbook p-values
+would call almost any wiggle "significant". All tools therefore correct their significance:
+regression and t-test use the effective sample size `n(1-r1)/(1+r1)` (Santer et al. 2000),
+Mann-Kendall and Sen's slope the variance correction of Hamed & Rao (1998), the change point
+test an AR(1) scaling; the autocorrelation is estimated without the seasonal cycle, and the
+change point test removes the seasonal cycle first. `p_value_unadjusted` keeps the textbook value.
+
+The plot panel adds a plain-language summary of the trend, and a **Stripes** view (one coloured
+stripe per year, the departure of its mean from the mean of all years).
+
 ## Map widget
 
 The world map is the widget in [`map-widget/`](map-widget/), built into [`static/map-widget/`](static/map-widget/).
@@ -97,7 +130,7 @@ needs a registration or API key.
 | DWD (German weather service, Open Data) | [`dwd_api.py`](dwd_api.py) | Germany, ~1,100 climate and ~6,600 precipitation stations | `temperature`, `precipitation`, `snowfall`, `snow_depth`, `wind_speed` |
 | ECCC (Environment Canada, MSC GeoMet) | [`eccc_api.py`](eccc_api.py) | Canada | `temperature`, `precipitation`, `snowfall`, `snow_depth`, `wind_speed` (gusts) |
 | FMI (Finnish Meteorological Institute) | [`fmi_api.py`](fmi_api.py) | Finland | `temperature`, `precipitation`, `snow_depth` |
-| Open-Meteo (ERA5 reanalysis, a model) | [`openmeteo_api.py`](openmeteo_api.py) | world, 1940 to today | `temperature_era5`, `precipitation_era5`, `snowfall_era5`, `snow_depth_era5`, `wind_speed_era5` |
+| Open-Meteo (ERA5 reanalysis, a model) | [`openmeteo_api.py`](openmeteo_api.py) | world, 1940 to today | `temperature_era5`, `precipitation_era5`, `snowfall_era5`, `snow_depth_era5`, `wind_speed_era5`, `humidity_era5`, `dew_point_era5`, `pressure_era5`, `cloud_cover_era5`, `sunshine_era5`, `solar_radiation_era5`, `evapotranspiration_era5`, `soil_moisture_era5`, `soil_temperature_era5` |
 | NOAA PolarWatch (VIIRS satellite) | [`polarwatch_api.py`](polarwatch_api.py) | polar seas and lakes, since 2021, point only | `ice_thickness_satellite` |
 
 The station sources deliver NOAA's variable codes and units (`tmax`, `prcp`,

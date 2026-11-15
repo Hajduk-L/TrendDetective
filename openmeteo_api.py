@@ -41,6 +41,17 @@ _VARIABLES: dict[str, tuple[str, str, float]] = {
     "snow_depth_max": ("snwd", "mm", 1000.0),  # m
     "wind_speed_10m_mean": ("awnd", "m/s", 1.0),
     "wind_gusts_10m_max": ("wsfg", "m/s", 1.0),
+    "relative_humidity_2m_mean": ("rhav", "%", 1.0),
+    "relative_humidity_2m_max": ("rhmx", "%", 1.0),
+    "relative_humidity_2m_min": ("rhmn", "%", 1.0),
+    "dew_point_2m_mean": ("dewp", "°C", 1.0),
+    "pressure_msl_mean": ("pmsl", "hPa", 1.0),
+    "cloud_cover_mean": ("cldc", "%", 1.0),
+    "sunshine_duration": ("tsun", "h", 1 / 3600),  # s
+    "shortwave_radiation_sum": ("srad", "MJ/m²", 1.0),
+    "et0_fao_evapotranspiration": ("et0", "mm", 1.0),
+    "soil_moisture_0_to_7cm_mean": ("soilm", "m³/m³", 1.0),
+    "soil_temperature_0_to_7cm_mean": ("soilt", "°C", 1.0),
 }
 
 SOURCE_NAME: str = "Open-Meteo ERA5"
@@ -68,6 +79,35 @@ class OpenMeteoClient(StationSource):
         "wind_speed_era5": SourceTopic(
             "Daily wind speed (ERA5 model)", ("awnd", "wsfg"),
             "ERA5 reanalysis: daily mean 10 m wind speed and maximum gust.",
+        ),
+        "humidity_era5": SourceTopic(
+            "Relative humidity (ERA5 model)", ("rhav", "rhmx", "rhmn"),
+            "ERA5 reanalysis: daily mean, maximum and minimum 2 m relative humidity.",
+        ),
+        "dew_point_era5": SourceTopic(
+            "Dew point (ERA5 model)", ("dewp",), "ERA5 reanalysis: daily mean 2 m dew point.",
+        ),
+        "pressure_era5": SourceTopic(
+            "Sea-level pressure (ERA5 model)", ("pmsl",), "ERA5 reanalysis: daily mean pressure at sea level.",
+        ),
+        "cloud_cover_era5": SourceTopic(
+            "Cloud cover (ERA5 model)", ("cldc",), "ERA5 reanalysis: daily mean total cloud cover.",
+        ),
+        "sunshine_era5": SourceTopic(
+            "Sunshine duration (ERA5 model)", ("tsun",), "ERA5 reanalysis: hours of sunshine per day.",
+        ),
+        "solar_radiation_era5": SourceTopic(
+            "Solar radiation (ERA5 model)", ("srad",), "ERA5 reanalysis: daily sum of shortwave radiation.",
+        ),
+        "evapotranspiration_era5": SourceTopic(
+            "Evapotranspiration (ERA5 model)", ("et0",),
+            "ERA5 reanalysis: FAO-56 reference evapotranspiration, a measure of drought stress.",
+        ),
+        "soil_moisture_era5": SourceTopic(
+            "Soil moisture 0–7 cm (ERA5 model)", ("soilm",), "ERA5 reanalysis: daily mean volumetric soil water.",
+        ),
+        "soil_temperature_era5": SourceTopic(
+            "Soil temperature 0–7 cm (ERA5 model)", ("soilt",), "ERA5 reanalysis: daily mean soil temperature.",
         ),
     }
 
@@ -116,6 +156,8 @@ class OpenMeteoClient(StationSource):
                     "daily": ",".join(variables),
                     "wind_speed_unit": "ms",
                     "timezone": "GMT",
+                    # Pure ERA5; the default blend mixes in other models for recent days.
+                    "models": "era5",
                 },
                 source=self.SOURCE,
             )

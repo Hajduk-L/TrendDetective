@@ -51,7 +51,7 @@ class RequestProcessingTests(unittest.TestCase):
     def test_all_analysis_tools_are_available(self):
         self.assertEqual(
             get_available_tools(),
-            ["Linear Regression", "Mann-Kendall", "t-Test"],
+            ["Change Point", "Linear Regression", "Mann-Kendall", "Sen's Slope", "t-Test"],
         )
 
     @patch("src.task._load_records_for_topic")

@@ -431,6 +431,143 @@
         }
         .place-results .place-empty { cursor: default; color: #64748b; }
         .place-results .place-empty:hover { background: none; }
+
+        /* Apply status: what is still missing */
+        .apply-status { font-size: 0.78rem; color: #64748b; line-height: 1.35; }
+        .apply-status strong { color: #b45309; font-weight: 600; }
+        .top-bar { gap: 0.6rem; flex-wrap: wrap; }
+
+        /* Grouped topic list */
+        .topic-group-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #64748b;
+            padding: 0.55rem 0.5rem 0.2rem;
+        }
+        .topic-item .topic-text { display: flex; flex-direction: column; min-width: 0; }
+        .topic-item .topic-name { color: #0f172a; }
+        .topic-item .topic-meta { font-size: 0.7rem; color: #94a3b8; }
+        .topic-kind {
+            display: inline-block;
+            margin-left: 4px;
+            padding: 0 5px;
+            border-radius: 999px;
+            font-size: 0.66rem;
+            font-weight: 600;
+            vertical-align: 1px;
+        }
+        .topic-kind.model { background: #fef3c7; color: #92400e; }
+        .topic-kind.satellite { background: #e0f2fe; color: #075985; }
+        .topic-kind.marine { background: #ccfbf1; color: #115e59; }
+        .topic-kind.hourly { background: #f1f5f9; color: #475569; }
+        .dropdown-count { margin-left: auto; margin-right: 0.5rem; font-size: 0.75rem; color: #2563eb; font-weight: 600; }
+
+        /* Famous events gallery */
+        .examples-card { padding-bottom: 0.75rem; }
+        .examples-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+        .examples-head h3 { margin: 0; }
+        .examples-head p { margin: 0; font-size: 0.8rem; color: #64748b; }
+        .examples-toggle { font: inherit; font-size: 0.8rem; background: none; border: none; color: #2563eb; cursor: pointer; }
+        .examples-list {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(210px, 1fr);
+            gap: 0.6rem;
+            overflow-x: auto;
+            padding: 0.6rem 0 0.25rem;
+            scroll-snap-type: x proximity;
+        }
+        .examples-card.collapsed .examples-list { display: none; }
+        .example {
+            scroll-snap-align: start;
+            text-align: left;
+            font: inherit;
+            border: 1px solid #e2e8f0;
+            border-top: 4px solid var(--ex-color, #2563eb);
+            border-radius: 10px;
+            background: #fff;
+            padding: 0.6rem 0.7rem;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            transition: box-shadow 0.15s ease, transform 0.1s ease;
+        }
+        .example:hover { box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12); }
+        .example:active { transform: scale(0.99); }
+        .example:disabled { opacity: 0.6; cursor: progress; }
+        .example-title { font-weight: 700; color: #0f172a; font-size: 0.9rem; }
+        .example-place { font-size: 0.75rem; color: #475569; }
+        .example-summary { font-size: 0.75rem; color: #64748b; line-height: 1.35; }
+        .example-fact { font-size: 0.72rem; color: var(--ex-color, #2563eb); font-weight: 600; margin-top: auto; }
+
+        /* Map legend and satellite bar (inside .map-box) */
+        .map-legend {
+            position: absolute;
+            left: 10px;
+            bottom: 34px;
+            z-index: 4;
+            background: rgba(255, 255, 255, 0.94);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+            padding: 0.4rem 0.6rem;
+            font-size: 0.72rem;
+            color: #334155;
+            max-width: 240px;
+        }
+        .map-legend[hidden] { display: none; }
+        .map-legend-title { font-weight: 700; margin-bottom: 2px; cursor: pointer; }
+        .map-legend details:not([open]) .map-legend-title { margin-bottom: 0; }
+        .map-legend-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+        .map-legend-dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); flex: none; }
+        .satellite-bar {
+            position: absolute;
+            top: 54px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 4;
+            background: rgba(15, 23, 42, 0.88);
+            color: #fff;
+            border-radius: 999px;
+            padding: 0.3rem 0.4rem 0.3rem 0.85rem;
+            font-size: 0.78rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+        }
+        .satellite-bar[hidden] { display: none; }
+        .satellite-bar button {
+            font: inherit;
+            border: none;
+            border-radius: 999px;
+            padding: 0.15rem 0.6rem;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.18);
+            color: #fff;
+        }
+        .satellite-bar button:hover { background: rgba(255, 255, 255, 0.32); }
+
+        /* Result cards: trend headline and events */
+        .trend-headline { font-size: 0.85rem; margin: 4px 0; color: #0f172a; }
+        .trend-headline .sig { font-size: 0.72rem; padding: 0 6px; border-radius: 999px; margin-left: 4px; }
+        .trend-headline .sig.yes { background: #dcfce7; color: #166534; }
+        .trend-headline .sig.no { background: #f1f5f9; color: #64748b; }
+        .event-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+        .event-chip {
+            font: inherit;
+            font-size: 0.74rem;
+            border: 1px solid #fed7aa;
+            background: #fff7ed;
+            color: #9a3412;
+            border-radius: 999px;
+            padding: 1px 8px;
+            cursor: pointer;
+        }
+        .event-chip.cold { border-color: #bfdbfe; background: #eff6ff; color: #1e40af; }
+        .event-chip:hover { filter: brightness(0.96); }
     </style>
 </head>
 <body>
@@ -439,6 +576,7 @@
         <!-- Top-left Apply button (disabled until >=1 topic, valid DD.MM.YYYY timeintervall, and interval > 0) -->
         <div class="top-bar">
             <button id="apply" class="py-button" type="button" disabled>Apply</button>
+            <span id="apply-status" class="apply-status" aria-live="polite"></span>
         </div>
 
         <!-- Timeintervall brackets [DD.MM.YYYY] - [DD.MM.YYYY] above the search bar -->
@@ -500,9 +638,10 @@
         </div>
 
         <!-- Topics Dropdown Menu (starts closed) -->
-        <div id="topics-dropdown" class="dropdown">
-            <button id="dropdown-toggle-btn" class="dropdown-toggle" type="button">
+        <div id="topics-dropdown" class="dropdown open">
+            <button id="dropdown-toggle-btn" class="dropdown-toggle" type="button" aria-expanded="true">
                 <span>Topics</span>
+                <span id="topics-count" class="dropdown-count"></span>
                 <span class="dropdown-arrow">&#9662;</span>
             </button>
             <div id="topics-list" class="dropdown-menu"></div>
@@ -512,8 +651,24 @@
 
     <!-- Main Content Area -->
     <main class="main-content">
+        <section class="status-card examples-card" id="examples-card" aria-label="Famous weather events">
+            <div class="examples-head">
+                <h3>Explore a famous event</h3>
+                <p>One click loads ten years of data around it and jumps to the day it happened.</p>
+                <button type="button" class="examples-toggle" id="examples-toggle" aria-expanded="true">Hide</button>
+            </div>
+            <div class="examples-list" id="examples-list"></div>
+        </section>
+
         <div class="map-box" aria-label="TrendDetective World Map">
             <div id="map-widget"></div>
+            <div class="map-legend" id="map-legend" hidden></div>
+            <div class="satellite-bar" id="satellite-bar" hidden>
+                <span id="satellite-text"></span>
+                <button type="button" data-sat-step="-1" title="Previous day">◀</button>
+                <button type="button" data-sat-step="1" title="Next day">▶</button>
+                <button type="button" id="satellite-close" title="Remove the satellite image">✕</button>
+            </div>
             <div class="place-search" role="search">
                 <input id="place-search" type="search" placeholder="Search city, region or lat, lon…"
                     autocomplete="off" aria-label="Search city, region or coordinates"
@@ -617,7 +772,7 @@
                 if (typeof map.fitToBounds === 'function') map.fitToBounds(viewBox(place));
             }
 
-            async function search(query) {
+            async function search(query, chooseFirst = false) {
                 const no = ++requestNo;
                 status.textContent = '…';
                 try {
@@ -628,6 +783,7 @@
                     results = data.places || [];
                     active = results.length ? 0 : -1;
                     render(results.length ? '' : `No place found for "${query}".`);
+                    if (chooseFirst && results.length) choose(0);
                 } catch (err) {
                     if (no !== requestNo) return;
                     results = [];
@@ -663,8 +819,9 @@
                     if (!list.hidden && active >= 0) {
                         choose(active);
                     } else if (input.value.trim().length >= 2) {
+                        // Enter before the suggestions arrived: take the best match directly.
                         clearTimeout(timer);
-                        search(input.value.trim());
+                        search(input.value.trim(), true);
                     }
                 } else if (event.key === 'Escape') {
                     setOpen(false);
@@ -693,9 +850,11 @@
             window.trendMap = window.TrendDetectiveMap.mount(document.getElementById('map-widget'), {
                 onAreaSelected: (area) => {
                     selectedArea = area;
+                    window.dispatchEvent(new Event('trend:area'));
                 },
                 onAreaCleared: () => {
                     selectedArea = null;
+                    window.dispatchEvent(new Event('trend:area'));
                 },
             });
         }
@@ -707,6 +866,7 @@
         const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:8000';
 
         let allTopics = [];
+        let topicDetails = {};
         const selectedTopics = {};
 
         // Regions with enough stations to evaluate an area for the selected topics (the
@@ -793,6 +953,7 @@
             const startValid = Boolean(startDate);
             const endValid = Boolean(endDate) && datesOrderValid;
             const validInterval = isIntervalValueValid();
+            const hasArea = Boolean(window.getSelectedArea && window.getSelectedArea());
 
             timeintervallStartInput.classList.toggle('invalid', startRaw.length > 0 && !startValid);
             timeintervallEndInput.classList.toggle('invalid', endRaw.length > 0 && !endValid);
@@ -809,9 +970,38 @@
                 hasSelectedTopic &&
                 startValid &&
                 endValid &&
-                validInterval
+                validInterval &&
+                hasArea
             );
+            // Say what is still missing instead of a silently disabled button.
+            const missing = [];
+            if (!hasArea) missing.push('pick a point on the map (📍) or a region (Areas)');
+            if (!hasSelectedTopic) missing.push('choose a topic');
+            if (!startValid || !endValid) missing.push('enter a valid time range');
+            if (!validInterval) missing.push('enter an interval length');
+            const status = document.getElementById('apply-status');
+            if (status) {
+                const count = Object.values(selectedTopics).filter(Boolean).length;
+                status.innerHTML = missing.length
+                    ? `<strong>To start:</strong> ${missing.map(escapeText).join(', ')}.`
+                    : `${count} topic${count === 1 ? '' : 's'} at ${escapeText(describeArea(window.getSelectedArea()))}`;
+            }
+            const counter = document.getElementById('topics-count');
+            if (counter) {
+                const count = Object.values(selectedTopics).filter(Boolean).length;
+                counter.textContent = count ? `${count} selected` : '';
+            }
         }
+
+        function describeArea(area) {
+            if (!area) return '';
+            const p = area.properties || {};
+            if (p.shape === 'region') return p.name || 'the region';
+            if (p.placeName) return p.placeName;
+            const c = area.geometry && area.geometry.coordinates;
+            return Array.isArray(c) ? `${Number(c[1]).toFixed(2)}°, ${Number(c[0]).toFixed(2)}°` : 'the point';
+        }
+        window.addEventListener('trend:area', () => updateApplyButtonState());
 
         // Puts the dots in while typing: "01012020" -> "01.01.2020", "1.1." -> "01.01.".
         // `sizes` are the digit counts of the parts (day, month, year).
@@ -866,14 +1056,23 @@
         intervalValueInput.addEventListener('input', updateApplyButtonState);
         intervalUnitSelect.addEventListener('change', updateApplyButtonState);
 
+        const GROUP_ORDER = ['Temperature', 'Precipitation', 'Snow', 'Wind', 'Humidity, clouds & sun', 'Pressure', 'Soil', 'Ice', 'Marine', 'Other'];
+        const KIND_BADGE = { model: ['model', 'ERA5 reanalysis: a weather model run with past observations; a value for every place since 1940'], satellite: ['satellite', 'Satellite measurement'], marine: ['ships & buoys', 'Reports of ships and buoys near the point; slow for long time ranges'] };
+
+        function topicLabel(topic) {
+            const d = topicDetails[topic];
+            return d && d.label ? d.label : topic;
+        }
+
         function renderTopics(filterText = '') {
             const listContainer = document.getElementById('topics-list');
             listContainer.innerHTML = '';
 
             const normalizedFilter = filterText.trim().toLowerCase();
-            const matchingTopics = allTopics.filter((topic) =>
-                topic.toLowerCase().includes(normalizedFilter)
-            );
+            const matchingTopics = allTopics.filter((topic) => {
+                const d = topicDetails[topic] || {};
+                return [topic, d.label, d.description, d.group].some((text) => String(text || '').toLowerCase().includes(normalizedFilter));
+            });
 
             if (matchingTopics.length === 0) {
                 const empty = document.createElement('div');
@@ -883,25 +1082,63 @@
                 return;
             }
 
+            const groups = new Map();
             for (const topic of matchingTopics) {
-                const label = document.createElement('label');
-                label.className = 'topic-item';
+                const group = (topicDetails[topic] && topicDetails[topic].group) || 'Other';
+                if (!groups.has(group)) groups.set(group, []);
+                groups.get(group).push(topic);
+            }
+            const order = [...groups.keys()].sort((a, b) => GROUP_ORDER.indexOf(a) - GROUP_ORDER.indexOf(b));
+            for (const group of order) {
+                const title = document.createElement('div');
+                title.className = 'topic-group-title';
+                title.textContent = group;
+                listContainer.appendChild(title);
+                // Station data first, then model / satellite / marine; daily before hourly.
+                const FEATURED = ['temperature', 'precipitation', 'snowfall', 'snow_depth', 'wind_speed'];
+                const rank = (t) => {
+                    const d = topicDetails[t] || {};
+                    const featured = FEATURED.includes(t) ? 0 : 1;
+                    const coarse = /_(monthly|annual)$/.test(t) ? 1 : 0;
+                    return featured * 100 + (d.kind === 'station' ? 0 : d.kind === 'model' ? 1 : 2) * 10 + (d.hourly ? 2 : coarse);
+                };
+                for (const topic of groups.get(group).sort((a, b) => rank(a) - rank(b) || topicLabel(a).localeCompare(topicLabel(b)))) {
+                    const d = topicDetails[topic] || {};
+                    const label = document.createElement('label');
+                    label.className = 'topic-item';
+                    label.title = [d.description, d.sources && d.sources.length ? `Sources: ${d.sources.join(', ')}` : '', `Key: ${topic}`].filter(Boolean).join('\n');
 
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = Boolean(selectedTopics[topic]);
-                checkbox.addEventListener('change', (event) => {
-                    selectedTopics[topic] = event.target.checked;
-                    updateApplyButtonState();
-                    refreshRegions();
-                });
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = Boolean(selectedTopics[topic]);
+                    checkbox.addEventListener('change', (event) => {
+                        selectedTopics[topic] = event.target.checked;
+                        updateApplyButtonState();
+                        refreshRegions();
+                    });
 
-                const span = document.createElement('span');
-                span.textContent = topic;
+                    const text = document.createElement('span');
+                    text.className = 'topic-text';
+                    const name = document.createElement('span');
+                    name.className = 'topic-name';
+                    name.textContent = topicLabel(topic).replace(/ \((ERA5 model|VIIRS satellite)\)$/, '');
+                    const badge = KIND_BADGE[d.kind] || (d.hourly ? ['hourly', 'Hourly reports: large downloads for long time ranges'] : null);
+                    if (badge) {
+                        const b = document.createElement('span');
+                        b.className = `topic-kind ${d.kind in KIND_BADGE ? d.kind : 'hourly'}`;
+                        b.textContent = badge[0];
+                        b.title = badge[1];
+                        name.appendChild(b);
+                    }
+                    const meta = document.createElement('span');
+                    meta.className = 'topic-meta';
+                    meta.textContent = d.sources && d.sources.length ? d.sources.join(' · ') : topic;
+                    text.append(name, meta);
 
-                label.appendChild(checkbox);
-                label.appendChild(span);
-                listContainer.appendChild(label);
+                    label.appendChild(checkbox);
+                    label.appendChild(text);
+                    listContainer.appendChild(label);
+                }
             }
         }
 
@@ -913,6 +1150,7 @@
                     throw new Error(`HTTP ${response.status}`);
                 }
                 const data = await response.json();
+                topicDetails = data.details || {};
                 allTopics = [...data.topics].sort((a, b) => a.localeCompare(b));
 
                 for (const topic of allTopics) {
@@ -948,10 +1186,22 @@
 
         topicsToggleBtn.addEventListener('click', () => {
             topicsDropdown.classList.toggle('open');
-            if (topicsDropdown.classList.contains('open')) {
+            topicsToggleBtn.setAttribute('aria-expanded', String(topicsDropdown.classList.contains('open')));
+            if (topicsDropdown.classList.contains('open') && allTopics.length === 0) {
                 loadTopics();
             }
         });
+
+        // Sensible start: the last ten complete years, daily values, temperature selected.
+        (function setDefaults() {
+            const lastYear = new Date().getFullYear() - 1;
+            if (!timeintervallStartInput.value) timeintervallStartInput.value = `01.01.${lastYear - 9}`;
+            if (!timeintervallEndInput.value) timeintervallEndInput.value = `31.12.${lastYear}`;
+            if (!intervalValueInput.value) intervalValueInput.value = '1';
+            selectedTopics.temperature = true;
+        })();
+        loadTopics();
+        refreshRegions();
 
         document.getElementById('topic-search').addEventListener('input', async (event) => {
             if (!topicsDropdown.classList.contains('open')) {
@@ -1122,6 +1372,25 @@
 
         // opts (progressive 'Apply'): partial = more topics are coming (skip the coverage lookups
         // until the end), pending = topics not loaded yet, failed = why they will not load.
+        // The three most notable events of a card; a click shows the event in the plot panel.
+        function eventChipsHtml(info, topic) {
+            const list = Array.isArray(info.events) ? info.events.slice(0, 3) : [];
+            if (!list.length) return '';
+            const fmtDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+            return `<div class="event-chips">${list.map((ev) => {
+                const cold = /low|cold/.test(ev.kind);
+                const value = ev.end ? `${ev.days} days` : `${ev.value}${info.unit ? ' ' + info.unit : ''}`;
+                return `<button type="button" class="event-chip${cold ? ' cold' : ''}" data-topic="${escapeText(topic)}" data-date="${escapeText(ev.peak_date || ev.date)}" title="${escapeText(ev.description)}">${escapeText(ev.title)} · ${escapeText(fmtDate(ev.date))} · ${escapeText(value)}</button>`;
+            }).join('')}</div>`;
+        }
+
+        document.getElementById('visualization-container').addEventListener('click', (event) => {
+            const chip = event.target.closest('.event-chip');
+            if (!chip || !window.TrendPlots) return;
+            window.TrendPlots.focusExample(chip.dataset.date, null, chip.dataset.topic);
+            document.getElementById('plot-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
         function renderVisualization(visualization, opts = {}) {
             const container = document.getElementById('visualization-container');
             if (!visualization || !visualization.topics) {
@@ -1130,8 +1399,10 @@
             }
 
             if (window.trendMap && Array.isArray(visualization.map_layers)) {
-                window.trendMap.setResultData(visualization.map_layers);
+                window.lastMapLayers = visualization.map_layers;
+                window.trendMap.setResultData(window.satelliteLayer ? [window.satelliteLayer, ...visualization.map_layers] : visualization.map_layers);
                 fitMapToSelectionAndStations(visualization.map_layers);
+                if (window.updateMapLegend) window.updateMapLegend(visualization.map_layers);
             }
 
             const entries = Object.entries(visualization.topics);
@@ -1156,11 +1427,29 @@
                 const badge = (text, title) => `<span class="metric-badge"${title ? ` title="${escapeText(title)}"` : ''}>${text}</span>`;
                 const unavailable = (name, result) => `<span class="metric-badge metric-badge-muted" title="${escapeText(result.error || '')}">${name}: ${escapeText(result.error || 'not available')}</span>`;
 
-                let badgesHtml = badge(`Mean: ${show(info.mean)}${info.unit && info.mean != null ? ' ' + escapeText(info.unit) : ''}`);
+                const sen = tools["Sen's Slope"];
+                const cp = tools['Change Point'];
+                const unitText = info.unit ? ' ' + escapeText(info.unit) : '';
+                let badgesHtml = badge(`Mean: ${show(info.mean)}${info.mean != null ? unitText : ''}`);
                 badgesHtml += badge(`Intervals: ${values.length}`);
-                if (lr) {
-                    badgesHtml += badge(`Slope (w): ${show(lr.slope)}${info.unit ? ' ' + escapeText(info.unit) + '/interval' : ''}`);
-                    badgesHtml += badge(`Intercept (b): ${show(lr.intercept)}`);
+                // Headline: the trend per decade in words, with its significance.
+                const trend = lr && lr.available !== false && lr.slope_per_decade != null ? lr
+                    : sen && sen.available !== false && sen.slope_per_decade != null ? sen : null;
+                let headline = '';
+                if (trend) {
+                    const v = Number(trend.slope_per_decade);
+                    const arrow = v > 0 ? '↗' : v < 0 ? '↘' : '→';
+                    headline = `<div class="trend-headline">${arrow} Trend: <strong>${v > 0 ? '+' : ''}${escapeText(v.toPrecision(2))}${unitText} per decade</strong>`
+                        + `<span class="sig ${trend.significant ? 'yes' : 'no'}" title="${escapeText(`p = ${trend.p_value ?? '–'}${trend.effective_n ? `, about ${Math.round(trend.effective_n)} independent values after accounting for autocorrelation` : ''}`)}">${trend.significant ? 'significant' : 'not significant'}</span></div>`;
+                }
+                if (lr && lr.available !== false) {
+                    badgesHtml += badge(`Slope: ${show(lr.slope)}${info.unit ? ' ' + escapeText(info.unit) + ' per interval' : ' per interval'}`, `Value of the trend line at the first interval: ${lr.intercept}`);
+                }
+                if (sen && sen.available !== false) {
+                    badgesHtml += badge(`Sen's slope: ${show(sen.slope_per_decade)}${unitText}/decade${sen.significant ? ' (significant)' : ''}`, 'Median of all pairwise slopes; robust to single extremes');
+                }
+                if (cp && cp.available !== false) {
+                    badgesHtml += badge(`Change point: ${show(cp.date || cp.x_after)}${cp.significant ? ` (shift ${cp.shift > 0 ? '+' : ''}${show(cp.shift)}${unitText})` : ' (not significant)'}`, `Pettitt test, p = ${cp.p_value}`);
                 }
                 if (tt) {
                     if (tt.available === false) {
@@ -1202,7 +1491,9 @@
                     </div>
                     ${stationHtml}
                     ${info.error ? `<div class="topic-error">⚠ ${escapeText(info.error)}</div>` : ''}
+                    ${headline}
                     <div class="badge-row">${badgesHtml}</div>
+                    ${eventChipsHtml(info, topic)}
                     <div class="chart-host"></div>
                     ${hasValues ? buildChartLegend(info, Array.isArray(trendLine)) : ''}
                 `;
@@ -1454,7 +1745,8 @@
                 });
 
                 if (!res.ok || !res.body) {
-                    throw new Error(`HTTP ${res.status}`);
+                    const body = await res.json().catch(() => null);
+                    throw new Error((body && body.error) || `The server answered with HTTP ${res.status}.`);
                 }
 
                 let ur = null;
@@ -1484,8 +1776,9 @@
                     // Keep what is already drawn; only the missing topics show the error.
                     renderVisualization(shown, { pending, failed: error.message || String(error) });
                 } else if (container) {
-                    container.innerHTML =
-                        '<div class="empty-message">Error: Could not submit the request. Ensure at least one topic, valid DD.MM.YYYY dates, and an interval length &gt; 0 are provided.</div>';
+                    const message = error && error.message ? error.message : String(error);
+                    container.innerHTML = `<div class="empty-message">⚠ The request failed: ${escapeText(message)}`
+                        + `${/fetch|network/i.test(message) ? ' – is the Python server (python3 app.py) running?' : ''}</div>`;
                 }
             } finally {
                 if (run === applyRun) {
@@ -1503,6 +1796,158 @@
                 triggerButton(buttonElement.id);
             });
         });
+    </script>
+    <script>
+        // ---- Famous events gallery (GET /api/examples, examples.py) ----
+        (function () {
+            const COLORS = { heat: '#dc2626', cold: '#2563eb', rain: '#0f766e', snow: '#6366f1' };
+            const ICONS = { heat: '🔥', cold: '🥶', rain: '🌧', snow: '❄️' };
+            // Which variable of the topic shows the event best (TMAX for heat, TMIN for cold, …).
+            const PREFER = { heat: ['tmax', 'tavg', 'tmin'], cold: ['tmin', 'tavg', 'tmax'], rain: ['prcp'], snow: ['snwd', 'snow'] };
+            const card = document.getElementById('examples-card');
+            const list = document.getElementById('examples-list');
+            const toggle = document.getElementById('examples-toggle');
+            if (!card || !list) return;
+
+            let collapsed = false;
+            try { collapsed = localStorage.getItem('td-examples-collapsed') === '1'; } catch (e) { /* storage blocked */ }
+            const setCollapsed = (value) => {
+                collapsed = value;
+                card.classList.toggle('collapsed', value);
+                toggle.textContent = value ? 'Show' : 'Hide';
+                toggle.setAttribute('aria-expanded', String(!value));
+                try { localStorage.setItem('td-examples-collapsed', value ? '1' : '0'); } catch (e) { /* ignore */ }
+            };
+            setCollapsed(collapsed);
+            toggle.addEventListener('click', () => setCollapsed(!collapsed));
+
+            let examples = [];
+            fetch(`${API_BASE}/api/examples`)
+                .then((r) => (r.ok ? r.json() : { examples: [] }))
+                .then((data) => {
+                    examples = data.examples || [];
+                    list.innerHTML = examples.map((ex, i) => `
+                        <button type="button" class="example" data-i="${i}" style="--ex-color:${COLORS[ex.category] || '#2563eb'}">
+                            <span class="example-title">${ICONS[ex.category] || '⚑'} ${escapeText(ex.title)}</span>
+                            <span class="example-place">${escapeText(ex.place)} · ${escapeText(ex.focus.slice(0, 4))}</span>
+                            <span class="example-summary">${escapeText(ex.summary)}</span>
+                            <span class="example-fact">${escapeText(ex.verified)}</span>
+                        </button>`).join('');
+                    if (!examples.length) card.hidden = true;
+                })
+                .catch(() => { card.hidden = true; });
+
+            async function runExample(ex) {
+                if (allTopics.length === 0) await loadTopics();
+                for (const topic of Object.keys(selectedTopics)) selectedTopics[topic] = false;
+                selectedTopics[ex.topic] = true;
+                renderTopics(document.getElementById('topic-search').value);
+                timeintervallStartInput.value = ex.start;
+                timeintervallEndInput.value = ex.end;
+                intervalValueInput.value = '1';
+                intervalUnitSelect.value = 'Day';
+                const area = {
+                    type: 'Feature',
+                    properties: { shape: 'point', placeName: ex.place },
+                    geometry: { type: 'Point', coordinates: [ex.longitude, ex.latitude] },
+                };
+                if (window.trendMap && typeof window.trendMap.setArea === 'function') {
+                    window.trendMap.setArea(area);
+                    if (typeof window.trendMap.fitToBounds === 'function') {
+                        window.trendMap.fitToBounds([ex.longitude - 0.3, ex.latitude - 0.2, ex.longitude + 0.3, ex.latitude + 0.2]);
+                    }
+                }
+                refreshRegions();
+                updateApplyButtonState();
+                document.getElementById('plot-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                await triggerButton('apply');
+                if (window.TrendPlots) window.TrendPlots.focusExample(ex.focus, PREFER[ex.category]);
+            }
+
+            list.addEventListener('click', async (event) => {
+                const button = event.target.closest('.example');
+                if (!button) return;
+                const ex = examples[Number(button.dataset.i)];
+                if (!ex) return;
+                list.querySelectorAll('.example').forEach((b) => { b.disabled = true; });
+                try {
+                    await runExample(ex);
+                } finally {
+                    list.querySelectorAll('.example').forEach((b) => { b.disabled = false; });
+                }
+            });
+        })();
+
+        // ---- Satellite image of an event day (NASA GIBS, MODIS Terra true colour) ----
+        (function () {
+            const bar = document.getElementById('satellite-bar');
+            const text = document.getElementById('satellite-text');
+            let current = null;
+
+            function shift(iso, days) {
+                const t = new Date(`${iso}T12:00:00Z`);
+                t.setUTCDate(t.getUTCDate() + days);
+                return t.toISOString().slice(0, 10);
+            }
+
+            function show(iso) {
+                if (!window.trendMap) return;
+                current = iso;
+                window.satelliteLayer = {
+                    type: 'raster',
+                    tiles: [`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${iso}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`],
+                    maxzoom: 9,
+                    opacity: 0.95,
+                    attribution: 'Imagery: NASA GIBS / MODIS Terra',
+                };
+                window.trendMap.setResultData([window.satelliteLayer, ...(window.lastMapLayers || [])]);
+                const date = new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+                text.textContent = `🛰 Satellite image of ${date} (MODIS, ~10:30 local time)`;
+                bar.hidden = false;
+                const area = window.getSelectedArea ? window.getSelectedArea() : null;
+                const c = area && area.geometry && area.geometry.type === 'Point' ? area.geometry.coordinates : null;
+                if (c && typeof window.trendMap.fitToBounds === 'function') {
+                    window.trendMap.fitToBounds([c[0] - 4, c[1] - 3, c[0] + 4, c[1] + 3]);
+                }
+                document.querySelector('.map-box').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            function hide() {
+                current = null;
+                window.satelliteLayer = null;
+                bar.hidden = true;
+                if (window.trendMap) window.trendMap.setResultData(window.lastMapLayers || []);
+            }
+
+            document.addEventListener('trendplots:satellite', (event) => show(event.detail.date));
+            document.getElementById('satellite-close').addEventListener('click', hide);
+            bar.addEventListener('click', (event) => {
+                const step = event.target.closest('[data-sat-step]');
+                if (step && current) show(shift(current, Number(step.dataset.satStep)));
+            });
+        })();
+
+        // ---- Legend for the result layers on the map ----
+        window.updateMapLegend = function (layers) {
+            const box = document.getElementById('map-legend');
+            if (!box) return;
+            const ids = (layers || []).map((l) => String(l.id || ''));
+            const hasTrend = ids.some((id) => id === 'user-request-results' || id === 'area-result' || id.startsWith('area-stations-'));
+            const hasStations = ids.includes('measuring-stations');
+            if (!hasTrend && !hasStations) { box.hidden = true; return; }
+            const row = (color, label) => `<div class="map-legend-row"><span class="map-legend-dot" style="background:${color}"></span>${label}</div>`;
+            const open = box.dataset.collapsed !== '1';
+            let html = `<details${open ? ' open' : ''}><summary class="map-legend-title">Trend colours</summary>`;
+            if (hasTrend) {
+                html += row('#dc2626', 'rising (significant)') + row('#fca5a5', 'rising (not significant)')
+                    + row('#93c5fd', 'falling (not significant)') + row('#2563eb', 'falling (significant)') + row('#94a3b8', 'no trend / not computed');
+            }
+            if (hasStations) html += row('#7c3aed', 'measuring station used');
+            if (ids.some((id) => id.startsWith('area-stations-'))) html += '<div class="map-legend-row" style="color:#64748b">area: each dot is one station, coloured by its own trend</div>';
+            box.innerHTML = `${html}</details>`;
+            box.querySelector('details').addEventListener('toggle', (e) => { box.dataset.collapsed = e.target.open ? '0' : '1'; });
+            box.hidden = false;
+        };
     </script>
 </body>
 </html>

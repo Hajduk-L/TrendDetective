@@ -5,7 +5,8 @@ from :func:`api_wrapper.get_all_topics_list` at ``GET /api/topics``, provides
 available analysis tools from :mod:`src.task` at ``GET /api/tools``, and routes
 button click events at ``POST /api/buttons/<button_id>`` to the single method
 bound to that button. ``GET /api/places?q=<name>`` looks up cities and regions;
-``POST /api/coverage`` tells when the stations of a selection have data.
+``POST /api/coverage`` tells when the stations of a selection have data;
+``GET /api/examples`` lists famous events to start from (:mod:`examples`).
 """
 
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import area_analysis
+import examples
 import station_coverage
 import interface
 import places
@@ -134,7 +136,14 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         app_interface = get_interface()
 
         if self.path == "/api/topics":
-            self._send_json(200, {"topics": app_interface.get_sorted_topics()})
+            self._send_json(
+                200,
+                {
+                    "topics": app_interface.get_sorted_topics(),
+                    # Readable names, groups and sources for the topic list.
+                    "details": interface.api_wrapper.get_topic_details(),
+                },
+            )
             return
 
         url = urlsplit(self.path)
@@ -152,6 +161,10 @@ class WebAppHandler(SimpleHTTPRequestHandler):
             # ``?topics=a,b``: only regions where a selected topic can be evaluated.
             topics = [t for t in parse_qs(url.query).get("topics", [""])[0].split(",") if t]
             self._send_json(200, {"regions": area_analysis.list_regions(topics)})
+            return
+
+        if url.path == "/api/examples":
+            self._send_json(200, {"examples": examples.list_examples()})
             return
 
         if self.path == "/api/tools":
@@ -198,8 +211,12 @@ class WebAppHandler(SimpleHTTPRequestHandler):
             if "groups" in body:
                 result = plot_analysis.analyze_groups(body["groups"], body.get("tools"))
             else:
+                season = body.get("season_length")
                 result = plot_analysis.analyze_series(
-                    body.get("x", []), body.get("values", []), body.get("tools")
+                    body.get("x", []),
+                    body.get("values", []),
+                    body.get("tools"),
+                    float(season) if isinstance(season, (int, float)) and not isinstance(season, bool) else None,
                 )
         except (json.JSONDecodeError, ValueError) as exc:
             self._send_json(400, {"error": str(exc)})
@@ -252,7 +269,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         try:
             user_request = app_interface.prepare_apply()
         except (ValueError, AssertionError) as exc:
-            self.send_error(400, str(exc))
+            self._send_json(400, {"error": str(exc)})
             return
         topics = [name for name, checked in user_request.topics.items() if checked]
 
@@ -356,7 +373,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
                             area=area,
                         )
                 except (json.JSONDecodeError, ValueError, TypeError, AssertionError) as exc:
-                    self.send_error(400, str(exc))
+                    self._send_json(400, {"error": str(exc)})
                     return
 
             if button_id == "apply/stream":
@@ -369,7 +386,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(404, f"Button '{button_id}' not found")
                 return
             except (ValueError, AssertionError) as exc:
-                self.send_error(400, str(exc))
+                self._send_json(400, {"error": str(exc)})
                 return
 
             self.send_response(204)

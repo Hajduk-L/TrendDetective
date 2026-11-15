@@ -36,7 +36,6 @@ from typing import Any
 
 import api_wrapper
 import noaa_api
-import plot_analysis
 import station_sources
 from src import task
 from station_sources import Station
@@ -445,15 +444,18 @@ def _fetch_all_records(
         return clients[source].fetch(group, topic_key.lower(), start_date, end_date)
 
     records: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=max(1, len(by_source))) as pool:
-        for part in pool.map(fetch, list(by_source)):
-            records.extend(part)
+    sources = list(by_source)
+    with ThreadPoolExecutor(max_workers=max(1, len(sources))) as pool:
+        futures = [pool.submit(fetch, source) for source in sources]
+        failures: list[str] = []
+        for source, future in zip(sources, futures):
+            try:
+                records.extend(future.result())
+            except Exception as error:  # noqa: BLE001 - keep the other databases' stations
+                failures.append(f"{source}: {error}")
+    if not records and failures:
+        raise RuntimeError("; ".join(failures))
     return records
-
-
-def _bin_index(label: str, start_date: date, step_days: float) -> int:
-    day = datetime.strptime(label, "%d.%m.%Y").date()
-    return round((day - start_date).days / step_days)
 
 
 def _area_series(
@@ -602,6 +604,9 @@ def _evaluate_topic(
         ), [])]
 
     records = _fetch_all_records(client, topic_key, stations, clients, start_date, end_date)
+    # Same units as a point request: precipitation totals as mm/day, rain-day
+    # counts as % of days, DAPR day counts folded into MDPR.
+    records = task.precipitation_as_density(records)
     evaluated = []
     for result_key, variable_records in task.split_by_variable(topic_key, records):
         result, features = _evaluate_variable(
@@ -636,12 +641,15 @@ def _evaluate_variable(
     station_bins: dict[str, dict[int, float]] = {}
     station_features: list[dict[str, Any]] = []
     for station_id, station_records in sorted(by_station.items()):
-        labels, values = task._bin_records(station_records, start_date, end_date, interval_length)
+        indices, labels, values = task.bin_records_indexed(
+            station_records, start_date, end_date, interval_length
+        )
         if len(values) < 3:
             continue
-        indices = [_bin_index(label, start_date, step_days) for label in labels]
         station_bins[station_id] = dict(zip(indices, values))
-        trend = plot_analysis.run_tools(indices, values, ["Linear Regression"])["Linear Regression"]
+        trend = task.run_series_tools(indices, values, ["Linear Regression"], interval_length)[
+            "Linear Regression"
+        ]
         first = station_records[0]
         try:
             latitude, longitude = float(first["latitude"]), float(first["longitude"])
@@ -654,17 +662,23 @@ def _evaluate_variable(
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [longitude, latitude]},
                 "properties": {
-                    "kind": "Measuring station",
-                    "topic": topic_key,
-                    "source": first.get("source", "NOAA"),
-                    "station": station_id,
-                    "name": first.get("name"),
-                    "elevation_m": first.get("elevation"),
-                    "intervals": len(values),
-                    "mean": round(sum(values) / len(values), 3),
-                    "slope_per_interval": trend.get("slope"),
-                    "p_value": trend.get("p_value"),
-                    "significant": trend.get("significant"),
+                    "Station": f"{first.get('name') or station_id} ({first.get('source', 'NOAA')} {station_id})",
+                    **(
+                        {"Elevation": f"{first.get('elevation'):.0f} m"}
+                        if isinstance(first.get("elevation"), (int, float))
+                        else {}
+                    ),
+                    **{
+                        key: value
+                        for key, value in task.popup_properties(
+                            topic_key,
+                            round(sum(values) / len(values), 3),
+                            first.get("unit"),
+                            len(values),
+                            {"Linear Regression": trend},
+                        ).items()
+                        if key != "Result"
+                    },
                     "color": _station_colour(trend),
                 },
             }
@@ -692,14 +706,29 @@ def _evaluate_variable(
             "values": values,
             "mean": round(sum(values) / len(values), 3) if values else None,
             "variables": sorted({str(r["description"]) for r in records if r.get("description")}),
-            "unit": units.pop() if len(units) == 1 else None,
+            "unit": next(iter(units)) if len(units) == 1 else None,
             "station_count": len(station_bins),
             "sources": _source_counts(by_station, station_bins),
-            "tools": plot_analysis.run_tools(indices, values, tools) if tools else {},
+            "tools": task.run_series_tools(indices, values, tools, interval_length, labels),
+            "events": _area_events(labels, values, records, units, step_days),
         }
     )
     del result["error"]
     return result, station_features
+
+
+def _area_events(
+    labels: list[str], values: list[float], records: list[dict[str, Any]], units: set[Any], step_days: float
+) -> list[dict[str, Any]]:
+    """Notable events of the area mean series (see :mod:`events`); never raises."""
+    import events
+
+    codes = sorted({str(r.get("description") or "") for r in records})
+    unit = next(iter(units)) if len(units) == 1 else None
+    try:
+        return events.events_for_series(labels, values, codes[0] if len(codes) == 1 else "", unit, step_days)
+    except Exception:  # noqa: BLE001 - events are extra
+        return []
 
 
 def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
@@ -747,11 +776,15 @@ def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
                         "type": "Feature",
                         "geometry": _station_hull(stations, region),
                         "properties": {
-                            "topic": result_key,
-                            "region": region.name,
-                            "stations": result["station_count"],
-                            "mean": result["mean"],
-                            "slope_per_interval": trend.get("slope"),
+                            **task.popup_properties(
+                                f"{result_key} · {region.name}",
+                                result["mean"],
+                                result.get("unit"),
+                                len(result["values"]),
+                                result["tools"],
+                                result.get("events"),
+                            ),
+                            "Stations": result["station_count"],
                             "color": _station_colour(trend) if trend else _FLAT,
                         },
                     }

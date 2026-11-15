@@ -24,6 +24,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -197,15 +200,38 @@ def http_get_json(url: str, params: Any = None, *, source: str, **kwargs: Any) -
 def cached_download(
     url: str, path: Path, *, source: str, max_age_days: float, **kwargs: Any
 ) -> Path:
-    """Download ``url`` to ``path`` unless a copy younger than ``max_age_days`` exists."""
-    if path.exists() and time.time() - path.stat().st_mtime < max_age_days * 86400:
+    """Download ``url`` to ``path`` unless a copy younger than ``max_age_days`` exists.
+
+    Threads asking for the same file wait for one download (one lock per
+    path); the file is written under a unique temporary name and renamed, so
+    readers never see a half-written file. If a refresh fails, an older copy
+    is used instead of failing.
+    """
+    with _DOWNLOAD_LOCKS_GUARD:
+        lock = _DOWNLOAD_LOCKS.setdefault(str(path), threading.Lock())
+    with lock:
+        if path.exists() and time.time() - path.stat().st_mtime < max_age_days * 86400:
+            return path
+        try:
+            body = http_get(url, source=source, **kwargs)
+        except SourceError:
+            if path.exists():
+                return path  # stale but usable
+            raise
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".part")
+        try:
+            with os.fdopen(handle, "wb") as output:
+                output.write(body)
+            os.replace(temporary, path)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
         return path
-    body = http_get(url, source=source, **kwargs)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".part")
-    temporary.write_bytes(body)
-    temporary.replace(path)
-    return path
+
+
+_DOWNLOAD_LOCKS: dict[str, threading.Lock] = {}
+_DOWNLOAD_LOCKS_GUARD = threading.Lock()
 
 
 # ------------------------------------------------------------- station identities

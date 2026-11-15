@@ -12,8 +12,9 @@ import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Sequence
 
+import numpy as np
 import torch
 from scipy import stats
 
@@ -66,6 +67,230 @@ def _as_vector(
     return vector
 
 
+def _mann_kendall_s(ordered: np.ndarray) -> int:
+    """Mann-Kendall ``S``: sum of ``sign(y_j - y_i)`` over all pairs ``i < j``.
+
+    Vectorised row by row, so ten years of daily values (~3,650 points, 6.7
+    million pairs) take milliseconds instead of the seconds a Python double
+    loop needs.
+    """
+    total = 0
+    for i in range(ordered.size - 1):
+        total += int(np.sign(ordered[i + 1 :] - ordered[i]).sum())
+    return total
+
+
+def lag1_autocorrelation(values: Sequence[float]) -> float:
+    """Lag-1 autocorrelation of a series (0 for fewer than three values)."""
+    y = np.asarray(values, dtype=np.float64)
+    if y.size < 3:
+        return 0.0
+    centred = y - y.mean()
+    denominator = float(np.dot(centred, centred))
+    if denominator == 0:
+        return 0.0
+    return float(np.dot(centred[:-1], centred[1:]) / denominator)
+
+
+def effective_sample_size(n: int, r1: float) -> float:
+    """Effective number of independent values of an AR(1) series.
+
+    ``n_eff = n (1 - r1) / (1 + r1)`` (Santer et al. 2000). Daily climate data
+    is strongly autocorrelated (a warm day follows a warm day), so the plain
+    ``n`` overstates how much independent information a series holds and
+    makes trends look more significant than they are. Negative ``r1`` is
+    treated as 0 (no inflation), and the result never drops below 3.
+    """
+    r1 = min(max(r1, 0.0), 0.99)
+    return max(3.0, n * (1 - r1) / (1 + r1))
+
+
+def _autocorrelations(values: np.ndarray) -> np.ndarray:
+    """Autocorrelation at lags ``0 .. n-1`` (FFT based)."""
+    n = values.size
+    centred = values - values.mean()
+    size = 1 << (2 * n - 1).bit_length()
+    spectrum = np.fft.rfft(centred, size)
+    acov = np.fft.irfft(spectrum * np.conj(spectrum), size)[:n]
+    return acov / acov[0] if acov[0] > 0 else np.zeros(n)
+
+
+def hamed_rao_variance_factor(time: Sequence[float], values: Sequence[float]) -> float:
+    """Variance inflation ``n / n*`` of the Mann-Kendall S (Hamed & Rao 1998).
+
+    The ranks of the series without its Sen slope are tested for
+    autocorrelation; every lag with a significant autocorrelation (95 %)
+    widens the variance of S. Returns 1.0 when there is none.
+    """
+    x = np.asarray(time, dtype=np.float64)
+    y = np.asarray(values, dtype=np.float64)
+    n = y.size
+    if n < 10:
+        return 1.0
+    order = np.argsort(x)
+    x, y = x[order], y[order]
+    slope = float(np.median(theil_sen(x, y).slope))
+    detrended = y - slope * x
+    ranks = stats.rankdata(detrended)
+    rho = _autocorrelations(ranks)[1:]
+    lags = np.arange(1, n)
+    significant = np.abs(rho) > stats.norm.ppf(0.975) / math.sqrt(n)
+    if not significant.any():
+        return 1.0
+    k = lags[significant]
+    weights = (n - k) * (n - k - 1) * (n - k - 2)
+    factor = 1 + 2 * float(np.sum(weights * rho[significant])) / (n * (n - 1) * (n - 2))
+    return max(factor, 1e-6)
+
+
+@dataclass(frozen=True)
+class TheilSenResult:
+    """Median of all pairwise slopes, a trend estimate robust to outliers."""
+
+    slope: float
+    intercept: float
+    low_slope: float
+    high_slope: float
+    observations: int
+    exact: bool
+
+
+THEIL_SEN_EXACT_LIMIT: int = 2500
+"""Up to this many values all pairwise slopes are used; above it a fixed random sample."""
+
+THEIL_SEN_SAMPLE_PAIRS: int = 2_000_000
+
+
+def theil_sen(
+    time: Sequence[float] | torch.Tensor,
+    values: Sequence[float] | torch.Tensor,
+    confidence_level: float = 0.95,
+    variance_factor: float = 1.0,
+) -> TheilSenResult:
+    """Sen's slope with a Mann-Kendall based confidence interval (Sen 1968).
+
+    For long series (more than :data:`THEIL_SEN_EXACT_LIMIT` values, e.g. 30
+    years of daily data = 60 million pairs) the median is taken over a
+    reproducible random sample of :data:`THEIL_SEN_SAMPLE_PAIRS` pairs.
+
+    :param variance_factor: Widens the interval for autocorrelated data, see
+        :func:`hamed_rao_variance_factor`.
+    :raises ValueError: For fewer than three values or a single distinct time.
+    """
+    x = np.asarray(time, dtype=np.float64).ravel()
+    y = np.asarray(values, dtype=np.float64).ravel()
+    if x.size != y.size:
+        raise ValueError("time and values must contain the same number of observations.")
+    if x.size < 3 or np.unique(x).size < 2:
+        raise ValueError("At least three values at two different times are required.")
+    n = x.size
+    exact = n <= THEIL_SEN_EXACT_LIMIT
+    if exact:
+        i, j = np.triu_indices(n, k=1)
+    else:
+        rng = np.random.default_rng(12345)
+        i = rng.integers(0, n, THEIL_SEN_SAMPLE_PAIRS)
+        j = rng.integers(0, n, THEIL_SEN_SAMPLE_PAIRS)
+    dx = x[j] - x[i]
+    keep = dx != 0
+    slopes = np.sort((y[j][keep] - y[i][keep]) / dx[keep])
+    slope = float(np.median(slopes))
+    z = stats.norm.ppf((1 + confidence_level) / 2)
+    variance_s = n * (n - 1) * (2 * n + 5) / 18 * max(variance_factor, 1e-6)
+    all_pairs = n * (n - 1) / 2
+    c = z * math.sqrt(variance_s)
+    low_q = min(1.0, max(0.0, (all_pairs - c) / 2 / all_pairs))
+    high_q = min(1.0, max(0.0, (all_pairs + c) / 2 / all_pairs))
+    return TheilSenResult(
+        slope=slope,
+        intercept=float(np.median(y) - slope * np.median(x)),
+        low_slope=float(np.quantile(slopes, low_q)),
+        high_slope=float(np.quantile(slopes, high_q)),
+        observations=n,
+        exact=exact,
+    )
+
+
+def remove_seasonal_cycle(
+    time: Sequence[float], values: Sequence[float], season_length: float | None
+) -> np.ndarray:
+    """Values minus the mean of their time of year (12 phase bins per year).
+
+    ``season_length`` is one year in units of ``time`` (365.24 for days,
+    12 for months, 1 for decimal years). Without one, or for a series
+    shorter than two years, the values are returned unchanged.
+    """
+    x = np.asarray(time, dtype=np.float64)
+    y = np.asarray(values, dtype=np.float64).copy()
+    if not season_length or season_length <= 0 or x.size == 0:
+        return y
+    if (x.max() - x.min()) < 2 * season_length:
+        return y
+    phase = np.mod(x, season_length) / season_length
+    bins = np.minimum((phase * 12).astype(int), 11)
+    if np.unique(bins).size < 2:
+        return y
+    for b in np.unique(bins):
+        mask = bins == b
+        y[mask] -= y[mask].mean()
+    return y + np.asarray(values, dtype=np.float64).mean()
+
+
+@dataclass(frozen=True)
+class PettittResult:
+    """Most likely single shift in the level of a series (Pettitt 1979)."""
+
+    index: int
+    """Last position (0-based, in time order) before the shift."""
+    k_statistic: float
+    p_value: float
+    mean_before: float
+    mean_after: float
+    observations: int
+
+
+def pettitt_test(
+    time: Sequence[float] | torch.Tensor, values: Sequence[float] | torch.Tensor
+) -> PettittResult:
+    """Non-parametric test for one change point in the median.
+
+    ``U_t = Σ_{i≤t} (2·rank_i − n − 1)``; the change point is where ``|U_t|``
+    is largest, and ``p ≈ 2 exp(−6K² / (n³ + n²))``. For autocorrelated data
+    K is first divided by ``sqrt(n / n_eff)`` (AR(1) approximation).
+
+    :raises ValueError: For fewer than four values.
+    """
+    x = np.asarray(time, dtype=np.float64).ravel()
+    y = np.asarray(values, dtype=np.float64).ravel()
+    if x.size != y.size:
+        raise ValueError("time and values must contain the same number of observations.")
+    n = y.size
+    if n < 4:
+        raise ValueError("At least four values are required for the Pettitt test.")
+    order = np.argsort(x, kind="stable")
+    y = y[order]
+    ranks = stats.rankdata(y)
+    u = np.cumsum(2 * ranks - n - 1)[:-1]
+    t = int(np.argmax(np.abs(u)))
+    k = float(abs(u[t]))
+    # Autocorrelation makes |U| wander further by chance; shrink K by the
+    # square root of n / n_eff of the series without the detected shift.
+    residual = y.copy()
+    residual[: t + 1] -= residual[: t + 1].mean()
+    residual[t + 1 :] -= residual[t + 1 :].mean()
+    inflation = n / effective_sample_size(n, lag1_autocorrelation(residual))
+    k_adjusted = k / math.sqrt(inflation)
+    p_value = float(min(1.0, 2 * math.exp(-6 * k_adjusted * k_adjusted / (n**3 + n**2))))
+    return PettittResult(
+        index=t,
+        k_statistic=k,
+        p_value=p_value,
+        mean_before=float(y[: t + 1].mean()),
+        mean_after=float(y[t + 1 :].mean()),
+        observations=int(n),
+    )
+
+
 def mann_kendall_test(
     time: list[float] | tuple[float, ...] | torch.Tensor,
     values: list[float] | tuple[float, ...] | torch.Tensor,
@@ -92,14 +317,9 @@ def mann_kendall_test(
     if not 0 < alpha < 1:
         raise ValueError("alpha must be between 0 and 1.")
 
-    ordered_values = y[torch.argsort(x)].tolist()
-    s_statistic = sum(
-        (ordered_values[j] > ordered_values[i])
-        - (ordered_values[j] < ordered_values[i])
-        for i in range(len(ordered_values) - 1)
-        for j in range(i + 1, len(ordered_values))
-    )
-    n = len(ordered_values)
+    ordered = y[torch.argsort(x)].numpy()
+    s_statistic = _mann_kendall_s(ordered)
+    n = int(ordered.size)
     tie_counts = torch.unique(y, return_counts=True)[1].tolist()
     tied_pairs = sum(count * (count - 1) * (2 * count + 5) for count in tie_counts)
     variance = (n * (n - 1) * (2 * n + 5) - tied_pairs) / 18
@@ -173,12 +393,21 @@ class LinearRegression(Task):
                 torch.zeros(x_values.shape[1], dtype=torch.float32, device=x_values.device),
                 torch.zeros(y_values.shape[1], dtype=torch.float32, device=x_values.device),
             )
+        # Solved in float64 with centred features: in float32 the default
+        # lstsq driver returned a wrong fit for long series (ten years of
+        # daily values gave +0.0065 °C/day and an intercept of 0 for a series
+        # without trend around 15 °C).
+        x64 = x_values.to(torch.float64)
+        y64 = y_values.to(torch.float64)
+        x_mean = x64.mean(dim=0, keepdim=True)
         design = torch.cat(
-            [x_values, torch.ones((x_values.shape[0], 1), dtype=x_values.dtype, device=x_values.device)],
+            [x64 - x_mean, torch.ones((x64.shape[0], 1), dtype=torch.float64, device=x64.device)],
             dim=1,
         )
-        solution = torch.linalg.lstsq(design, y_values).solution
-        return solution[:-1], solution[-1]
+        solution = torch.linalg.lstsq(design, y64, driver="gelsd" if design.device.type == "cpu" else None).solution
+        weights = solution[:-1]
+        bias = solution[-1] - (x_mean @ weights).reshape(-1)
+        return weights.to(torch.float32), bias.to(torch.float32)
 
     def process(
         self, X: torch.Tensor, y: torch.Tensor
@@ -293,10 +522,36 @@ class MannKendall(Task):
         return torch.tensor(float(result.s_statistic)), torch.tensor(result.p_value)
 
 
+@dataclass
+class SensSlope(Task):
+    """Theil-Sen trend: the median of all pairwise slopes (robust to outliers)."""
+
+    def process(
+        self, X: torch.Tensor, y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return Sen's slope and its intercept."""
+        result = theil_sen(X.flatten().tolist(), y.flatten().tolist())
+        return torch.tensor([result.slope]), torch.tensor([result.intercept])
+
+
+@dataclass
+class ChangePoint(Task):
+    """Pettitt test for one abrupt shift in the level of a series."""
+
+    def process(
+        self, X: torch.Tensor, y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the index of the last value before the shift and its p-value."""
+        result = pettitt_test(X.flatten().tolist(), y.flatten().tolist())
+        return torch.tensor(float(result.index)), torch.tensor(result.p_value)
+
+
 AVAILABLE_TOOLS: dict[str, type[Task]] = {
     "Linear Regression": LinearRegression,
     "Mann-Kendall": MannKendall,
     "t-Test": TTest,
+    "Sen's Slope": SensSlope,
+    "Change Point": ChangePoint,
 }
 
 
@@ -402,6 +657,14 @@ VARIABLE_NAMES: dict[str, str] = {
     "dew_pt_temp": "dew point",
     "wsfg": "peak gust",
     "viirs_ice_thickness": "ice thickness",
+    "dewp": "dew point",
+    "pmsl": "sea-level pressure",
+    "cldc": "cloud cover",
+    "tsun": "sunshine",
+    "srad": "solar radiation",
+    "et0": "evapotranspiration",
+    "soilm": "soil moisture",
+    "soilt": "soil temperature",
 }
 """Readable names of common NOAA codes, used in the per-variable result keys."""
 
@@ -524,6 +787,12 @@ def _bin_records(
     interval_length: tuple[float, str],
 ) -> tuple[list[str], list[float]]:
     """Average numeric NOAA measurements into the requested date intervals."""
+    _, labels, means = bin_records_indexed(records, start_date, end_date, interval_length)
+    return labels, means
+
+
+def interval_step_days(interval_length: tuple[float, str]) -> float:
+    """Length of one interval in days, e.g. ``(1, "Month")`` -> 30.44."""
     interval_value, interval_unit = interval_length
     try:
         step_days = float(interval_value) * INTERVAL_DAYS[interval_unit]
@@ -531,6 +800,22 @@ def _bin_records(
         raise ValueError("interval_length must use a positive Day, Month, or Year interval.") from error
     if not math.isfinite(step_days) or step_days <= 0:
         raise ValueError("interval_length must use a positive Day, Month, or Year interval.")
+    return step_days
+
+
+def bin_records_indexed(
+    records: list[dict[str, Any]],
+    start_date: date,
+    end_date: date,
+    interval_length: tuple[float, str],
+) -> tuple[list[int], list[str], list[float]]:
+    """Like :func:`_bin_records`, plus the interval number of every mean.
+
+    Intervals without values are left out, so the numbers have gaps there.
+    Trends must be fitted against these numbers, not against ``0, 1, 2, …``:
+    otherwise a gap of a year would be squeezed to one interval.
+    """
+    step_days = interval_step_days(interval_length)
 
     bins: dict[int, list[float]] = {}
     for record in records:
@@ -556,13 +841,15 @@ def _bin_records(
         bin_index = math.floor((observation_date - start_date).days / step_days)
         bins.setdefault(bin_index, []).append(value)
 
+    indices: list[int] = []
     labels: list[str] = []
     means: list[float] = []
     for bin_index in sorted(bins):
         bin_date = start_date + timedelta(days=round(bin_index * step_days))
+        indices.append(bin_index)
         labels.append(bin_date.strftime("%d.%m.%Y"))
         means.append(round(sum(bins[bin_index]) / len(bins[bin_index]), 3))
-    return labels, means
+    return indices, labels, means
 
 
 def _safe_float(value: float, digits: int = 4) -> float | None:
@@ -629,6 +916,107 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     d_lambda = math.radians(lon2 - lon1)
     a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
     return 6371.0088 * 2 * math.asin(math.sqrt(min(1.0, a)))
+
+
+TREND_COLOURS: dict[str, str] = {
+    "rising": "#dc2626",
+    "rising_weak": "#fca5a5",
+    "falling": "#2563eb",
+    "falling_weak": "#93c5fd",
+    "flat": "#94a3b8",
+}
+"""Map colours: strong colour for a significant trend, pale for a non-significant one."""
+
+
+def trend_colour(tool_results: dict[str, Any]) -> str:
+    """Colour of a result on the map from its linear regression (or Sen's slope)."""
+    for name in ("Linear Regression", "Sen's Slope"):
+        result = tool_results.get(name) or {}
+        slope = result.get("slope")
+        if not result.get("available", True) or slope is None:
+            continue
+        if slope == 0:
+            return TREND_COLOURS["flat"]
+        key = "rising" if slope > 0 else "falling"
+        return TREND_COLOURS[key if result.get("significant") else f"{key}_weak"]
+    return TREND_COLOURS["flat"]
+
+
+def _number(value: float | None, unit: str | None, digits: int = 3) -> str:
+    if value is None:
+        return "–"
+    text = f"{value:.{digits}g}" if abs(value) < 1000 else f"{value:.0f}"
+    return f"{text} {unit}" if unit else text
+
+
+def readable_trend(tool_results: dict[str, Any], unit: str | None) -> str | None:
+    """E.g. ``+1.5 °C per decade (not significant, p 0.24)``; ``None`` without a slope tool."""
+    for name in ("Linear Regression", "Sen's Slope"):
+        result = tool_results.get(name) or {}
+        decade = result.get("slope_per_decade")
+        if result.get("available", True) and decade is not None:
+            sign = "+" if decade > 0 else ""
+            significance = "significant" if result.get("significant") else "not significant"
+            p_value = result.get("p_value")
+            p_text = f", p {p_value:.3g}" if isinstance(p_value, (int, float)) else ""
+            return f"{sign}{_number(decade, unit, 2)} per decade ({significance}{p_text})"
+    return None
+
+
+def popup_properties(
+    title: str,
+    mean_value: float | None,
+    unit: str | None,
+    count: int,
+    tool_results: dict[str, Any],
+    found_events: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Readable properties of a result on the map (the widget lists them in its popup)."""
+    properties: dict[str, Any] = {"Result": title, "Mean": _number(mean_value, unit), "Intervals": count}
+    trend = readable_trend(tool_results, unit)
+    if trend:
+        properties["Trend"] = trend
+    mann_kendall = tool_results.get("Mann-Kendall") or {}
+    if mann_kendall.get("available"):
+        properties["Mann-Kendall"] = f"{mann_kendall['trend']} (p {mann_kendall['p_value']:.3g})"
+    change = tool_results.get("Change Point") or {}
+    if change.get("available") and change.get("significant"):
+        properties["Shift"] = f"{_number(change.get('shift'), unit)} around {change.get('date', change.get('x_after'))}"
+    if found_events:
+        top = found_events[0]
+        properties["Most notable"] = f"{top['title']} on {top['date']}: {_number(top['value'], unit)}"
+    return properties
+
+
+def run_series_tools(
+    indices: list[int],
+    values: list[float],
+    tool_names: list[str],
+    interval_length: tuple[float, str],
+    labels: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run the analysis tools on a binned series (shared by point and area requests).
+
+    ``indices`` are the interval numbers from :func:`bin_records_indexed`, so
+    slopes are "per interval" and respect gaps; every slope is also given per
+    year and per decade.
+    """
+    if not tool_names:
+        return {}
+    import plot_analysis  # late import: plot_analysis imports this module
+
+    per_year = INTERVAL_DAYS["Year"] / interval_step_days(interval_length)
+    return plot_analysis.run_tools(indices, values, tool_names, per_year=per_year, labels=labels)
+
+
+def _safe_events(records: list[dict[str, Any]], variables: list[str], unit: str | None) -> list[dict[str, Any]]:
+    """Notable events of one variable's raw records (see :mod:`events`); never raises."""
+    import events  # late import: events imports this module
+
+    try:
+        return events.events_for_records(records, variables[0] if len(variables) == 1 else "", unit)
+    except Exception:  # noqa: BLE001 - events are extra; the series must still be shown
+        return []
 
 
 def process_user_request(user_request: Any) -> dict[str, Any]:
@@ -706,70 +1094,12 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                     },
                 )
                 feature["properties"]["topics"].append(result_key)
-            labels, values = _bin_records(
+            indices, labels, values = bin_records_indexed(
                 records, start_date, end_date, interval_length
             )
             sample_count = len(values)
-            x = torch.arange(sample_count, dtype=torch.float32).unsqueeze(1)
-            y = torch.tensor(values, dtype=torch.float32).unsqueeze(1)
-            tool_results: dict[str, Any] = {}
-            slope_value = 0.0
-
-            if "Linear Regression" in selected_tools:
-                slope, intercept = LinearRegression().process(x, y)
-                slope_value = float(slope[0].item()) if slope.numel() else 0.0
-                intercept_value = float(intercept[0].item()) if intercept.numel() else 0.0
-                trend_line = [
-                    round(slope_value * index + intercept_value, 3)
-                    for index in range(sample_count)
-                ]
-                tool_results["Linear Regression"] = {
-                    "slope": _safe_float(slope_value),
-                    "intercept": _safe_float(intercept_value),
-                    "trend_line": trend_line,
-                    "observations": sample_count,
-                }
-
-            if "t-Test" in selected_tools:
-                if sample_count < 4:
-                    tool_results["t-Test"] = {
-                        "available": False,
-                        "error": "At least four intervals are required to compare two samples.",
-                        "observations": sample_count,
-                    }
-                else:
-                    statistic, p_value = TTest().process(x, y)
-                    statistic_value = float(statistic.item())
-                    p_value_value = float(p_value.item())
-                    tool_results["t-Test"] = {
-                        "available": True,
-                        "t_statistic": _safe_float(statistic_value),
-                        "p_value": _safe_float(p_value_value),
-                        "significant": bool(p_value_value < 0.05),
-                        "observations": sample_count,
-                    }
-
-            if "Mann-Kendall" in selected_tools:
-                if sample_count < 3:
-                    tool_results["Mann-Kendall"] = {
-                        "available": False,
-                        "error": "At least three intervals are required for the Mann-Kendall test.",
-                        "observations": sample_count,
-                    }
-                else:
-                    result = mann_kendall_test(x.flatten(), y.flatten())
-                    tool_results["Mann-Kendall"] = {
-                        "available": True,
-                        "s_statistic": result.s_statistic,
-                        "variance": _safe_float(result.variance),
-                        "z_statistic": _safe_float(result.z_statistic),
-                        "p_value": _safe_float(result.p_value),
-                        "tau": _safe_float(result.tau),
-                        "trend": result.trend,
-                        "observations": result.observations,
-                        "alpha": result.alpha,
-                    }
-
+            tool_names = [name for name in get_available_tools() if name in selected_tools]
+            tool_results = run_series_tools(indices, values, tool_names, interval_length, labels)
             mean_value = round(sum(values) / sample_count, 3) if sample_count else None
             topic_results[result_key] = {
                 "labels": labels,
@@ -780,26 +1110,13 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                 "variables": variables,
                 "unit": unit,
                 "tools": tool_results,
+                "events": _safe_events(records, variables, unit),
             }
 
-            properties: dict[str, Any] = {
-                "topic": result_key,
-                "mean": mean_value,
-                "samples": sample_count,
-                "color": "#dc2626" if slope_value > 0 else "#2563eb",
-            }
-            regression_result = tool_results.get("Linear Regression")
-            if regression_result is not None:
-                properties["slope"] = regression_result["slope"]
-                properties["intercept"] = regression_result["intercept"]
-            ttest_result = tool_results.get("t-Test")
-            if ttest_result is not None and ttest_result.get("available"):
-                properties["t_statistic"] = ttest_result["t_statistic"]
-                properties["p_value"] = ttest_result["p_value"]
-            mann_kendall_result = tool_results.get("Mann-Kendall")
-            if mann_kendall_result is not None and mann_kendall_result.get("available"):
-                properties["mann_kendall_trend"] = mann_kendall_result["trend"]
-                properties["mann_kendall_p_value"] = mann_kendall_result["p_value"]
+            properties = popup_properties(
+                result_key, mean_value, unit, sample_count, tool_results, topic_results[result_key]["events"]
+            )
+            properties["color"] = trend_colour(tool_results)
 
             if isinstance(user_request.area, dict) and isinstance(
                 user_request.area.get("geometry"), dict

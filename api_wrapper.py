@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Protocol, Sequence
 
@@ -207,7 +207,9 @@ def fetch_data_single_topic_nearest_station(
         for order, (key, future) in enumerate(futures.items()):
             try:
                 collections = future.result()
-            except (RuntimeError, ValueError, OSError) as error:  # NOAAError/SourceError are RuntimeErrors
+            except Exception as error:  # noqa: BLE001 - one broken source must not hide the others
+                # NOAAError/SourceError are RuntimeErrors, but a malformed answer
+                # can also raise e.g. XML ParseError (a SyntaxError) or KeyError.
                 errors.append(f"{PROVIDER_NAMES.get(key, key)}: {error}")
                 continue
             if any(isinstance(r.get("value"), (int, float)) for c in collections for r in c):
@@ -244,7 +246,7 @@ def _period(text: str) -> tuple[date, date] | None:
             return day, day
         if len(text) == 7:
             year, month = int(text[:4]), int(text[5:7])
-            return date(year, month, 1), date(year + month // 12, month % 12 + 1, 1)
+            return date(year, month, 1), date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
         if len(text) == 4:
             return date(int(text), 1, 1), date(int(text), 12, 31)
     except ValueError:
@@ -292,8 +294,61 @@ def get_all_topics_list() -> list[str]:
     return all_topic_names
 
 
+TOPIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Marine", ("marine_",)),
+    ("Soil", ("soil_",)),
+    ("Ice", ("ice_",)),
+    ("Snow", ("snow",)),
+    ("Precipitation", ("precipitation", "evaporation", "evapotranspiration", "water_temperature", "weather_")),
+    ("Temperature", ("temperature", "degree_days", "dew_point", "wet_bulb")),
+    ("Wind", ("wind",)),
+    ("Humidity, clouds & sun", ("humidity", "cloud", "sunshine", "solar", "visibility")),
+    ("Pressure", ("pressure",)),
+)
+"""Groups of the topic list on the website: first matching key fragment wins."""
+
+
+def _topic_group(key: str) -> str:
+    for group, fragments in TOPIC_GROUPS:
+        if any(fragment in key for fragment in fragments):
+            return group
+    return "Other"
+
+
+def get_topic_details() -> dict[str, dict[str, Any]]:
+    """Readable name, description, group and sources of every topic, for the website.
+
+    ``kind`` is ``"model"`` for ERA5 reanalysis topics, ``"satellite"`` for
+    satellite data, ``"marine"`` for ship/buoy reports and ``"station"`` else.
+    """
+    details: dict[str, dict[str, Any]] = {}
+    for provider_key, client_type in _PROVIDERS.items():
+        source = PROVIDER_NAMES.get(provider_key, provider_key)
+        for topic_name, definition in client_type.list_topics():
+            entry = details.get(topic_name)
+            if entry is None:
+                kind = (
+                    "model" if topic_name.endswith("_era5")
+                    else "satellite" if topic_name.endswith("_satellite")
+                    else "marine" if topic_name.startswith("marine_")
+                    else "station"
+                )
+                entry = details[topic_name] = {
+                    "label": str(getattr(definition, "label", topic_name)),
+                    "description": str(getattr(definition, "description", "")),
+                    "group": _topic_group(topic_name),
+                    "kind": kind,
+                    "hourly": getattr(definition, "dataset", "") == "global-hourly",
+                    "sources": [],
+                }
+            if source not in entry["sources"]:
+                entry["sources"].append(source)
+    return details
+
+
 __all__ = [
     "PROVIDER_NAMES",
+    "get_topic_details",
     "PointDataRequest",
     "fetch_data_single_topic_nearest_station",
     "fetch_data_single_topic_single_coordinate",

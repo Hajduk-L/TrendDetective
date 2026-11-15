@@ -134,7 +134,12 @@ class PolarWatchIceClient(StationSource):
                     time_text, value = row
                     if isinstance(value, (int, float)) and math.isfinite(value) and value >= 0:
                         by_day.setdefault(str(time_text)[:10], []).append(float(value))
+            first, last = start_date.isoformat(), end_date.isoformat()
             for day, values in sorted(by_day.items()):
+                # ERDDAP snaps the query ends to the nearest time step (about
+                # 12:00 UTC), which adds a day before and after each chunk.
+                if not first <= day <= last:
+                    continue
                 records.append(
                     station.record(day, round(sum(values) / len(values), 3), "viirs_ice_thickness", "m")
                 )
