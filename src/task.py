@@ -74,8 +74,17 @@ def _mann_kendall_s(ordered: np.ndarray) -> int:
     million pairs) take milliseconds instead of the seconds a Python double
     loop needs.
     """
+    n = ordered.size
+    if n > 3000:
+        # O(n log n): with distinct times, Kendall's tau-b is S / sqrt(n0 (n0 - t)),
+        # n0 = n(n-1)/2 and t the pairs tied in the values.
+        tau = stats.kendalltau(np.arange(n), ordered).statistic
+        counts = np.unique(ordered, return_counts=True)[1]
+        n0 = n * (n - 1) / 2
+        tied = float(np.sum(counts * (counts - 1) / 2))
+        return int(round(float(tau) * math.sqrt(n0 * (n0 - tied)))) if math.isfinite(tau) else 0
     total = 0
-    for i in range(ordered.size - 1):
+    for i in range(n - 1):
         total += int(np.sign(ordered[i + 1 :] - ordered[i]).sum())
     return total
 
@@ -136,11 +145,17 @@ def hamed_rao_variance_factor(time: Sequence[float], values: Sequence[float]) ->
     lags = np.arange(1, n)
     significant = np.abs(rho) > stats.norm.ppf(0.975) / math.sqrt(n)
     if not significant.any():
-        return 1.0
+        return 1.0 if rho[0] <= 0 else max(1.0, (1 + float(rho[0])) / (1 - min(float(rho[0]), 0.98)))
     k = lags[significant]
     weights = (n - k) * (n - k - 1) * (n - k - 2)
     factor = 1 + 2 * float(np.sum(weights * rho[significant])) / (n * (n - 1) * (n - 2))
-    return max(factor, 1e-6)
+    # Hamed-Rao drops the many small but non-significant lags of a persistent
+    # series and then underestimates the inflation (17 % false trends in 10
+    # years of AR(1) daily noise). The AR(1) factor (1 + r1) / (1 - r1) of
+    # the same ranks is a floor for it.
+    r1 = float(rho[0])
+    ar1_factor = (1 + r1) / (1 - r1) if 0 < r1 < 0.99 else 1.0
+    return max(factor, ar1_factor, 1e-6)
 
 
 @dataclass(frozen=True)
@@ -211,29 +226,52 @@ def theil_sen(
     )
 
 
+SEASONAL_HARMONICS: int = 4
+"""Harmonics of the annual cycle fitted to data finer than monthly."""
+
+
 def remove_seasonal_cycle(
     time: Sequence[float], values: Sequence[float], season_length: float | None
 ) -> np.ndarray:
-    """Values minus the mean of their time of year (12 phase bins per year).
+    """Values without their mean seasonal cycle (the overall mean is kept).
 
-    ``season_length`` is one year in units of ``time`` (365.24 for days,
-    12 for months, 1 for decimal years). Without one, or for a series
-    shorter than two years, the values are returned unchanged.
+    ``season_length`` is one year in units of ``time`` (365.24 for days, 12
+    for months, 1 for decimal years). Without one, or for a series shorter
+    than two years, the values are returned unchanged.
+
+    * Few distinct times of year (monthly values: 12): each one's own mean
+      is subtracted.
+    * Finer data (daily, multi-day intervals): a smooth cycle of
+      :data:`SEASONAL_HARMONICS` harmonics is fitted *together with a linear
+      trend* and only the cycle is subtracted. Twelve monthly steps would
+      leave a sawtooth inside every month that the trend tests mistook for
+      signal (Mann-Kendall flagged a third of trend-free daily series).
     """
     x = np.asarray(time, dtype=np.float64)
     y = np.asarray(values, dtype=np.float64).copy()
-    if not season_length or season_length <= 0 or x.size == 0:
+    if not season_length or season_length <= 0 or x.size < 4:
         return y
-    if (x.max() - x.min()) < 2 * season_length:
+    if (x.max() - x.min()) < 2 * season_length * 0.98:
         return y
     phase = np.mod(x, season_length) / season_length
-    bins = np.minimum((phase * 12).astype(int), 11)
-    if np.unique(bins).size < 2:
+    keys = np.round(phase * 1000).astype(int) % 1000
+    distinct = np.unique(keys)
+    if distinct.size < 2:
         return y
-    for b in np.unique(bins):
-        mask = bins == b
-        y[mask] -= y[mask].mean()
-    return y + np.asarray(values, dtype=np.float64).mean()
+    if distinct.size <= 24:
+        for key in distinct:
+            mask = keys == key
+            y[mask] -= y[mask].mean()
+        return y + np.asarray(values, dtype=np.float64).mean()
+    harmonics = min(SEASONAL_HARMONICS, distinct.size // 6)
+    angle = 2 * np.pi * x / season_length
+    columns = [np.ones_like(x), (x - x.mean()) / (x.std() or 1.0)]
+    for k in range(1, harmonics + 1):
+        columns += [np.cos(k * angle), np.sin(k * angle)]
+    design = np.column_stack(columns)
+    coefficients, *_ = np.linalg.lstsq(design, y, rcond=None)
+    cycle = design[:, 2:] @ coefficients[2:]
+    return y - cycle
 
 
 @dataclass(frozen=True)
@@ -696,6 +734,32 @@ def split_by_variable(
     ]
 
 
+MIN_VARIABLE_SHARE: float = 0.05
+"""A secondary code with fewer values than this share of the largest one is hidden."""
+
+
+def drop_sparse_variables(
+    groups: list[tuple[str, list[dict[str, Any]]]],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Leave out codes with only a handful of values next to a well-filled one.
+
+    Stations report occasional secondary codes (a multi-day snowfall total
+    MDSF once in 30 years next to 10,000 daily SNOW values). Each would get
+    a card with one or two points and no possible trend. A code is dropped
+    when it has fewer than 10 values *and* fewer than
+    :data:`MIN_VARIABLE_SHARE` of the values of the largest code.
+    """
+    if len(groups) <= 1:
+        return groups
+    largest = max(len(records) for _, records in groups)
+    kept = [
+        (key, records)
+        for key, records in groups
+        if len(records) >= 10 or len(records) >= MIN_VARIABLE_SHARE * largest
+    ]
+    return kept or groups
+
+
 PRECIPITATION_AMOUNT_CODES: frozenset[str] = frozenset({"prcp", "mdpr"})
 """Precipitation totals (mm) that are shown as a rate in ``mm/day``."""
 
@@ -803,21 +867,104 @@ def interval_step_days(interval_length: tuple[float, str]) -> float:
     return step_days
 
 
+DIRECTION_CODES: frozenset[str] = frozenset(
+    {"awdr", "wdf1", "wdf2", "wdf5", "wdfg", "wdfi", "wdfm", "wind_dir", "rel_wind_dir"}
+)
+"""Codes holding a compass direction in degrees."""
+
+
+def is_direction(code: str) -> bool:
+    """Whether ``code`` is a compass direction (averaged on the circle, no trend)."""
+    code = code.lower()
+    return code in DIRECTION_CODES or code.endswith("_direction") or code.endswith("_dir")
+
+
+def _circular_mean(degrees: list[float]) -> float:
+    """Mean direction: 350° and 10° give 0°, not 180°."""
+    x = sum(math.cos(math.radians(d)) for d in degrees)
+    y = sum(math.sin(math.radians(d)) for d in degrees)
+    if abs(x) < 1e-12 and abs(y) < 1e-12:
+        return float("nan")
+    value = math.degrees(math.atan2(y, x)) % 360
+    return 0.0 if value >= 359.9995 else value
+
+
+MIN_BIN_COVERAGE: float = 0.75
+"""Share of an interval's days that must have data for its mean to be used.
+
+A year with data only for January to March has a mean far below the
+others; counted as a full year it can invert a trend (−3.5 °C/decade in a
+test). Partly covered intervals at the ends of the range and inside gaps are
+therefore left out."""
+
+
+def _calendar_step(interval_length: tuple[float, str]) -> tuple[str, int] | None:
+    """``("Month", k)`` / ``("Year", k)`` for whole-number calendar intervals, else ``None``."""
+    value, unit = interval_length
+    if unit in ("Month", "Year") and float(value) >= 1 and float(value) == int(value):
+        return unit, int(value)
+    return None
+
+
+def bin_bounds(index: int, start_date: date, interval_length: tuple[float, str]) -> tuple[date, date]:
+    """First and last day of interval number ``index``.
+
+    Whole-number Month / Year intervals follow the calendar (interval 0 is
+    the calendar month / year containing ``start_date``), so a "1 Month"
+    interval is always a real month. Other intervals are fixed windows of
+    :func:`interval_step_days` days counted from ``start_date``.
+    """
+    calendar = _calendar_step(interval_length)
+    if calendar is None:
+        step_days = interval_step_days(interval_length)
+        first = start_date + timedelta(days=round(index * step_days))
+        last = start_date + timedelta(days=round((index + 1) * step_days)) - timedelta(days=1)
+        return first, max(first, last)
+    unit, k = calendar
+    if unit == "Year":
+        return date(start_date.year + index * k, 1, 1), date(start_date.year + (index + 1) * k - 1, 12, 31)
+    base = start_date.year * 12 + start_date.month - 1 + index * k
+    first = date(base // 12, base % 12 + 1, 1)
+    after = base + k
+    return first, date(after // 12, after % 12 + 1, 1) - timedelta(days=1)
+
+
+def bin_index_of(day: date, start_date: date, interval_length: tuple[float, str]) -> int:
+    """Interval number containing ``day`` (see :func:`bin_bounds`)."""
+    calendar = _calendar_step(interval_length)
+    if calendar is None:
+        return math.floor((day - start_date).days / interval_step_days(interval_length))
+    unit, k = calendar
+    if unit == "Year":
+        return (day.year - start_date.year) // k
+    return ((day.year * 12 + day.month) - (start_date.year * 12 + start_date.month)) // k
+
+
 def bin_records_indexed(
     records: list[dict[str, Any]],
     start_date: date,
     end_date: date,
     interval_length: tuple[float, str],
+    stats: dict[str, Any] | None = None,
 ) -> tuple[list[int], list[str], list[float]]:
-    """Like :func:`_bin_records`, plus the interval number of every mean.
+    """Mean of every interval, with its interval number and start-date label.
 
-    Intervals without values are left out, so the numbers have gaps there.
-    Trends must be fitted against these numbers, not against ``0, 1, 2, …``:
-    otherwise a gap of a year would be squeezed to one interval.
+    * Intervals follow :func:`bin_bounds` (calendar months / years where
+      possible).
+    * A value goes to the interval containing the middle of its observation
+      period (a monthly value to its month, an annual value to its year).
+    * Intervals whose days are covered by data for less than
+      :data:`MIN_BIN_COVERAGE` (counting only days inside the requested
+      range) are left out; ``stats["dropped"]`` receives their number.
+    * Intervals without values are left out too, so the numbers have gaps.
+      Trends must be fitted against these numbers, not ``0, 1, 2, …``:
+      otherwise a gap of a year would be squeezed to one interval.
     """
-    step_days = interval_step_days(interval_length)
-
-    bins: dict[int, list[float]] = {}
+    interval_step_days(interval_length)  # validates the interval
+    circular = bool(records) and all(is_direction(str(r.get("description") or "")) for r in records)
+    sums: dict[int, list[float]] = {}
+    covered: dict[int, set[int]] = {}
+    first_day, last_day = start_date.toordinal(), end_date.toordinal()
     for record in records:
         raw_value = record.get("value")
         raw_date = record.get("date")
@@ -832,23 +979,36 @@ def bin_records_indexed(
             period_start, period_end = _parse_observation_period(raw_date)
         except (TypeError, ValueError):
             continue
-        # Monthly / annual values count if their period overlaps the request.
         if not math.isfinite(value) or period_end < start_date or period_start > end_date:
             continue
-        # Place the value at the middle of its period, clamped to the range.
         midpoint = period_start + (period_end - period_start) / 2
-        observation_date = min(max(midpoint, start_date), end_date)
-        bin_index = math.floor((observation_date - start_date).days / step_days)
-        bins.setdefault(bin_index, []).append(value)
+        index = bin_index_of(midpoint, start_date, interval_length)
+        sums.setdefault(index, []).append(value)
+        days = covered.setdefault(index, set())
+        days.update(
+            range(max(period_start.toordinal(), first_day), min(period_end.toordinal(), last_day) + 1)
+        )
 
     indices: list[int] = []
     labels: list[str] = []
     means: list[float] = []
-    for bin_index in sorted(bins):
-        bin_date = start_date + timedelta(days=round(bin_index * step_days))
-        indices.append(bin_index)
-        labels.append(bin_date.strftime("%d.%m.%Y"))
-        means.append(round(sum(bins[bin_index]) / len(bins[bin_index]), 3))
+    dropped = 0
+    for index in sorted(sums):
+        bin_first, bin_last = bin_bounds(index, start_date, interval_length)
+        length = (bin_last - bin_first).days + 1
+        inside = {d for d in covered[index] if bin_first.toordinal() <= d <= bin_last.toordinal()}
+        if len(inside) < MIN_BIN_COVERAGE * length:
+            dropped += 1
+            continue
+        values = sums[index]
+        mean = _circular_mean(values) if circular else sum(values) / len(values)
+        if not math.isfinite(mean):
+            continue
+        indices.append(index)
+        labels.append(bin_first.strftime("%d.%m.%Y"))
+        means.append(round(mean, 3))
+    if stats is not None:
+        stats["dropped"] = dropped
     return indices, labels, means
 
 
@@ -994,8 +1154,11 @@ def run_series_tools(
     tool_names: list[str],
     interval_length: tuple[float, str],
     labels: list[str] | None = None,
+    direction: bool = False,
 ) -> dict[str, Any]:
     """Run the analysis tools on a binned series (shared by point and area requests).
+
+    ``direction``: the series is a compass direction; no tool is run.
 
     ``indices`` are the interval numbers from :func:`bin_records_indexed`, so
     slopes are "per interval" and respect gaps; every slope is also given per
@@ -1003,6 +1166,15 @@ def run_series_tools(
     """
     if not tool_names:
         return {}
+    if direction:
+        return {
+            name: {
+                "available": False,
+                "error": "Directions wrap around at 360°, so trend tests on them are not meaningful.",
+                "observations": len(values),
+            }
+            for name in tool_names
+        }
     import plot_analysis  # late import: plot_analysis imports this module
 
     per_year = INTERVAL_DAYS["Year"] / interval_step_days(interval_length)
@@ -1013,6 +1185,8 @@ def _safe_events(records: list[dict[str, Any]], variables: list[str], unit: str 
     """Notable events of one variable's raw records (see :mod:`events`); never raises."""
     import events  # late import: events imports this module
 
+    if variables and all(is_direction(v) for v in variables):
+        return []
     try:
         return events.events_for_records(records, variables[0] if len(variables) == 1 else "", unit)
     except Exception:  # noqa: BLE001 - events are extra; the series must still be shown
@@ -1064,7 +1238,7 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
         # Precipitation as a density (mm/day, % of days) so periods of any
         # length are comparable; DAPR day counts are folded into MDPR.
         topic_records = precipitation_as_density(topic_records)
-        for result_key, records in split_by_variable(topic, topic_records):
+        for result_key, records in drop_sparse_variables(split_by_variable(topic, topic_records)):
             station = _station_from_records(records, latitude, longitude)
             variables = sorted({str(r["description"]) for r in records if r.get("description")})
             units = {r.get("unit") for r in records}
@@ -1094,12 +1268,16 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                     },
                 )
                 feature["properties"]["topics"].append(result_key)
+            bin_stats: dict[str, Any] = {}
             indices, labels, values = bin_records_indexed(
-                records, start_date, end_date, interval_length
+                records, start_date, end_date, interval_length, bin_stats
             )
             sample_count = len(values)
             tool_names = [name for name in get_available_tools() if name in selected_tools]
-            tool_results = run_series_tools(indices, values, tool_names, interval_length, labels)
+            tool_results = run_series_tools(
+                indices, values, tool_names, interval_length, labels,
+                direction=bool(variables) and all(is_direction(v) for v in variables),
+            )
             mean_value = round(sum(values) / sample_count, 3) if sample_count else None
             topic_results[result_key] = {
                 "labels": labels,
@@ -1111,6 +1289,8 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                 "unit": unit,
                 "tools": tool_results,
                 "events": _safe_events(records, variables, unit),
+                # Intervals left out because data covered < MIN_BIN_COVERAGE of their days.
+                "dropped_intervals": bin_stats.get("dropped", 0),
             }
 
             properties = popup_properties(

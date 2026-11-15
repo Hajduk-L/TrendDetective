@@ -707,3 +707,11 @@ button.tp-legend-item:hover {
 .tp-stripes-note { flex-basis: 100%; }
 
 .tp-footer-stripes .tp-footer-note { display: none; }
+
+.tp-analysis-sub {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--tp-ink-2);
+    margin: 0.6rem 0 0.3rem;
+}
+.tp-summary .tp-muted { color: var(--tp-ink-2); font-size: 0.8rem; }

@@ -11,6 +11,7 @@ This module provides:
 
 from collections.abc import Callable, Iterator
 import copy
+import math
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
@@ -20,6 +21,10 @@ import area_analysis
 from src.task import get_available_tools, process_user_request
 
 DATE_FORMAT: str = "%d.%m.%Y"
+EARLIEST_DATE: date = date(1750, 1, 1)
+"""No source has observations before this day."""
+MIN_INTERVAL_DAYS: float = 1 / 24
+"""Shortest interval (one hour)."""
 VALID_INTERVAL_UNITS: tuple[str, ...] = ("Day", "Month", "Year")
 
 _LEADING_LAYERS: tuple[str, ...] = ("user-request-results", "area-result")
@@ -330,14 +335,28 @@ class AppInterface:
         end_date = parse_dd_mm_yyyy(timeintervall[1])
         if end_date < start_date:
             raise ValueError("End date must be on or after start date.")
-        self.timeintervall = (start_date, end_date)
+        today = date.today()
+        if start_date > today:
+            raise ValueError("The time range starts in the future; there is no data yet.")
+        if start_date < EARLIEST_DATE:
+            raise ValueError(
+                f"The data sources start in the 18th century; choose a start on or after {EARLIEST_DATE:%d.%m.%Y}."
+            )
+        # "Until today" is a common choice; future days have no data and would
+        # make the last interval look partly empty.
+        self.timeintervall = (start_date, min(end_date, today))
 
         interval_val = float(interval_length[0])
         interval_unit = str(interval_length[1]).strip()
-        assert interval_val > 0, "Interval length value must be greater than 0."
-        assert interval_unit in VALID_INTERVAL_UNITS, (
-            f"Interval unit must be one of {VALID_INTERVAL_UNITS}."
-        )
+        if interval_unit not in VALID_INTERVAL_UNITS:
+            raise ValueError(f"Interval unit must be one of {VALID_INTERVAL_UNITS}.")
+        if not math.isfinite(interval_val) or interval_val <= 0:
+            raise ValueError("Interval length value must be a number greater than 0.")
+        step_days = interval_val * {"Day": 1.0, "Month": 30.436875, "Year": 365.2425}[interval_unit]
+        if step_days < MIN_INTERVAL_DAYS:
+            raise ValueError("Intervals shorter than one hour are not supported (the finest data is hourly).")
+        if step_days > (end_date - start_date).days + 366:
+            raise ValueError("The interval is longer than the whole time range.")
         self.interval_length = (interval_val, interval_unit)
         self.area = area
 

@@ -4,15 +4,17 @@ This module serves static frontend assets, provides alphabetically sorted topics
 from :func:`api_wrapper.get_all_topics_list` at ``GET /api/topics``, provides
 available analysis tools from :mod:`src.task` at ``GET /api/tools``, and routes
 button click events at ``POST /api/buttons/<button_id>`` to the single method
-bound to that button. ``GET /api/places?q=<name>`` looks up cities and regions;
-``POST /api/coverage`` tells when the stations of a selection have data;
-``GET /api/examples`` lists famous events to start from (:mod:`examples`).
+bound to that button; 'Apply' answers with its result in the same response and
+the server keeps no state between requests. ``GET /api/places?q=<name>`` looks up
+cities and regions; ``POST /api/coverage`` tells when the stations of a selection
+have data; ``GET /api/examples`` lists famous events to start from (:mod:`examples`).
 """
 
 from dataclasses import dataclass
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 import importlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -43,6 +45,52 @@ def get_interface() -> interface.AppInterface:
         INTERFACE = interface.AppInterface()
         _LAST_MTIME = current_mtime
     return INTERFACE
+
+
+def new_request_interface() -> interface.AppInterface:
+    """Return a fresh :class:`interface.AppInterface` for one 'Apply' request.
+
+    The inputs and results of an 'Apply' live only in this object and travel
+    back in the same HTTP response. Nothing is kept on the server between
+    requests, so parallel users never share inputs or results, and it does not
+    matter which server instance (e.g. on Vercel) answers a request.
+
+    :return: New interface, after reloading ``interface.py`` if it changed.
+    :rtype: interface.AppInterface
+    """
+    get_interface()  # reload interface.py if it changed
+    return interface.AppInterface()
+
+
+def _finite(value: Any) -> Any:
+    """``value`` with NaN / infinity replaced by ``None`` (recursively)."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _finite(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(item) for item in value]
+    return value
+
+
+def to_json(data: Any) -> str:
+    """Strict JSON: Python writes NaN as ``NaN``, which browsers cannot parse."""
+    try:
+        return json.dumps(data, allow_nan=False)
+    except ValueError:
+        return json.dumps(_finite(data), allow_nan=False)
+
+
+PUBLIC_FILES: frozenset[str] = frozenset({"/", "/index.html", "/favicon.ico"})
+"""Files outside ``static/`` that the server delivers."""
+
+
+def _is_public_path(path: str) -> bool:
+    """Whether a GET path may be served from disk (the page and ``static/`` only)."""
+    clean = unquote(path)
+    if ".." in clean.split("/"):
+        return False
+    return clean in PUBLIC_FILES or clean.startswith("/static/")
 
 
 @dataclass(frozen=True)
@@ -120,7 +168,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         :return: None
         :rtype: None
         """
-        payload = json.dumps(data).encode("utf-8")
+        payload = to_json(data).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
@@ -128,7 +176,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:
-        """Handle HTTP GET requests for topics, tools, user-request results, or static files.
+        """Handle HTTP GET requests for topics, tools, regions, places, or static files.
 
         :return: None
         :rtype: None
@@ -175,21 +223,10 @@ class WebAppHandler(SimpleHTTPRequestHandler):
             self._send_json(200, app_interface.get_buttons_metadata())
             return
 
-        if self.path == "/api/user-request":
-            user_request_data = (
-                app_interface.last_user_request.to_dict()
-                if app_interface.last_user_request is not None
-                else None
-            )
-            self._send_json(
-                200,
-                {
-                    "user_request": user_request_data,
-                    "visualization": app_interface.last_task_results,
-                },
-            )
+        if not _is_public_path(url.path):
+            # Only the page and static/ are served: never source code, .git, .venv or data/.
+            self.send_error(404, "File not found")
             return
-
         super().do_GET()
 
     def _handle_analyze(self) -> None:
@@ -257,7 +294,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         "user_request", "topics"}``, then ``{"type": "partial", "topic", "done",
         "total", "visualization"}`` after each topic (the result of the topics
         finished so far), then ``{"type": "done", "visualization"}`` with the
-        full result, the same as ``GET /api/user-request`` returns afterwards.
+        full result.
         An unexpected failure ends the stream with ``{"type": "error", "error"}``.
         The server speaks HTTP/1.0, so the body simply ends when the connection closes.
 
@@ -274,7 +311,7 @@ class WebAppHandler(SimpleHTTPRequestHandler):
         topics = [name for name, checked in user_request.topics.items() if checked]
 
         def write(message: dict[str, Any]) -> None:
-            self.wfile.write(json.dumps(message).encode("utf-8") + b"\n")
+            self.wfile.write(to_json(message).encode("utf-8") + b"\n")
             self.wfile.flush()
 
         self.send_response(200)
@@ -319,7 +356,9 @@ class WebAppHandler(SimpleHTTPRequestHandler):
             self._handle_coverage()
             return
 
-        app_interface = get_interface()
+        # A fresh interface per request: inputs and results are never shared
+        # between requests (see new_request_interface).
+        app_interface = new_request_interface()
         prefix = "/api/buttons/"
         if self.path.startswith(prefix):
             button_id = unquote(self.path[len(prefix) :]).strip("/")
@@ -389,8 +428,18 @@ class WebAppHandler(SimpleHTTPRequestHandler):
                 self._send_json(400, {"error": str(exc)})
                 return
 
-            self.send_response(204)
-            self.end_headers()
+            # The result goes back in this response; the server keeps nothing.
+            self._send_json(
+                200,
+                {
+                    "user_request": (
+                        app_interface.last_user_request.to_dict()
+                        if app_interface.last_user_request is not None
+                        else None
+                    ),
+                    "visualization": app_interface.last_task_results,
+                },
+            )
             return
 
         self.send_error(404, "Endpoint not found")

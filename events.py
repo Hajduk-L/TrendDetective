@@ -112,7 +112,15 @@ def _climatology(days: np.ndarray, values: np.ndarray, daily: bool) -> tuple[np.
     if years < MIN_CLIMATE_YEARS - 0.05:
         return np.full(values.size, values.mean()), np.full(values.size, overall_std), False
     if daily:
-        doy = np.array([(date.fromordinal(int(d)).timetuple().tm_yday - 1) % 365 for d in days])
+        # Day of the year without 29 February, so 31 December stays day 364
+        # in leap years (it wrapped onto 1 January before).
+        def day_of_year(ordinal: float) -> int:
+            day = date.fromordinal(int(ordinal))
+            index = day.timetuple().tm_yday - 1
+            leap = day.year % 4 == 0 and (day.year % 100 != 0 or day.year % 400 == 0)
+            return index - 1 if leap and index >= 59 else index
+
+        doy = np.array([day_of_year(d) for d in days])
         sums = np.bincount(doy, weights=values, minlength=365)
         squares = np.bincount(doy, weights=values * values, minlength=365)
         counts = np.bincount(doy, minlength=365).astype(float)

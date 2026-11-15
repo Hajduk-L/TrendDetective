@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -55,6 +56,103 @@ it reports marine "stations" next to any point (even inland) and cannot be
 used to size the box. About 1 degree collects enough reports at sea; a
 smaller box often holds only a handful of passing ships per month.
 """
+
+MAX_MARINE_MONTHS: int = 24
+"""Longest marine request (months). Reports are fetched month by month (about
+14 s each, two at a time, so two years take about three minutes; past months
+are cached); a busy box near a coast holds ~90,000 reports per month. Longer
+ranges get a clear error pointing to the ERA5 topics instead of a request
+that runs into a timeout."""
+
+MARINE_THIN_HOURS: int = 3
+"""One report per platform in each block of this many hours is kept."""
+
+
+def _thin_marine_rows(rows: list[Any]) -> list[Any]:
+    """Keep one raw report per platform and :data:`MARINE_THIN_HOURS`-hour block.
+
+    Moored buoys report every 10 minutes; for daily or longer intervals one
+    report every few hours per platform carries the same information at a
+    fraction of the memory (91,510 -> a few thousand rows for a month off Boston).
+    """
+    kept: list[Any] = []
+    seen: set[tuple[Any, str, int]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        stamp = str(row.get("DATE") or "")
+        try:
+            hour = int(stamp[11:13]) if len(stamp) >= 13 else 0
+        except ValueError:
+            hour = 0
+        key = (row.get("STATION"), stamp[:10], hour // MARINE_THIN_HOURS)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(row)
+    return kept
+
+MARINE_PARALLEL_REQUESTS: int = 2
+"""Marine months fetched at the same time. Two run as fast as one; with four,
+NOAA stalled every request until the 120 s limit."""
+
+MARINE_CACHE_DIR: Path = Path("data/cache/marine")
+"""Finished past months are stored here; ship reports of a past month do not change."""
+
+_VISIBILITY_KM: dict[int, float] = {
+    90: 0.05, 91: 0.05, 92: 0.2, 93: 0.5, 94: 1.0, 95: 2.0, 96: 4.0, 97: 10.0, 98: 20.0, 99: 50.0,
+}
+"""WMO code table 4377 (ship visibility codes 90-99) as distance in km (90 = below 50 m, 99 = 50 km or more)."""
+
+_MARINE_VALID: dict[str, tuple[float, float]] = {
+    "wind_dir": (0.0, 360.0),  # 361/362 = variable or calm, not a direction
+    "rel_wind_dir": (0.0, 360.0),
+    "tot_cld_amt": (0.0, 8.0),  # 9 = sky obscured, not an amount of oktas
+    "low_cld_amt": (0.0, 8.0),
+    "sea_surf_temp": (-2.5, 40.0),
+    "air_temp": (-70.0, 60.0),
+    "dew_pt_temp": (-80.0, 40.0),
+    "wet_bulb_temp": (-70.0, 45.0),
+    "sea_lvl_pres": (850.0, 1090.0),
+}
+"""Physically possible range of marine values; anything outside is a code or an error."""
+
+
+def _clean_marine_rows(collections: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
+    """Make ship and buoy reports usable as a time series.
+
+    * code values outside :data:`_MARINE_VALID` are dropped,
+    * ``visibility`` codes 90-99 become kilometres,
+    * one report per platform, variable and hour is kept: a moored buoy
+      reporting every 10 minutes would otherwise outweigh every ship in the
+      box (4,459 of 4,628 rows in one test month). Raw rows are already
+      thinned per download (:func:`_thin_marine_rows`).
+    """
+    cleaned: list[list[dict[str, Any]]] = []
+    for collection in collections:
+        seen: set[tuple[Any, str, str]] = set()
+        kept: list[dict[str, Any]] = []
+        for record in collection:
+            code = str(record.get("description") or "")
+            value = record.get("value")
+            if code == "visibility":
+                if not isinstance(value, (int, float)) or int(value) not in _VISIBILITY_KM:
+                    continue
+                record = {**record, "value": _VISIBILITY_KM[int(value)], "unit": "km"}
+            elif code in _MARINE_VALID and isinstance(value, (int, float)):
+                low, high = _MARINE_VALID[code]
+                if not low <= value <= high:
+                    continue
+            hour = str(record.get("date") or "")[:13]
+            key = (record.get("station"), code, hour)
+            if key in seen:
+                continue
+            seen.add(key)
+            kept.append(record)
+        if kept:
+            cleaned.append(kept)
+    return cleaned
+
 
 MAX_STATION_ATTEMPTS: int = 5
 """Nearest matching stations tried until one has values in the date range."""
@@ -634,16 +732,8 @@ class NOAAClient:
             data_params["boundingBox"] = self._make_bounding_box(
                 request.latitude, request.longitude, MARINE_BOX_DEGREES
             )
-            raw_payload: list[Any] = []
-            for chunk_start, chunk_end in self._month_chunks(
-                request.start_date, request.end_date
-            ):
-                data_params["startDate"] = chunk_start.isoformat()
-                data_params["endDate"] = chunk_end.isoformat()
-                chunk: Any = self._get_json(BASE_URL, data_params)
-                if isinstance(chunk, list):
-                    raw_payload.extend(chunk)
-            payload = _normalize_observations(raw_payload)
+            raw_payload = self._fetch_marine_months(request, dict(data_params))
+            payload = _clean_marine_rows(_normalize_observations(raw_payload))
         else:
             # The Search Service matches a station's whole period of record,
             # so the nearest match often stopped reporting these codes years
@@ -774,11 +864,11 @@ class NOAAClient:
         first box that contains a station with matching data wins, and its
         stations are returned ranked by :meth:`_rank_stations`.
 
-        The Search Service only returns stations that report *all* listed
-        data types. Topics such as ``precipitation`` list optional codes
-        (``MDPR``, ``DAPR``) that most stations never report, so when the
-        combined search finds nothing, every data type is searched on its
-        own and the results are merged.
+        Each box is searched once without a ``dataTypes`` filter (the
+        Service would only return stations reporting *all* listed codes);
+        the codes are matched locally. Only when a dense box was cut off at
+        1000 results and nothing matched is the topic's main code searched
+        explicitly, so a box costs at most two requests.
 
         :param request: Point, topic and inclusive date range to retrieve.
         :type request: PointDataRequest
@@ -789,36 +879,50 @@ class NOAAClient:
         :rtype: tuple[list[tuple[str, tuple[str, ...]]], float]
         :raises NOAAError: If even the largest box contains no matching station.
         """
-        type_groups: list[tuple[str, ...]] = [topic.data_types]
-        if len(topic.data_types) > 1:
-            type_groups += [(code,) for code in topic.data_types]
+        fallback: tuple[list[tuple[str, tuple[str, ...]]], float] | None = None
         for radius in self.search_radii_degrees:
             bbox: str = self._make_bounding_box(
                 request.latitude, request.longitude, radius
             )
-            results: list[Any] = []
-            for group_index, data_types in enumerate(type_groups):
-                if group_index == 1 and results:
-                    break  # the combined search already found stations
-                search_params: dict[str, str] = {
-                    "dataset": topic.dataset,
-                    "dataTypes": ",".join(data_types),
-                    "startDate": f"{request.start_date.isoformat()}T00:00:00",
-                    "endDate": f"{request.end_date.isoformat()}T23:59:59",
-                    "bbox": bbox,
-                    "limit": "1000",
-                    "offset": "0",
-                }
-                search_payload: Any = self._get_json(SEARCH_URL, search_params)
-                if isinstance(search_payload, dict):
-                    results.extend(search_payload.get("results", []))
-            candidates: list[tuple[str, tuple[str, ...]]] = self._rank_stations(
-                {"results": results},
-                request=request,
-                requested_types=topic.data_types,
+            base_params: dict[str, str] = {
+                "dataset": topic.dataset,
+                "startDate": f"{request.start_date.isoformat()}T00:00:00",
+                "endDate": f"{request.end_date.isoformat()}T23:59:59",
+                "bbox": bbox,
+                "limit": "1000",
+                "offset": "0",
+            }
+            # One search without a code filter: every station lists its codes,
+            # so they are matched locally (_rank_stations). Searching each code
+            # on its own cost up to ~185 requests for a topic with many codes.
+            search_payload: Any = self._get_json(SEARCH_URL, base_params)
+            results: list[Any] = (
+                list(search_payload.get("results", [])) if isinstance(search_payload, dict) else []
             )
-            if candidates:
-                return candidates, radius
+            truncated = isinstance(search_payload, dict) and int(
+                search_payload.get("count", 0) or 0
+            ) > len(results)
+            ranked = self._rank_with_coverage(
+                {"results": results}, request=request, requested_types=topic.data_types
+            )
+            if not ranked and truncated:
+                # A dense box can hide matching stations beyond the first
+                # 1000 results: ask once more for the topic's main code.
+                filtered: Any = self._get_json(
+                    SEARCH_URL, {**base_params, "dataTypes": topic.data_types[0]}
+                )
+                if isinstance(filtered, dict):
+                    ranked = self._rank_with_coverage(
+                        filtered, request=request, requested_types=topic.data_types
+                    )
+            if ranked and ranked[0][2]:
+                return [(station, types) for station, types, _ in ranked], radius
+            if ranked and fallback is None:
+                # Only short records here: look a little farther for a
+                # station covering the range, but keep these as a fallback.
+                fallback = ([(station, types) for station, types, _ in ranked], radius)
+        if fallback is not None:
+            return fallback
         raise NOAAError(
             "No NOAA station with the requested data types was found within "
             f"{self.search_radii_degrees[-1]} degrees of the selected point. "
@@ -832,6 +936,21 @@ class NOAAClient:
         request: PointDataRequest,
         requested_types: tuple[str, ...],
     ) -> list[tuple[str, tuple[str, ...]]]:
+        """Ranked ``(station id, matching codes)``; see :meth:`_rank_with_coverage`."""
+        return [
+            (station, types)
+            for station, types, _ in NOAAClient._rank_with_coverage(
+                search_payload, request=request, requested_types=requested_types
+            )
+        ]
+
+    @staticmethod
+    def _rank_with_coverage(
+        search_payload: Any,
+        *,
+        request: PointDataRequest,
+        requested_types: tuple[str, ...],
+    ) -> list[tuple[str, tuple[str, ...], bool]]:
         """Rank the stations that report at least one requested data type.
 
         Stations whose period of record spans at least
@@ -908,10 +1027,11 @@ class NOAAClient:
                     )
                     candidates.append((key, str(station_id_value), matching_types))
         candidates.sort(key=lambda candidate: candidate[0])
-        ranked: dict[str, tuple[str, ...]] = {}
-        for _, station_id, matching_types in candidates:
-            ranked.setdefault(station_id, matching_types)
-        return list(ranked.items())
+        ranked: dict[str, tuple[tuple[str, ...], bool]] = {}
+        for key, station_id, matching_types in candidates:
+            # key[0] is "not good": the record spans < GOOD_RECORD_COVERAGE.
+            ranked.setdefault(station_id, (matching_types, not key[0]))
+        return [(station, types, good) for station, (types, good) in ranked.items()]
 
     @staticmethod
     def _distance_km(
@@ -945,6 +1065,59 @@ class NOAAClient:
             * math.sin(delta_longitude_rad / 2) ** 2
         )
         return 2 * earth_radius_km * math.asin(math.sqrt(haversine))
+
+    def _fetch_marine_months(self, request: PointDataRequest, params: dict[str, str]) -> list[Any]:
+        """All marine rows of the range: months in parallel, past months cached.
+
+        A failing month is skipped (its reports are missing) instead of
+        discarding the whole series; if every month fails the first error is
+        raised.
+
+        :raises ValueError: If the range is longer than :data:`MAX_MARINE_MONTHS`.
+        """
+        months = self._month_chunks(request.start_date, request.end_date)
+        if len(months) > MAX_MARINE_MONTHS:
+            raise ValueError(
+                f"Ship and buoy reports are fetched month by month; {len(months)} months would take too long. "
+                f"Choose at most {MAX_MARINE_MONTHS // 12} years, or use an ERA5 topic for long series."
+            )
+        recent = date.today() - timedelta(days=60)
+
+        def fetch(chunk: tuple[date, date]) -> list[Any]:
+            first, last = chunk
+            key = "_".join(
+                [params["dataset"], params["dataTypes"].replace(",", "-"), params["boundingBox"].replace(",", "_"), first.isoformat(), last.isoformat()]
+            )
+            cache = MARINE_CACHE_DIR / f"{key}.json"
+            if last < recent and cache.exists():
+                try:
+                    return json.loads(cache.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
+            client = NOAAClient(timeout=self.timeout, max_request_seconds=self.max_request_seconds)
+            rows = client._get_json(BASE_URL, {**params, "startDate": first.isoformat(), "endDate": last.isoformat()})
+            rows = _thin_marine_rows(rows if isinstance(rows, list) else [])
+            if last < recent:
+                try:
+                    cache.parent.mkdir(parents=True, exist_ok=True)
+                    temporary = cache.with_name(f"{cache.name}.{id(rows)}.part")
+                    temporary.write_text(json.dumps(rows), encoding="utf-8")
+                    temporary.replace(cache)
+                except OSError:
+                    pass  # read-only file system: no cache
+            return rows
+
+        rows: list[Any] = []
+        errors: list[Exception] = []
+        with ThreadPoolExecutor(max_workers=MARINE_PARALLEL_REQUESTS) as pool:
+            for future in [pool.submit(fetch, chunk) for chunk in months]:
+                try:
+                    rows.extend(future.result())
+                except NOAAError as error:
+                    errors.append(error)
+        if errors and len(errors) == len(months):
+            raise errors[0]
+        return rows
 
     @staticmethod
     def _month_chunks(start: date, end: date) -> list[tuple[date, date]]:

@@ -30,8 +30,8 @@ from src.task import (
     theil_sen,
 )
 
-MAX_POINTS: int = 10_000
-"""Largest series accepted from the frontend."""
+MAX_POINTS: int = 40_000
+"""Largest series accepted from the frontend (100 years of daily values; all tools take ~5 s)."""
 
 MAX_GROUPS: int = 500
 """Most groups (e.g. one per year) accepted in one call to :func:`analyze_groups`."""
@@ -154,10 +154,9 @@ def _t_test(
     # information than their count: scale t by sqrt(n_eff / n).
     n = len(ys)
     residual = remove_seasonal_cycle(xs, ys, season_length)
-    residual = [
-        v - (sum(residual[:middle]) / middle if i < middle else sum(residual[middle:]) / (n - middle))
-        for i, v in enumerate(residual)
-    ]
+    early_level = float(sum(residual[:middle]) / middle)
+    late_level = float(sum(residual[middle:]) / (n - middle))
+    residual = [v - (early_level if i < middle else late_level) for i, v in enumerate(residual)]
     n_eff = effective_sample_size(n, lag1_autocorrelation(residual))
     p_adjusted = p_plain
     if n_eff < n and math.isfinite(t_value):
@@ -283,7 +282,7 @@ def _change_point(
         "mean_before": _round(sum(before) / len(before), 3),
         "mean_after": _round(sum(after) / len(after), 3),
         "shift": _round(sum(after) / len(after) - sum(before) / len(before), 3),
-        "deseasonalised": bool(season_length and season_length > 1.5),
+        "deseasonalised": bool(any(abs(a - b) > 1e-12 for a, b in zip(tested, sy))),
         "k_statistic": _round(result.k_statistic, 1),
         "observations": result.observations,
     }
@@ -296,6 +295,38 @@ _RUNNERS = {
     "Sen's Slope": _sens_slope,
     "Change Point": _change_point,
 }
+
+
+def _run_all(
+    xs: list[float], ys: list[float], names: Sequence[str], season_length: float | None
+) -> dict[str, Any]:
+    """Run the tools; with a seasonal cycle, on the values without it.
+
+    For data finer than a year (``season_length`` = one year in x units)
+    spanning at least two years, each value's time-of-year mean is
+    subtracted first (12 phase bins, overall mean added back). The trend is
+    unchanged, but the seasonal swing no longer counts as noise – monthly
+    temperatures otherwise hide a clear warming – and ranges that are not
+    whole years no longer bias the slope or the early/late comparison.
+    Results computed this way carry ``deseasonalised: True``. The change
+    point test handles the seasonal cycle itself and reports raw means.
+    """
+    tested = ys
+    deseasonalised = False
+    if season_length and len(ys) >= 4:
+        adjusted = [float(v) for v in remove_seasonal_cycle(xs, ys, season_length)]
+        if any(abs(a - b) > 1e-12 for a, b in zip(adjusted, ys)):
+            tested, deseasonalised = adjusted, True
+    results: dict[str, Any] = {}
+    for name in names:
+        if name == "Change Point":
+            results[name] = _RUNNERS[name](xs, ys, season_length)
+            continue
+        result = _RUNNERS[name](xs, tested, season_length)
+        if deseasonalised and result.get("available"):
+            result["deseasonalised"] = True
+        results[name] = result
+    return results
 
 
 def _add_rates(results: dict[str, Any], per_year: float, labels: Sequence[str] | None, xs: list[float]) -> None:
@@ -352,7 +383,7 @@ def run_tools(
     )
     xs = [p[0] for p in pairs]
     ys = [p[1] for p in pairs]
-    results = {name: _RUNNERS[name](xs, ys, per_year) for name in tools}
+    results = _run_all(xs, ys, tools, per_year)
     if per_year:
         _add_rates(results, per_year, kept_labels, xs)
     return results
@@ -385,7 +416,7 @@ def analyze_series(
         raise AnalysisError(f"Unknown tool(s): {', '.join(map(str, unknown))}. Available: {', '.join(known)}")
     return {
         "observations": len(ys),
-        "tools": {name: _RUNNERS[name](xs, ys, season_length) for name in names},
+        "tools": _run_all(xs, ys, names, season_length),
     }
 
 

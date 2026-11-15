@@ -19,7 +19,7 @@
  *
  * Public API (window.TrendPlots):
  *   mount(element)                       build the panel inside `element`
- *   setData(visualization, userRequest)  data from GET /api/user-request
+ *   setData(visualization, userRequest)  data from the 'Apply' response
  *   setLoading(boolean)
  *
  * The only server call is POST /api/analyze (plot_analysis.py).
@@ -205,10 +205,20 @@
     }
 
     // Centred moving average over consecutive points (by index), ignoring gaps inside the window.
-    function movingAverage(points, window) {
-        const half = Math.floor(window / 2);
+    // Centred moving average over exactly `window` intervals (for an even window one more
+    // before than after). `step` is one interval in x units: values farther away than the
+    // window reaches (a gap in the data) are not averaged in.
+    function movingAverage(points, window, step) {
+        const before = Math.floor((window - 1) / 2);
+        const after = window - 1 - before;
         return points.map((p, i) => {
-            const slice = points.slice(Math.max(0, i - half), Math.min(points.length, i + half + 1)).map((q) => q.y).filter(isNum);
+            const slice = [];
+            for (let k = Math.max(0, i - before); k <= Math.min(points.length - 1, i + after); k++) {
+                const q = points[k];
+                if (!isNum(q.y)) continue;
+                if (step && (q.x < p.x - (before + 0.5) * step || q.x > p.x + (after + 0.5) * step)) continue;
+                slice.push(q.y);
+            }
             return { x: p.x, y: slice.length >= Math.ceil(window / 2) ? mean(slice) : null, meta: p.meta };
         });
     }
@@ -324,9 +334,9 @@
             const color = windowColor(w);
             const period = w.frame === 'all' ? null : presetPeriod(w.frame, w.custom);
             const base = { w, color, period, tools: state.tools.filter((t) => w.tools.includes(t)) };
-            if (period && period.invalid) return { ...base, label: 'Custom period', status: 'Enter the period as DD.MM – DD.MM, e.g. 01.06 – 31.08.', rows: [], allRows: [] };
+            if (period && period.invalid) return { ...base, label: 'Custom period', status: 'Enter the period as DD.MM – DD.MM, e.g. 01.06 – 31.08.', rows: [], allRows: [], years: [] };
             if (period && !canCompare) {
-                return { ...base, label: period.label, status: model.canCompare ? 'Needs a time range over at least two years.' : `Needs intervals of up to 2 months; the current interval is ${model.ivText}.`, rows: [], allRows: [] };
+                return { ...base, label: period.label, status: model.canCompare ? 'Needs a time range over at least two years.' : `Needs intervals of up to 2 months; the current interval is ${model.ivText}.`, rows: [], allRows: [], years: [] };
             }
             const label = period ? period.label : 'Whole series';
             if (!period) {
@@ -381,7 +391,15 @@
                 }
             }
             const results = analysis && !analysis.pending && !analysis.error ? {} : null;
-            return { ...base, label, rows, allRows, years, lengthDays, analysis, results, status };
+            // The question most people ask of a period: does it change from year to year?
+            // One value per year (the period mean), x = year, so slopes are per year.
+            let across = null;
+            if (base.tools.length && rows.length >= 3) {
+                const acrossKey = JSON.stringify([state.topic, state.tools, 'across', rows.map((row) => [row.year, row.mean])]);
+                if (!state.analysisCache.has(acrossKey)) requestAnalysis(acrossKey, { x: rows.map((row) => row.year), values: rows.map((row) => row.mean) });
+                across = state.analysisCache.get(acrossKey);
+            }
+            return { ...base, label, rows, allRows, years, lengthDays, analysis, results, status, across };
         });
     }
 
@@ -445,7 +463,10 @@
         // `exact` is the plain mean of this bucket's values (never smoothed), so the anomalies of
         // each bucket – and therefore of the whole series – average to exactly zero.
         for (const [b, vals] of groups) clim.set(b, { mean: mean(vals), exact: mean(vals), sd: stdDev(vals), n: vals.length });
-        if (!monthly) smoothClimatology(clim, CLIM_SMOOTH_DAYS);
+        // Intervals of several days land on drifting days of the year, so each day bucket
+        // holds values of only some years: smooth over at least two intervals.
+        const smoothWindow = Math.max(CLIM_SMOOTH_DAYS, 2 * Math.ceil(stepDays) + 1);
+        if (!monthly) smoothClimatology(clim, smoothWindow);
 
         const years = [...new Set(points.map((p) => p.year))].sort((a, b) => a - b);
         const domain = [
@@ -462,6 +483,11 @@
             ivText: `${fmt(Number(ivValue), 2)} ${ivUnit}${Number(ivValue) === 1 ? '' : 's'}`,
             tools,
             canCompare: stepDays <= MAX_OVERLAY_STEP_DAYS,
+            // Anomalies need several years and a seasonal resolution; the exact bucket mean
+            // only works where every year hits the same buckets (daily or calendar months).
+            anomalyOk: stepDays <= MAX_OVERLAY_STEP_DAYS && years.length >= 2,
+            exactBuckets: monthly || stepDays <= 1,
+            smoothWindow,
         };
     }
 
@@ -485,9 +511,13 @@
 
     // Value after the "anomaly" function: deviation from the multi-year mean of the same time of year.
     function transformed(model, p) {
-        if (!state.fn.anomaly) return p.value;
+        if (!state.fn.anomaly || !model.anomalyOk) return p.value;
         const c = model.clim.get(model.bucketOf(p));
-        return c && isNum(c.exact) ? p.value - c.exact : null;
+        if (!c) return null;
+        // Multi-day intervals: the smoothed normal (the exact bucket mean of 1–3 values
+        // would swallow most of a trend).
+        const normal = model.exactBuckets ? c.exact : c.mean;
+        return isNum(normal) ? p.value - normal : null;
     }
 
     function yearColor(model, year) {
@@ -640,7 +670,7 @@
             for (let y = y0; y <= y1; y++) {
                 const endYear = period.wraps ? y + 1 : y;
                 const lastDay = Math.min(ed, new Date(Date.UTC(endYear, em, 0)).getUTCDate());
-                const x0 = Math.max(model.domain[0], Date.UTC(y, sm - 1, Math.min(sd, 28)));
+                const x0 = Math.max(model.domain[0], Date.UTC(y, sm - 1, Math.min(sd, new Date(Date.UTC(y, sm, 0)).getUTCDate())));
                 const x1 = Math.min(model.domain[1], Date.UTC(endYear, em - 1, lastDay) + DAY_MS);
                 if (x1 > x0) bands.push({ x0, x1, fill: COLOR.accentWash });
             }
@@ -654,7 +684,7 @@
             });
             series.push({ id: 'band', kind: 'area', name: 'Multi-year ±1σ', color: COLOR.referenceBand, points: climPts, gap, hover: false });
             series.push({ id: 'clim', kind: 'line', name: state.fn.anomaly ? 'Multi-year mean (0)' : 'Multi-year mean', color: COLOR.reference, width: 1.5, dash: '2,3', points: climPts, gap });
-            legend.push({ name: `Multi-year mean ± 1σ (same time of year${model.monthly ? '' : `, ${CLIM_SMOOTH_DAYS}-day window`})`, color: COLOR.reference, style: 'band' });
+            legend.push({ name: `Multi-year mean ± 1σ (same time of year${model.monthly ? '' : `, ${model.smoothWindow}-day window`})`, color: COLOR.reference, style: 'band' });
         }
 
         series.push({
@@ -667,7 +697,7 @@
 
         if (state.fn.ma) {
             const w = state.fn.maWindow;
-            series.push({ id: 'ma', kind: 'line', name: `Moving average (${w})`, color: COLOR.movingAverage, width: 2, points: movingAverage(pts, w), gap: gap * w });
+            series.push({ id: 'ma', kind: 'line', name: `Moving average (${w})`, color: COLOR.movingAverage, width: 2, points: movingAverage(pts, w, model.stepDays * DAY_MS), gap });
             legend.push({ name: `Moving average over ${w} intervals`, color: COLOR.movingAverage, style: 'line' });
         }
 
@@ -772,7 +802,7 @@
 
         for (const y of visibleYears) {
             let pts = byYear.get(y).sort((p, q) => p.x - q.x).filter((p) => inDomain(p.x));
-            if (state.fn.ma) pts = movingAverage(pts, state.fn.maWindow);
+            if (state.fn.ma) pts = movingAverage(pts, state.fn.maWindow, model.stepDays);
             const isLatest = y === latest;
             series.push({
                 id: `y${y}`, kind: 'line', name: seasonYearLabel(y, usePeriod), color: yearColor(colorModel, y),
@@ -834,14 +864,29 @@
     }
 
     // One value per (season) year: mean, min, max and coverage of the period.
+    // One row per year (season year for periods across New Year): the period's mean.
+    // With several years the mean is "normal of the period + mean anomaly of the values
+    // present", so a year missing part of the period (e.g. a range ending in July) is not
+    // pulled towards the season it happens to cover.
     function periodSeries(model, period) {
+        const normalOf = (p) => {
+            if (!model.anomalyOk) return null;
+            const c = model.clim.get(model.bucketOf(p));
+            const normal = c ? (model.exactBuckets ? c.exact : c.mean) : null;
+            return isNum(normal) ? normal : null;
+        };
         const groups = new Map();
+        const allNormals = [];
         for (const p of model.points) {
             if (!inPeriod(p, period)) continue;
             const sy = seasonYear(p, period);
             if (!groups.has(sy)) groups.set(sy, []);
-            groups.get(sy).push({ v: transformed(model, p), t: p.t });
+            const normal = normalOf(p);
+            groups.get(sy).push({ v: transformed(model, p), raw: p.value, normal, t: p.t });
+            if (isNum(normal)) allNormals.push(normal);
         }
+        // Mean normal over the whole period (every day of it, as seen across all years).
+        const periodNormal = allNormals.length ? mean(allNormals) : null;
         const startPos = yearPos(period.start[0], period.start[1]);
         let endPos = yearPos(period.end[0], period.end[1]) + 1;
         if (endPos <= startPos) endPos += YEAR_DAYS;
@@ -849,12 +894,19 @@
         return [...groups.entries()]
             .sort((a, b) => a[0] - b[0])
             .map(([year, items]) => {
-                const v = items.map((it) => it.v).filter(isNum);
+                const valid = items.filter((it) => isNum(it.v));
+                const v = valid.map((it) => it.v);
+                let periodMean = mean(v);
+                const withNormal = valid.filter((it) => isNum(it.normal));
+                if (isNum(periodNormal) && withNormal.length === valid.length && valid.length) {
+                    const anomaly = mean(withNormal.map((it) => it.raw - it.normal));
+                    periodMean = state.fn.anomaly && model.anomalyOk ? anomaly : periodNormal + anomaly;
+                }
                 return {
                     year, label: seasonYearLabel(year, period), n: v.length, expected,
-                    t: mean(items.filter((it) => isNum(it.v)).map((it) => it.t)),
+                    t: mean(valid.map((it) => it.t)),
                     complete: v.length >= Math.max(1, Math.floor(expected * 0.5)),
-                    mean: mean(v), min: v.length ? Math.min(...v) : null, max: v.length ? Math.max(...v) : null,
+                    mean: periodMean, min: v.length ? v.reduce((a, b) => Math.min(a, b)) : null, max: v.length ? v.reduce((a, b) => Math.max(a, b)) : null,
                 };
             })
             .filter((r) => r.n > 0);
@@ -891,7 +943,7 @@
         if (rows.some((r) => !r.complete)) legend.push({ name: 'Incomplete year (less than half of the period has data; not analysed)', color: COLOR.series, style: 'hollow' });
 
         if (state.fn.ma) {
-            series.push({ id: 'ma', kind: 'line', name: `Moving average (${state.fn.maWindow} years)`, color: COLOR.movingAverage, width: 2, points: movingAverage(used.map((r) => ({ x: r.year, y: r.mean })), state.fn.maWindow), gap: 1.5 });
+            series.push({ id: 'ma', kind: 'line', name: `Moving average (${state.fn.maWindow} years)`, color: COLOR.movingAverage, width: 2, points: movingAverage(used.map((r) => ({ x: r.year, y: r.mean })), state.fn.maWindow, 1), gap: 1.5 });
             legend.push({ name: `Moving average over ${state.fn.maWindow} years`, color: COLOR.movingAverage, style: 'line' });
         }
 
@@ -1116,8 +1168,13 @@
             }
         }
         if (!ys.length) return { svg: '<div class="tp-empty">No numeric values to plot.</div>', geom: null };
-        let minV = Math.min(...ys);
-        let maxV = Math.max(...ys);
+        // A loop, not Math.min(...ys): spreading 100k+ values overflows the call stack.
+        let minV = Infinity;
+        let maxV = -Infinity;
+        for (const v of ys) {
+            if (v < minV) minV = v;
+            if (v > maxV) maxV = v;
+        }
         if (maxV - minV < 1e-9) {
             const pad = Math.abs(minV) > 1 ? Math.abs(minV) * 0.1 : 1;
             minV -= pad;
@@ -1620,7 +1677,8 @@
 
         const period = currentPeriod();
         const canCompare = model.canCompare && model.years.length >= 2;
-        if (!canCompare && state.view !== 'timeline') state.view = 'timeline';
+        const stripesOk = model.years.length >= 2;
+        if (!canCompare && state.view !== 'timeline' && !(state.view === 'stripes' && stripesOk)) state.view = 'timeline';
         setControlStates(model, period);
 
         const st = model.info.station;
@@ -1637,6 +1695,7 @@
         if (model.info.error) hints.push(model.info.error);
         if (model.unit === 'mm/day') hints.push('Precipitation is shown as a density: the average rainfall per day (mm/day) in each interval. Monthly or yearly totals and multiday totals (MDPR) are divided by the number of days they cover, so 3 mm/day over a month means about 90 mm in that month.');
         else if (model.unit === '% of days') hints.push('Share of days in each interval on which precipitation reached the threshold (monthly / yearly rain-day counts divided by the number of days), e.g. 50 % = every second day.');
+        if (model.info.dropped_intervals > 0) hints.push(`${model.info.dropped_intervals} interval${model.info.dropped_intervals === 1 ? ' was' : 's were'} left out because data covered less than three quarters of their days (e.g. a year with only its first months); their means would bias the trend.`);
         if (!model.points.length) hints.push('This topic has no numeric values in the selected time range.');
         else if (!model.canCompare) hints.push(`Comparing years needs intervals of up to 2 months; the current interval is ${model.ivText}. Choose Day or Month intervals.`);
         else if (model.years.length < 2) hints.push('The time range covers only one year. Choose a range over several years to compare them.');
@@ -1868,15 +1927,20 @@
         const trend = lr && lr.available ? lr : sen && sen.available ? sen : null;
         const years = model.years.length ? `${model.years[0]}–${model.years[model.years.length - 1]}` : '';
         const parts = [];
-        if (trend) {
+        const spanYears = (model.points[model.points.length - 1].t - model.points[0].t) / (365.2425 * DAY_MS);
+        if (trend && spanYears < 2 && model.stepDays < 200) {
+            parts.push('ℹ The time range covers less than two years, so a slope here mostly follows the seasons, not a long-term change. Choose several years (ideally 30) to look for a trend.');
+        } else if (trend) {
             const perDecade = trend.slope * 10;
             const sig = trend.significant;
             const dir = perDecade > 0 ? 'rose' : perDecade < 0 ? 'fell' : 'stayed level';
             const icon = !sig ? '〰' : perDecade > 0 ? '📈' : '📉';
             const what = state.fn.anomaly ? 'the anomaly' : 'the value';
             let text = `${icon} Over ${years}, ${what} ${dir}${perDecade ? ` by <strong>${esc(withUnit(fmt(Math.abs(perDecade)), unit))} per decade</strong>` : ''}`;
-            if (sig) text += ` — a <strong>statistically significant</strong> trend (${pLabel(trend.p_value ?? 0)}${mk && mk.available ? `; Mann-Kendall: ${esc(mk.trend)}` : ''}).`;
+            const evidence = isNum(trend.p_value) ? pLabel(trend.p_value) : '95 % interval of the slope excludes 0';
+            if (sig) text += ` — a <strong>statistically significant</strong> trend (${evidence}${mk && mk.available ? `; Mann-Kendall: ${esc(mk.trend)}` : ''}).`;
             else text += ` — but this is <strong>not statistically significant</strong>: natural ups and downs alone could produce such a slope${model.years.length < 20 ? `; ${model.years.length} years are short for a climate trend (30 are common)` : ''}.`;
+            if (trend.deseasonalised) text += ' <span class="tp-muted">(tested without the seasonal cycle)</span>';
             parts.push(text);
         }
         if (cp && cp.available && cp.significant) {
@@ -1894,7 +1958,8 @@
         const canCompare = Boolean(model && model.canCompare && model.years.length >= 2);
         r.views.querySelectorAll('button').forEach((b) => {
             b.setAttribute('aria-pressed', String(b.dataset.view === state.view));
-            b.disabled = !model || (b.dataset.view !== 'timeline' && !canCompare);
+            const stripesOk = Boolean(model && model.years.length >= 2);
+            b.disabled = !model || (b.dataset.view !== 'timeline' && !canCompare && !(b.dataset.view === 'stripes' && stripesOk));
         });
         r.period.disabled = !model || !model.canCompare;
         r.functions.querySelectorAll('button[data-fn]').forEach((b) => {
@@ -2071,7 +2136,7 @@
             const sig = lrs.filter((res) => res.significant);
             const m = mean(lrs.map((res) => res.slope));
             cards.push(statCard(`Linear regression inside ${win.label}`,
-                `${esc(withUnit(fmtSigned(m), unit))} / day`,
+                `${esc(withUnit(fmtSigned(m), unit))} per day`,
                 `mean slope of ${lrs.length} years (≈ ${esc(withUnit(fmtSigned(m * win.lengthDays), unit))} over the period) · rising in ${up.length} of ${lrs.length} years, ${sig.length} significant`));
         }
         const mks = done.map((yr) => yr.res['Mann-Kendall']).filter((res) => res && res.available);
@@ -2145,7 +2210,8 @@
                 const skipped = win.years.filter((yr) => !yr.complete).length;
                 note = `The tools run inside every year's ${esc(win.label)} on its own (x = day within the period), so each year gets its own result.${win.period.wraps ? ' A period across New Year counts towards the year it ends in.' : ''}${skipped > 0 ? ` ${skipped} incomplete year${skipped === 1 ? ' is' : 's are'} not analysed.` : ''}`;
             } else {
-                note = 'The tools run on every interval of the whole series; slopes are per year.';
+                const deseason = win.results && Object.values(win.results).some((res) => res && res.deseasonalised);
+                note = `The tools run on every interval of the whole series; slopes are per year.${deseason ? ' The seasonal cycle was removed before testing (the trend is the same, but the seasons no longer count as noise), so the t-test means are levels without the seasons.' : ''}`;
             }
             const cards = [];
             if (win.rows.length) {
@@ -2157,8 +2223,15 @@
             else if (!win.analysis || win.analysis.pending) cards.push(mutedCard('Analysis tools', 'Running…'));
             else if (win.analysis.error) cards.push(mutedCard('Analysis tools', `Not available: ${win.analysis.error}`));
             else if (win.period) {
-                cards.push(...yearSummaryCards(win, unit));
-                extra = yearTable(win, unit);
+                const acrossRes = win.across && !win.across.pending && !win.across.error ? pickTools(win.across.tools, win.tools) : null;
+                const acrossCards = acrossRes
+                    ? win.tools.filter((name) => acrossRes[name]).map((name) => toolCard(name, acrossRes[name], win.rows, unit))
+                    : [mutedCard('Across years', win.rows.length < 3 ? 'Needs at least three complete years.' : win.across && win.across.error ? `Not available: ${win.across.error}` : 'Running…')];
+                extra = `<div class="tp-analysis-sub">Change across the years: one mean of ${esc(win.label)} per year, slopes per year</div>`
+                    + `<div class="tp-stats">${acrossCards.join('')}</div>`
+                    + `<div class="tp-analysis-sub">Inside each year's ${esc(win.label)} (x = day within the period). These slopes mostly show the seasonal shape, e.g. spring warming; turn on <em>Anomaly</em> to see departures from normal instead.</div>`
+                    + `<div class="tp-stats">${yearSummaryCards(win, unit).join('')}</div>`
+                    + yearTable(win, unit);
             } else for (const name of win.tools) if (win.results[name]) cards.push(toolCard(name, win.results[name], win.rows, unit));
             return `<div class="tp-analysis-block" style="--tp-win:${win.color}">${head}<div class="tp-analysis-note">${note}</div><div class="tp-stats">${cards.join('')}</div>${extra}</div>`;
         }).join('');

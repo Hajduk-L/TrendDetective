@@ -137,3 +137,153 @@ class StationRankingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeseasonalisedToolsTest(unittest.TestCase):
+    def test_monthly_trend_is_found_despite_the_seasonal_cycle(self) -> None:
+        rng = np.random.default_rng(3)
+        months = np.arange(600)
+        y = 9 + 9 * np.sin(2 * np.pi * (months - 3) / 12) + 0.004 * months + rng.normal(0, 1.6, 600)
+        result = plot_analysis.run_tools(list(months), list(y), ["Linear Regression", "t-Test"], per_year=12)
+        self.assertTrue(result["Linear Regression"]["significant"])
+        self.assertTrue(result["Linear Regression"]["deseasonalised"])
+        self.assertAlmostEqual(result["Linear Regression"]["slope_per_decade"], 0.48, delta=0.1)
+
+    def test_partial_years_do_not_fake_a_trend(self) -> None:
+        # Three years plus January to early October: the extra summer
+        # pulls a plain regression up by about 9 per decade.
+        days = np.arange(0, 365 * 3 + 280)
+        y = 10 * np.sin(2 * np.pi * (days - 110) / 365.25) + np.random.default_rng(1).normal(0, 1, days.size)
+        result = plot_analysis.run_tools(list(days), list(y), ["Linear Regression"], per_year=365.2425)
+        raw_per_decade = np.polyfit(days, y, 1)[0] * 3652.425
+        self.assertGreater(abs(raw_per_decade), 5.0)
+        self.assertLess(abs(result["Linear Regression"]["slope_per_decade"]), 0.5)
+
+
+class ServedFilesTest(unittest.TestCase):
+    def test_only_page_and_static_are_public(self) -> None:
+        import app
+
+        for path in ("/", "/index.html", "/static/plots/plots.js"):
+            self.assertTrue(app._is_public_path(path), path)
+        for path in ("/app.py", "/.git/config", "/static/../app.py", "/static/%2e%2e/app.py", "/data/cache/x"):
+            self.assertFalse(app._is_public_path(path), path)
+
+
+class SparseVariablesTest(unittest.TestCase):
+    def test_a_handful_of_secondary_values_is_hidden(self) -> None:
+        main = [{"description": "snow", "value": 1.0}] * 300
+        rare = [{"description": "mdsf", "value": 5.0}] * 2
+        groups = task.split_by_variable("snowfall", main + rare)
+        kept = task.drop_sparse_variables(groups)
+        self.assertEqual([key for key, _ in kept], ["snowfall · snowfall (SNOW)"])
+
+    def test_balanced_variables_are_kept(self) -> None:
+        records = [{"description": c, "value": 1.0} for c in ("tmax", "tmin") for _ in range(8)]
+        self.assertEqual(len(task.drop_sparse_variables(task.split_by_variable("temperature", records))), 2)
+
+
+class MarineCleaningTest(unittest.TestCase):
+    def test_codes_dropped_visibility_decoded_buoy_thinned(self) -> None:
+        import noaa_api
+
+        def rec(code, value, station="B1", when="2020-01-06T01:00:00"):
+            return {"description": code, "value": value, "station": station, "date": when, "unit": None}
+
+        collections = [
+            [rec("wind_dir", 330), rec("wind_dir", 361, when="2020-01-06T02:00:00")],
+            [rec("visibility", 97), rec("visibility", 3, when="2020-01-06T02:00:00")],
+            [rec("sea_surf_temp", 14.4), rec("sea_surf_temp", 14.5, when="2020-01-06T01:10:00"),
+             rec("sea_surf_temp", 14.6, station="S2", when="2020-01-06T01:10:00")],
+        ]
+        wind, visibility, sst = noaa_api._clean_marine_rows(collections)
+        self.assertEqual([r["value"] for r in wind], [330])
+        self.assertEqual([(r["value"], r["unit"]) for r in visibility], [(10.0, "km")])
+        self.assertEqual([(r["station"], r["value"]) for r in sst], [("B1", 14.4), ("S2", 14.6)])
+
+    def test_long_marine_range_is_refused_clearly(self) -> None:
+        import noaa_api
+
+        request = PointDataRequest(42.3, -70.5, "marine_temperature", date(1990, 1, 1), date(2020, 12, 31))
+        with self.assertRaisesRegex(ValueError, "ERA5"):
+            noaa_api.NOAAClient()._fetch_marine_months(
+                request, {"dataset": "global-marine", "dataTypes": "AIR_TEMP", "boundingBox": "1,2,3,4"}
+            )
+
+
+class AreaSeriesTest(unittest.TestCase):
+    def test_stations_entering_and_leaving_keep_the_trend(self) -> None:
+        import area_analysis
+
+        trend = 0.005 * np.arange(100)
+        offsets = [-3.0, 0.5, 2.0, -1.0, 4.0, 1.5]
+        bins = {
+            f"s{i}": {t: offsets[i] + trend[t] for t in (range(0, 80) if i < 3 else range(20, 100))}
+            for i in range(6)
+        }
+        area = area_analysis._area_series(bins)
+        slope = np.polyfit(list(area), list(area.values()), 1)[0]
+        self.assertAlmostEqual(slope, 0.005, places=4)
+
+
+class CalendarBinningTest(unittest.TestCase):
+    def test_months_follow_the_calendar_and_partial_edges_are_dropped(self) -> None:
+        records = [
+            {"date": (date(2020, 1, 15) + __import__("datetime").timedelta(days=i)).isoformat(), "value": 1.0}
+            for i in range(0, 120)
+        ]
+        stats: dict = {}
+        indices, labels, values = task.bin_records_indexed(
+            records, date(2020, 1, 15), date(2020, 5, 13), (1, "Month"), stats
+        )
+        # January (17 days) and May (13 days) are partial; Feb-Apr are complete calendar months.
+        self.assertEqual(labels, ["01.02.2020", "01.03.2020", "01.04.2020"])
+        self.assertEqual(indices, [1, 2, 3])
+        self.assertEqual(stats["dropped"], 2)
+
+    def test_monthly_values_never_share_a_bin(self) -> None:
+        records = [{"date": f"2001-{m:02d}", "value": float(m)} for m in range(1, 13)]
+        _, labels, values = task.bin_records_indexed(records, date(2001, 1, 15), date(2001, 12, 31), (1, "Month"))
+        self.assertEqual(values, [float(m) for m in range(2, 13)])  # January starts before the range
+        self.assertEqual(labels[0], "01.02.2001")
+
+    def test_partial_last_year_is_left_out(self) -> None:
+        records = [{"date": f"{y}", "value": 10.0} for y in range(2016, 2026)]
+        records += [{"date": f"2026-0{m}-15", "value": 2.0} for m in (1, 2, 3)]
+        _, labels, _ = task.bin_records_indexed(records, date(2016, 1, 1), date(2026, 3, 31), (1, "Year"))
+        self.assertEqual(labels[-1], "01.01.2025")
+
+
+class DirectionAndValidationTest(unittest.TestCase):
+    def test_wind_direction_is_averaged_on_the_circle_without_trend_tools(self) -> None:
+        records = [{"date": "2020-01-01", "value": v, "description": "wdf2"} for v in (350, 10)]
+        _, _, values = task.bin_records_indexed(records, date(2020, 1, 1), date(2020, 1, 1), (1, "Day"))
+        self.assertEqual(values, [0.0])
+        tools = task.run_series_tools([0, 1, 2], [1.0, 2.0, 3.0], ["Linear Regression"], (1, "Day"), direction=True)
+        self.assertFalse(tools["Linear Regression"]["available"])
+
+    def test_request_validation(self) -> None:
+        import interface
+
+        app_interface = interface.AppInterface()
+        app_interface.get_sorted_topics = lambda: ["temperature"]
+        for timeintervall, interval in [
+            (("01.01.1500", "31.12.2000"), (1, "Day")),
+            (("01.01.2020", "31.12.2021"), (1e-320, "Day")),
+            (("01.01.2020", "31.12.2021"), (5, "Year")),
+            (("01.01.2020", "31.12.2021"), (1, "Week")),
+        ]:
+            with self.assertRaises(ValueError):
+                app_interface.set_request_inputs({"temperature": True}, {}, timeintervall, interval)
+        app_interface.set_request_inputs({"temperature": True}, {}, ("01.01.2020", "31.12.2999"), (1, "Day"))
+        self.assertEqual(app_interface.timeintervall[1], date.today())
+
+    def test_json_never_contains_nan(self) -> None:
+        import app
+
+        self.assertEqual(app.to_json({"a": float("nan"), "b": [float("inf"), 1]}), '{"a": null, "b": [null, 1]}')
+
+    def test_fast_mann_kendall_s_is_exact(self) -> None:
+        y = np.round(np.random.default_rng(2).normal(0, 3, 4000), 1)
+        exact = sum(int(np.sign(y[i + 1 :] - y[i]).sum()) for i in range(len(y) - 1))
+        self.assertEqual(task._mann_kendall_s(y), exact)

@@ -458,28 +458,55 @@ def _fetch_all_records(
     return records
 
 
+AREA_ITERATIONS: int = 20
+"""Rounds of the joint estimate of the area series and the station offsets."""
+
+
 def _area_series(
     station_bins: dict[str, dict[int, float]],
 ) -> dict[int, float]:
-    """Mean of all stations per interval, robust to stations missing some intervals.
+    """Mean of all stations per interval, robust to stations entering or leaving.
 
-    A plain mean jumps whenever a warm or cold station has a gap. Instead each
-    station's values are taken as departures from its own mean; the departures
-    are averaged per interval and added to the mean level of all stations.
+    Each station is modelled as ``area(t) + offset(station)``. A plain mean
+    jumps whenever a warm or cold station has a gap; taking each station's
+    departure from *its own* mean is still biased when stations only cover
+    part of the range (a station measuring only the warmer late years gets
+    a high mean, so its departures are too small: −19 % of a true trend in
+    a test). Offsets and area series are therefore estimated together, by
+    alternating ``offset = mean(value − area)`` and
+    ``area = mean(value − offset)``; the offsets are centred so the area
+    keeps the mean level of the stations.
     """
-    station_means = {
-        station: sum(bins.values()) / len(bins) for station, bins in station_bins.items() if bins
-    }
-    if not station_means:
+    stations = {station: bins for station, bins in station_bins.items() if bins}
+    if not stations:
         return {}
-    level = sum(station_means.values()) / len(station_means)
-    departures: dict[int, list[float]] = {}
-    for station, bins in station_bins.items():
+    offsets = {station: sum(bins.values()) / len(bins) for station, bins in stations.items()}
+    centre = sum(offsets.values()) / len(offsets)
+    offsets = {station: value - centre for station, value in offsets.items()}
+    area: dict[int, float] = {}
+    for _ in range(AREA_ITERATIONS):
+        collected: dict[int, list[float]] = {}
+        for station, bins in stations.items():
+            for index, value in bins.items():
+                collected.setdefault(index, []).append(value - offsets[station])
+        area = {index: sum(values) / len(values) for index, values in collected.items()}
+        new_offsets = {
+            station: sum(value - area[index] for index, value in bins.items()) / len(bins)
+            for station, bins in stations.items()
+        }
+        centre = sum(new_offsets.values()) / len(new_offsets)
+        new_offsets = {station: value - centre for station, value in new_offsets.items()}
+        change = max(abs(new_offsets[s] - offsets[s]) for s in stations)
+        offsets = new_offsets
+        if change < 1e-6:
+            break
+    collected = {}
+    for station, bins in stations.items():
         for index, value in bins.items():
-            departures.setdefault(index, []).append(value - station_means[station])
+            collected.setdefault(index, []).append(value - offsets[station])
     return {
-        index: round(level + sum(values) / len(values), 3)
-        for index, values in sorted(departures.items())
+        index: round(sum(values) / len(values), 3)
+        for index, values in sorted(collected.items())
     }
 
 
@@ -608,7 +635,7 @@ def _evaluate_topic(
     # counts as % of days, DAPR day counts folded into MDPR.
     records = task.precipitation_as_density(records)
     evaluated = []
-    for result_key, variable_records in task.split_by_variable(topic_key, records):
+    for result_key, variable_records in task.drop_sparse_variables(task.split_by_variable(topic_key, records)):
         result, features = _evaluate_variable(
             region, result_key, variable_records, start_date, end_date, interval_length, tools
         )
@@ -633,6 +660,12 @@ def _evaluate_variable(
     tools: list[str],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Area mean series and station dots for the records of one NOAA code."""
+    if records and all(task.is_direction(str(r.get("description") or "")) for r in records):
+        return _error_result(
+            region,
+            "Wind directions wrap around at 360°, so an area mean or trend of them is not "
+            "meaningful. Pick a point to see the direction at one station.",
+        ), []
     by_station: dict[str, list[dict[str, Any]]] = {}
     for record in records:
         by_station.setdefault(str(record.get("station")), []).append(record)
@@ -695,7 +728,7 @@ def _evaluate_variable(
     indices = list(area)
     values = list(area.values())
     labels = [
-        (start_date + timedelta(days=round(index * step_days))).strftime("%d.%m.%Y")
+        task.bin_bounds(index, start_date, interval_length)[0].strftime("%d.%m.%Y")
         for index in indices
     ]
     units = {r.get("unit") for r in records}
@@ -709,7 +742,10 @@ def _evaluate_variable(
             "unit": next(iter(units)) if len(units) == 1 else None,
             "station_count": len(station_bins),
             "sources": _source_counts(by_station, station_bins),
-            "tools": task.run_series_tools(indices, values, tools, interval_length, labels),
+            "tools": task.run_series_tools(
+                indices, values, tools, interval_length, labels,
+                direction=all(task.is_direction(str(r.get("description") or "")) for r in records),
+            ),
             "events": _area_events(labels, values, records, units, step_days),
         }
     )
