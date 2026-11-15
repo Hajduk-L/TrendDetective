@@ -269,7 +269,7 @@
             + '<p class="te-lede">Pick variables to see how they move together.</p></header>';
 
         if (withData.length < 2) {
-            html += `<div class="te-state">${ctx.loading ? 'Waiting for more topics…' : 'At least two topics with data are needed to compare variables.'}</div>`;
+            html += `<div class="te-state">${ctx.loading ? 'Waiting for more variables…' : 'At least two variables with data are needed to compare variables.'}</div>`;
             return `${html}</section>`;
         }
 

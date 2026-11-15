@@ -92,6 +92,7 @@
 
     // Collapsible blocks inside every topic section.
     const SUBS = [
+        { id: 'summary', label: 'Data summary' },
         { id: 'analysis', label: 'Statistical analysis' },
         { id: 'events', label: 'Notable events' },
         { id: 'evolution', label: 'Change over time' },
@@ -1464,7 +1465,9 @@
 
     const ZOOM_HELP = 'Drag across the plot to zoom in. Scroll with the bar below it (or Shift + wheel); double-click to reset.';
     const ANALYSES_HELP = "For a period such as January, each tool runs inside every year's January on its own; the results are compared year by year.";
-    const EVENTS_HELP = 'Ordered by how far they depart from normal. Normal: mean of the same time of year over all years; anomaly = value − normal; z = anomaly in standard deviations of that time of year; percentile among all values. Select a row to zoom the plot to the event.';
+    const SUMMARY_HELP = 'Figures of the values as measured (the Anomaly transform does not apply here). Years only partly inside the time range, or with less than three quarters of their values, are listed but not ranked.';
+    const OVERVIEW_HELP = 'Change: linear trend of every series over the whole time range (for daily to monthly data the seasonal cycle is left out of the significance test). “× year-to-year spread” divides the change over the whole range by the standard deviation of the annual means, so series in different units can be compared. Links: Pearson correlation of the values at the same time; for daily to monthly data the seasonal cycle is removed first (anomalies), otherwise summer and winter alone would make most pairs correlate. p-values account for autocorrelation.';
+    const EVENTS_HELP ='Ordered by how far they depart from normal. Normal: mean of the same time of year over all years; anomaly = value − normal; z = anomaly in standard deviations of that time of year; percentile among all values. Select a row to zoom the plot to the event.';
 
     // A small "?" that shows `text` on hover and keyboard focus (CSS tooltip, see plots.css).
     function help(text) {
@@ -1527,9 +1530,11 @@
     }
 
     // The heavy blocks are open for the first series with data, closed for the others, until toggled.
+    // The data summary starts closed everywhere (the overview at the top already gives the gist).
     function isSubOpen(key, sub) {
         const v = topicState(key).open[sub];
-        return v === undefined ? key === firstWithData() : v;
+        if (v !== undefined) return v;
+        return sub === 'summary' ? false : key === firstWithData();
     }
 
     // Topic keys the request asked for (user_request.topics is {key: bool} or a list).
@@ -1584,6 +1589,7 @@
             <span class="tp-subtitle" data-ref="subtitle"></span>
         </div>
         <ul class="tp-avail" data-ref="avail" aria-label="Data availability"></ul>
+        <section class="tp-overview" data-ref="overview" aria-label="Overview of all series" hidden></section>
         <div class="tp-controls">
             <div class="tp-field">View<div class="tp-segmented" role="group" aria-label="Plot view" data-ref="views">
                 ${VIEWS.map((v) => `<button type="button" data-view="${v.id}">${v.label}</button>`).join('')}
@@ -1636,14 +1642,21 @@
                 render();
             }
         });
-        refs.avail.addEventListener('click', (e) => {
+        const onGoto = (e) => {
+            if (e.target.closest('button[data-goto-compare]')) {
+                if (refs.compare) refs.compare.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
             const b = e.target.closest('button[data-goto]');
             if (!b) return;
             const key = b.dataset.goto;
             topicState(key).collapsed = false;
+            if (b.dataset.open) topicState(key).open[b.dataset.open] = true;
             render();
             scrollToTopic(key, 0);
-        });
+        };
+        refs.avail.addEventListener('click', onGoto);
+        refs.overview.addEventListener('click', onGoto);
         refs.windows.addEventListener('click', (e) => {
             // A "?" inside a tool's label must not toggle the checkbox.
             if (e.target.closest('.tp-help')) { e.preventDefault(); return; }
@@ -1775,7 +1788,7 @@
         const subs = SUBS.map((sub) => `<div class="tp-sub" data-r="${sub.id}Sub">
                 <div class="tp-sub-head">
                     <button type="button" class="tp-sub-toggle" data-r="${sub.id}Toggle" aria-expanded="false" aria-controls="${id}-${sub.id}"><span class="tp-chev" aria-hidden="true"></span>${esc(sub.label)}</button>
-                    <span data-r="${sub.id}Help">${sub.id === 'events' ? help(EVENTS_HELP) : ''}</span>
+                    <span data-r="${sub.id}Help">${sub.id === 'events' ? help(EVENTS_HELP) : sub.id === 'summary' ? help(SUMMARY_HELP) : ''}</span>
                 </div>
                 <div class="tp-sub-body tp-${sub.id}" id="${id}-${sub.id}" data-r="${sub.id}"></div>
             </div>`).join('');
@@ -1787,7 +1800,6 @@
             <div class="tp-topic-error" data-r="error" hidden></div>
             <div class="tp-topic-body" id="${id}-body" data-r="body">
                 <div data-r="hint"></div>
-                <div class="tp-summary" data-r="summary" aria-live="polite"></div>
                 <div class="tp-fig-head" data-r="figHead"></div>
                 <div class="tp-chart" data-r="chart"></div>
                 <div class="tp-legend" data-r="legend"></div>
@@ -1826,6 +1838,11 @@
             if (sat) {
                 // index.html draws the image on the map (NASA GIBS).
                 document.dispatchEvent(new CustomEvent('trendplots:satellite', { detail: { date: sat.dataset.sat } }));
+                return;
+            }
+            const fd = e.target.closest('button[data-focus]');
+            if (fd) {
+                focusDate(fd.dataset.focus, key);
                 return;
             }
             const b = e.target.closest('[data-event]');
@@ -1875,11 +1892,12 @@
 
         renderHead(models);
         renderAvailability(keys);
+        renderOverview(models);
         setControlStates(models);
 
         for (const key of [...state.sections.keys()]) if (!keys.includes(key)) dropSection(key);
         if (!keys.length) {
-            r.topics.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose topics and click “Apply” to plot the data here.'}</div>`;
+            r.topics.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose variables and click “Analyze” to plot the data here.'}</div>`;
             renderCompare();
             return;
         }
@@ -1988,8 +2006,6 @@
         else if (state.view === 'period' && view !== 'period') hints.push('No analysis period has data here; showing the timeline.');
         refs.hint.innerHTML = hints.map((h) => `<div class="tp-hint"><span class="tp-hint-label">Note</span>${esc(h)}</div>`).join('');
 
-        renderSummary(model, wins, refs);
-
         let spec;
         if (view === 'overlay') spec = buildOverlay(model, wins);
         else if (view === 'period' && periodWins.length > 1) spec = buildPeriodMulti(model, periodWins);
@@ -2035,6 +2051,8 @@
             refs[`${sub.id}Toggle`].setAttribute('aria-expanded', String(open));
             refs[sub.id].hidden = !open;
         }
+        if (isSubOpen(key, 'summary')) renderDataSummary(model, wins, refs.summary);
+        else refs.summary.innerHTML = '';
         if (isSubOpen(key, 'analysis')) renderAnalysis(model, wins, refs.analysis);
         else refs.analysis.innerHTML = '';
         if (events.length && isSubOpen(key, 'events')) renderEvents(model, refs.events);
@@ -2158,9 +2176,12 @@
     // ------------------------------------------------------------ summary
 
     // One or two short lines about the whole series: trend, change point, most notable event.
-    function renderSummary(model, wins, refs) {
+    function summaryLines(model, wins) {
         const win = wins.find((w) => !w.period && w.results);
-        if (!win || !model.points.length) { refs.summary.innerHTML = ''; return; }
+        if (!win || !model.points.length) {
+            const pending = wins.some((w) => !w.period && w.analysis && w.analysis.pending);
+            return pending ? '<p class="tp-muted">Calculating the trend…</p>' : '';
+        }
         const res = win.results;
         const unit = model.unit;
         const lr = res['Linear Regression'];
@@ -2190,7 +2211,326 @@
         }
         const top = eventsOf(model)[0];
         if (top) parts.push(`<span class="tp-summary-label">Extreme</span><button type="button" class="tp-inline-link" data-event="${top.n}">${esc(top.label)}, ${esc(fmtIsoDate(top.peak_date || top.date))}</button> (${esc(withUnit(fmt(top.value), unit))}${isNum(top.z) ? `, z = ${esc(signed1(top.z))}` : ''}).`);
-        refs.summary.innerHTML = parts.length ? parts.map((t) => `<p>${t}</p>`).join('') : '';
+        return parts.map((t) => `<p>${t}</p>`).join('');
+    }
+
+    // Words for the high and low end of a series: "Wettest" / "Driest", "Warmest" / "Coldest", …
+    function extremeWords(key) {
+        const k = String(key).toLowerCase();
+        if (/temp|tmax|tmin|tavg/.test(k)) return ['Warmest', 'Coldest'];
+        if (/snow/.test(k)) return ['Snowiest', 'Least snowy'];
+        if (/prec|prcp|rain|mdpr/.test(k)) return ['Wettest', 'Driest'];
+        if (/wind|gust/.test(k)) return ['Windiest', 'Calmest'];
+        if (/sun/.test(k)) return ['Sunniest', 'Least sunny'];
+        return ['Highest', 'Lowest'];
+    }
+
+    // One row per calendar year of the values as measured: mean, extremes, coverage.
+    // `complete`: the whole year lies inside the time range and ≥ 75 % of its intervals have values.
+    function yearStats(model) {
+        if (model._yearStats) return model._yearStats;
+        const byYear = new Map();
+        for (const p of model.points) {
+            if (!byYear.has(p.year)) byYear.set(p.year, []);
+            byYear.get(p.year).push(p);
+        }
+        const yearly = model.stepDays >= 300;
+        const rows = [...byYear.entries()].sort((a, b) => a[0] - b[0]).map(([year, pts]) => {
+            const y0 = Date.UTC(year, 0, 1);
+            const y1 = Date.UTC(year + 1, 0, 1);
+            const days = (y1 - y0) / DAY_MS;
+            const whole = model.domain[0] <= y0 + DAY_MS && model.domain[1] >= y1 - DAY_MS;
+            const expected = yearly ? 1 : Math.max(1, Math.round(days / model.stepDays));
+            let hi = pts[0];
+            let lo = pts[0];
+            for (const p of pts) {
+                if (p.value > hi.value) hi = p;
+                if (p.value < lo.value) lo = p;
+            }
+            const m = mean(pts.map((p) => p.value));
+            return { year, n: pts.length, expected, days, whole, complete: yearly || (whole && pts.length >= 0.75 * expected), mean: m, hi, lo };
+        });
+        model._yearStats = rows;
+        return rows;
+    }
+
+    function isoOf(p) {
+        return new Date(p.start).toISOString().slice(0, 10);
+    }
+
+    // When a single value happened, in words: "3 Jul 2015" for days, "Jul 2015" for months, …
+    function whenText(model, p) {
+        if (model.stepDays >= 300) return String(p.year);
+        if (model.stepDays >= 28) return `${MONTHS[p.month - 1]} ${p.year}`;
+        if (model.stepDays <= 1) return fmtIsoDate(isoOf(p));
+        return `interval from ${fmtIsoDate(isoOf(p))}`;
+    }
+
+    // The "Data summary" drop-down below a series' plot: trend lines, key figures, year by year.
+    function renderDataSummary(model, wins, host) {
+        const unit = model.unit;
+        const [hiWord, loWord] = extremeWords(model.key);
+        const stepWord = model.stepDays <= 1 ? 'day' : model.stepDays >= 300 ? 'year' : model.stepDays >= 28 && model.stepDays <= 31 ? 'month' : 'interval';
+        const pts = model.points;
+        let hi = pts[0];
+        let lo = pts[0];
+        for (const p of pts) {
+            if (p.value > hi.value) hi = p;
+            if (p.value < lo.value) lo = p;
+        }
+        const overall = mean(pts.map((p) => p.value));
+        const years = yearStats(model);
+        const ranked = years.filter((y) => y.complete);
+        const precip = unit === 'mm/day';
+        const totalOf = (y) => y.mean * y.days;
+        // Precipitation-like series with many zeros: "driest day = 0 mm" says nothing; count dry intervals instead.
+        const dryCount = lo.value === 0 && hiWord === 'Wettest' && stepWord !== 'year';
+        const dryOf = (y) => model.points.filter((p) => p.year === y.year && p.value === 0).length;
+        const val = (v, d) => esc(withUnit(fmt(v, d), unit));
+        const focusBtn = (p, text) => `<button type="button" class="tp-inline-link" data-focus="${isoOf(p)}" title="Show in the plot">${esc(text)}</button>`;
+
+        const cards = [];
+        cards.push(statCard('Mean of all values', val(overall), `${pts.length.toLocaleString('en-US')} values · ${esc(yearsText(model))}`));
+        if (stepWord !== 'year') {
+            cards.push(statCard(`${hiWord} ${stepWord}`, val(hi.value), focusBtn(hi, whenText(model, hi))));
+            if (dryCount) {
+                const n = pts.filter((p) => p.value === 0).length;
+                cards.push(statCard(`Dry ${stepWord}s`, `${n.toLocaleString('en-US')} <span class="tp-stat-sub">of ${pts.length.toLocaleString('en-US')}</span>`, `${esc(fmt((100 * n) / pts.length, 0))} % without measurable precipitation`));
+            } else cards.push(statCard(`${loWord} ${stepWord}`, val(lo.value), focusBtn(lo, whenText(model, lo))));
+        }
+        let hiYear = null;
+        let loYear = null;
+        if (ranked.length >= 2) {
+            hiYear = ranked.reduce((a, b) => (b.mean > a.mean ? b : a));
+            loYear = ranked.reduce((a, b) => (b.mean < a.mean ? b : a));
+            const yearDetail = (y) => `${precip ? `≈ ${esc(fmt(totalOf(y), 0))} mm in the year · ` : ''}${esc(withUnit(fmtSigned(y.mean - overall), unit))} vs. the mean`;
+            cards.push(statCard(`${hiWord} year`, `${hiYear.year} <span class="tp-stat-sub">${val(hiYear.mean)}</span>`, yearDetail(hiYear)));
+            cards.push(statCard(`${loWord} year`, `${loYear.year} <span class="tp-stat-sub">${val(loYear.mean)}</span>`, yearDetail(loYear)));
+        }
+        if (ranked.length >= 3) {
+            const sd = stdDev(ranked.map((y) => y.mean));
+            cards.push(statCard('Year-to-year spread', `± ${val(sd)}`, `standard deviation of the annual means of ${ranked.length} complete years`));
+        }
+        // Seasonal cycle: the calendar month that is highest / lowest on average.
+        if (model.canCompare && model.years.length >= 2 && model.stepDays <= 31) {
+            const byMonth = Array.from({ length: 12 }, () => []);
+            for (const p of pts) byMonth[p.month - 1].push(p.value);
+            if (byMonth.every((a) => a.length)) {
+                const means = byMonth.map(mean);
+                const iHi = means.indexOf(Math.max(...means));
+                const iLo = means.indexOf(Math.min(...means));
+                cards.push(statCard('Seasonal cycle', `${MONTH_NAMES[iHi]} <span class="tp-stat-sub">${val(means[iHi])}</span>`,
+                    `${hiWord.toLowerCase()} month on average; ${loWord.toLowerCase()}: ${MONTH_NAMES[iLo]} (${val(means[iLo])})`));
+            }
+        }
+
+        // Year by year.
+        let table = '';
+        if (years.length >= 2 && stepWord !== 'year') {
+            const head = `<tr><th>Year</th><th>Mean</th><th>vs. mean</th>${precip ? '<th title="Mean mm/day × days of the year">≈ Total</th>' : ''}<th>${esc(hiWord)} ${stepWord}</th><th>${dryCount ? `Dry ${stepWord}s` : `${esc(loWord)} ${stepWord}`}</th><th>Values</th></tr>`;
+            const body = years.map((y) => {
+                const tag = y === hiYear ? `<span class="tp-tag is-hi">${esc(hiWord.toLowerCase())}</span>` : y === loYear ? `<span class="tp-tag is-lo">${esc(loWord.toLowerCase())}</span>` : '';
+                const note = y.complete ? '' : `<span class="tp-cell-sub">${y.whole ? 'too few values, not ranked' : 'part of the year only, not ranked'}</span>`;
+                return `<tr class="${y.complete ? '' : 'is-muted'}"><td>${y.year}${tag}</td><td>${val(y.mean)}</td><td>${esc(fmtSigned(y.mean - overall))}</td>`
+                    + `${precip ? `<td>${y.complete ? `${esc(fmt(totalOf(y), 0))} mm` : '–'}</td>` : ''}`
+                    + `<td>${esc(fmt(y.hi.value))} ${focusBtn(y.hi, model.stepDays <= 1 ? fmtIsoDate(isoOf(y.hi)).replace(/ \d{4}$/, '') : MONTHS[y.hi.month - 1])}</td>`
+                    + (dryCount ? `<td>${dryOf(y)}</td>` : `<td>${esc(fmt(y.lo.value))} ${focusBtn(y.lo, model.stepDays <= 1 ? fmtIsoDate(isoOf(y.lo)).replace(/ \d{4}$/, '') : MONTHS[y.lo.month - 1])}</td>`)
+                    + `<td>${y.n}${y.expected > 1 ? ` / ${y.expected}` : ''}${note}</td></tr>`;
+            }).join('');
+            table = `<h5 class="tp-fig-title">Year by year</h5><div class="tp-table-wrap tp-years-wrap"><table class="tp-table tp-years-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+        }
+
+        const st = model.info.station;
+        const source = st && (st.name || st.id)
+            ? `Station ${esc(st.name || st.id)}${st.id && st.name ? ` (${esc(st.id)})` : ''}${isNum(st.distance_km) ? `, ${esc(fmt(st.distance_km, 1))} km from the selected point` : ''}${st.source ? ` · source: ${esc(st.source)}` : ''}.`
+            : siteText(model) ? `${esc(siteText(model))}.` : '';
+        const lines = summaryLines(model, wins);
+        host.innerHTML = `${lines ? `<div class="tp-summary-lines">${lines}</div>` : ''}`
+            + `<div class="tp-stats">${cards.join('')}</div>${table}`
+            + `${source ? `<p class="tp-source">${source}</p>` : ''}`;
+    }
+
+    // ------------------------------------------------------------ overview
+    //
+    // One box above all series: which series change the most, and which move together.
+    // Trends come from /api/analyze (raw values, whole range), links from /api/correlate.
+
+    const OV_TOOLS = ['Linear Regression', 'Mann-Kendall'];
+    let ovCorr = { ctx: null, key: '', entry: null };
+
+    function overviewTrend(model) {
+        if (!model._ovKey) {
+            const x = model.points.map((p) => +(1970 + p.t / (365.2425 * DAY_MS)).toFixed(5));
+            const values = model.points.map((p) => p.value);
+            const seasonLength = model.stepDays < 200 ? 1 : null;
+            model._ovKey = JSON.stringify([model.key, OV_TOOLS, seasonLength, 'overview', x, values]);
+            model._ovBody = { x, values, season_length: seasonLength };
+        }
+        if (!state.analysisCache.has(model._ovKey)) requestAnalysis(model._ovKey, model._ovBody);
+        return state.analysisCache.get(model._ovKey);
+    }
+
+    function overviewCorrelation() {
+        const ctx = compareContext();
+        if (ovCorr.ctx === ctx) return ovCorr.entry;
+        const usable = ctx.topics.filter((t) => t.points.length >= 5).slice(0, 8);
+        ovCorr = { ctx, entry: null, anomalies: false };
+        if (usable.length < 2 || state.loading) return null;
+        const anomalies = !ctx.yearly && usable.every((t) => t.anomalyOk);
+        let origin = Infinity;
+        for (const t of usable) for (const p of t.points) if (p.start < origin) origin = p.start;
+        const step = ctx.stepDays * DAY_MS;
+        const series = usable.map((t) => {
+            const pts = t.points.filter((p) => isNum(anomalies ? p.anomaly : p.value));
+            return { name: t.name, x: pts.map((p) => Math.round((p.start - origin) / step)), values: pts.map((p) => (anomalies ? p.anomaly : p.value)) };
+        });
+        const entry = { pending: true, anomalies };
+        ovCorr.entry = entry;
+        fetch('/api/correlate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ series, max_lag: 0 }) })
+            .then(async (res) => {
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+                entry.data = body;
+            })
+            .catch((err) => { entry.error = String(err.message || err); })
+            .finally(() => { entry.pending = false; scheduleRender(); });
+        return entry;
+    }
+
+    // Small line of the annual means of complete years.
+    function sparkline(rows) {
+        if (rows.length < 2) return '';
+        const w = 84;
+        const h = 22;
+        const vs = rows.map((r) => r.mean);
+        const lo = Math.min(...vs);
+        const hi = Math.max(...vs);
+        const sx = (i) => 2 + (i / (rows.length - 1)) * (w - 4);
+        const sy = (v) => (hi === lo ? h / 2 : h - 3 - ((v - lo) / (hi - lo)) * (h - 6));
+        const d = rows.map((r, i) => `${i ? 'L' : 'M'}${sx(i).toFixed(1)},${sy(r.mean).toFixed(1)}`).join('');
+        return `<svg class="tp-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+    }
+
+    // Bar from the centre: value in [-max, max].
+    function divergingBar(v, max, cls) {
+        const f = Math.max(-1, Math.min(1, v / max));
+        const left = f < 0 ? 50 + f * 50 : 50;
+        return `<span class="tp-dbar ${cls || ''}" aria-hidden="true"><span style="left:${left.toFixed(1)}%;width:${(Math.abs(f) * 50).toFixed(1)}%"></span></span>`;
+    }
+
+    function strengthWord(r) {
+        const a = Math.abs(r);
+        return a >= 0.7 ? 'strong' : a >= 0.4 ? 'moderate' : a >= 0.2 ? 'weak' : 'hardly any';
+    }
+
+    function renderOverview(models) {
+        const host = state.refs.overview;
+        if (!host) return;
+        const withData = models.filter((m) => m.points.length >= 3);
+        if (!withData.length) {
+            if (host._html !== '') { host.innerHTML = ''; host._html = ''; }
+            host.hidden = true;
+            return;
+        }
+        // Trends, ranked: significant first, then by the size of the change against the year-to-year spread.
+        const trends = withData.map((model) => {
+            const a = overviewTrend(model);
+            const lr = a && a.tools ? a.tools['Linear Regression'] : null;
+            const ok = !!(lr && lr.available);
+            const complete = yearStats(model).filter((y) => y.complete);
+            const sd = complete.length >= 3 ? stdDev(complete.map((y) => y.mean)) : null;
+            const span = (model.points[model.points.length - 1].t - model.points[0].t) / (365.2425 * DAY_MS);
+            const change = ok ? lr.slope * span : null;
+            const ratio = isNum(change) && isNum(sd) && sd > 0 ? change / sd : null;
+            return { model, lr: ok ? lr : null, pending: !!(a && a.pending), error: a && a.error, change, ratio, span, complete };
+        });
+        const score = (t) => (isNum(t.ratio) ? Math.abs(t.ratio) : 0);
+        trends.sort((a, b) => (!!b.lr - !!a.lr) || ((b.lr && b.lr.significant ? 1 : 0) - (a.lr && a.lr.significant ? 1 : 0)) || score(b) - score(a));
+
+        const label = (key) => esc(topicLabel(key));
+        const goto = (key, text) => `<button type="button" class="tp-ov-name" data-goto="${esc(key)}" data-open="summary" title="Open the data summary of this series">${text}</button>`;
+        const rows = trends.map((t) => {
+            const m = t.model;
+            let trendCell;
+            let changeCell;
+            let evidence;
+            if (t.lr) {
+                const perDecade = t.lr.slope * 10;
+                trendCell = `${esc(withUnit(fmtSigned(perDecade), m.unit))} <span class="tp-ov-sub">per decade</span>`;
+                changeCell = isNum(t.ratio)
+                    ? `${divergingBar(t.ratio, 2, t.lr.significant ? 'is-sig' : '')}<span class="tp-ov-num">${esc(fmtSigned(t.ratio, 1))}×</span>`
+                    : `<span class="tp-ov-sub">${t.span < 2 ? 'under two years' : 'too few complete years'}</span>`;
+                evidence = t.lr.significant
+                    ? `<span class="tp-ov-sig">significant</span> <span class="tp-ov-sub">${esc(pLabel(t.lr.p_value))}</span>`
+                    : `<span class="tp-ov-ns">not significant</span> <span class="tp-ov-sub">${esc(pLabel(t.lr.p_value))}</span>`;
+            } else {
+                const msg = t.pending ? 'calculating…' : t.error ? 'could not be calculated' : 'not available';
+                trendCell = `<span class="tp-ov-sub">${msg}</span>`;
+                changeCell = '';
+                evidence = '';
+            }
+            return `<tr><th scope="row">${goto(m.key, label(m.key))}</th><td>${trendCell}</td><td class="tp-ov-change">${changeCell}</td><td>${evidence}</td><td class="tp-ov-spark">${sparkline(t.complete)}</td></tr>`;
+        }).join('');
+
+        // Headline sentences.
+        const sent = [];
+        const range = yearsText(withData[0]);
+        const sig = trends.filter((t) => t.lr && t.lr.significant);
+        const top = trends.find((t) => t.lr);
+        const dir = (t) => (t.lr.slope > 0 ? 'rose' : 'fell');
+        if (sig.length) {
+            const t = sig[0];
+            sent.push(`<strong>${label(t.model.key)}</strong> changed the most: it ${dir(t)} by ${esc(withUnit(fmt(Math.abs(t.lr.slope * 10)), t.model.unit))} per decade${isNum(t.ratio) ? `, ${esc(fmt(Math.abs(t.ratio), 1))} times its year-to-year spread over ${esc(range)}` : ''}.`);
+            const others = trends.filter((x) => x.lr && !x.lr.significant);
+            if (sig.length > 1) sent.push(`Significant trends also in ${sig.slice(1).map((x) => label(x.model.key)).join(', ')}.`);
+            if (others.length) sent.push(`No significant trend in ${others.map((x) => label(x.model.key)).join(', ')}.`);
+        } else if (top) {
+            sent.push(`No series shows a significant trend over ${esc(range)}${withData.length > 1 ? `; the largest change is in <strong>${label(top.model.key)}</strong> (${esc(withUnit(fmtSigned(top.lr.slope * 10), top.model.unit))} per decade)` : ''}.`);
+        }
+
+        // Links between the series.
+        let links = '';
+        const corr = withData.length >= 2 ? overviewCorrelation() : null;
+        if (withData.length >= 2) {
+            if (!corr) {
+                links = `<p class="tp-ov-sub">${state.loading ? 'Links between the series follow once every series has loaded.' : 'Needs two series with at least five values each.'}</p>`;
+            } else if (corr.pending) {
+                links = '<p class="tp-ov-sub">Calculating correlations…</p>';
+            } else if (corr.error) {
+                links = `<p class="tp-ov-sub">Correlations could not be calculated: ${esc(corr.error)}</p>`;
+            } else {
+                const pairs = corr.data.pairs.filter((p) => p.available && isNum(p.pearson)).sort((a, b) => Math.abs(b.pearson) - Math.abs(a.pearson));
+                const shown = pairs.slice(0, 6);
+                const prow = (p) => `<tr><th scope="row">${label(p.a)} <span class="tp-ov-sub">and</span> ${label(p.b)}</th>`
+                    + `<td class="tp-ov-change">${divergingBar(p.pearson, 1, p.significant ? 'is-sig' : '')}<span class="tp-ov-num">r = ${esc(fmtSigned(p.pearson, 2))}</span></td>`
+                    + `<td>${esc(strengthWord(p.pearson))}${Math.abs(p.pearson) >= 0.2 ? (p.pearson > 0 ? ', move together' : ', move oppositely') : ''}</td>`
+                    + `<td>${p.significant ? '<span class="tp-ov-sig">significant</span>' : '<span class="tp-ov-ns">not significant</span>'} <span class="tp-ov-sub">${esc(pLabel(p.p_value))}</span></td></tr>`;
+                const what = corr.anomalies ? 'day-to-day departures from the seasonal normal' : 'values';
+                links = pairs.length
+                    ? `<table class="tp-ov-table"><caption>Strongest links (correlation of the ${corr.anomalies ? (withData[0].stepDays <= 1 ? 'day-to-day' : 'interval') + ' departures from the seasonal normal' : 'values'})</caption><tbody>${shown.map(prow).join('')}</tbody></table>`
+                        + `${pairs.length > shown.length ? `<p class="tp-ov-sub">${pairs.length - shown.length} weaker pair${pairs.length - shown.length === 1 ? '' : 's'} not shown.</p>` : ''}`
+                        + `<p class="tp-ov-more"><button type="button" class="tp-inline-link" data-goto-compare="1">Plot them together and check time lags in “Compare variables” ↓</button></p>`
+                    : `<p class="tp-ov-sub">No pair of series overlaps enough to correlate the ${what}.</p>`;
+                const best = pairs[0];
+                if (best && Math.abs(best.pearson) >= 0.2) {
+                    sent.push(`Strongest link: <strong>${label(best.a)}</strong> and <strong>${label(best.b)}</strong> ${best.pearson > 0 ? 'move together' : 'move in opposite directions'} (r = ${esc(fmtSigned(best.pearson, 2))}${best.significant ? '' : ', not significant'}).`);
+                } else if (best) {
+                    sent.push('The series hardly move together (all |r| < 0.2).');
+                }
+            }
+        }
+
+        const html = `<div class="tp-ov-head"><h4 class="tp-ov-title">Overview</h4>${help(OVERVIEW_HELP)}</div>`
+            + `${sent.length ? `<p class="tp-ov-lede">${sent.join(' ')}</p>` : ''}`
+            + `<div class="tp-ov-wrap"><table class="tp-ov-table"><caption>Change over ${esc(range)}, largest first</caption>`
+            + `<thead><tr><th>Series</th><th>Trend</th><th title="Change over the whole time range divided by the year-to-year spread (standard deviation of the annual means)">vs. year-to-year spread</th><th>Evidence</th><th>Annual means</th></tr></thead>`
+            + `<tbody>${rows}</tbody></table></div>`
+            + `${links ? `<div class="tp-ov-wrap">${links}</div>` : ''}`;
+        host.hidden = false;
+        if (host._html !== html) {
+            host.innerHTML = html;
+            host._html = html;
+        }
     }
 
     // A z-score always with one decimal and its sign: "+9.0", "−2.4".

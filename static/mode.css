@@ -1,0 +1,59 @@
+/* Simple / Scientific display mode (static/mode.js sets html[data-mode]). */
+
+/* ---- The switch at the top of the sidebar ---- */
+.mode-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.mode-switch-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+.mode-seg {
+    display: inline-flex;
+    flex: 1 1 auto;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 2px;
+    background: #f8fafc;
+}
+.mode-seg button {
+    flex: 1 1 0;
+    font: inherit;
+    font-size: 0.82rem;
+    padding: 0.32rem 0.5rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #334155;
+    cursor: pointer;
+}
+.mode-seg button[aria-pressed="true"] {
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+.mode-seg button:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.mode-hint {
+    margin: -0.55rem 0 0;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+html[data-mode="simple"] .mode-hint-scientific,
+html[data-mode="scientific"] .mode-hint-simple { display: none; }
+
+/* ---- Which view shows ---- */
+
+/* Simple: one widget per variable (static/plots/simple.js). Scientific: the full plot panel
+   with time frames, tests, events, change over time and correlations. */
+html[data-mode="simple"] .plot-card,
+html[data-mode="simple"] .task-output,
+html[data-mode="scientific"] .simple-card { display: none; }
+
+/* Sidebar: the interval length stays at its default (1 day) in simple mode. */
+html[data-mode="simple"] .field-group-advanced { display: none; }

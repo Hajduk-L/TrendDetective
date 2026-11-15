@@ -127,5 +127,30 @@ class RegionOutlineTest(unittest.TestCase):
             self.assertGreaterEqual(len(ring), 4)
 
 
+class RegionVariablesTest(unittest.TestCase):
+    """Regions carry the variables counted in advance, so a click shows them at once."""
+
+    def setUp(self):
+        self._saved = area_analysis._variables
+        area_analysis._variables = {
+            "period": ["2015-01-01", "2024-12-31"],
+            "regions": {"bavaria": {"temperature": 40, "wind_speed": 12}},
+        }
+
+    def tearDown(self):
+        area_analysis._variables = self._saved
+
+    def test_listed_regions_include_variables(self):
+        regions = {r["id"]: r for r in area_analysis.list_regions()}
+        self.assertEqual(regions["bavaria"]["variables"], {"temperature": 40, "wind_speed": 12})
+        self.assertEqual(regions["bavaria"]["variables_period"], ["2015-01-01", "2024-12-31"])
+        self.assertIn("2 variables with data", regions["bavaria"]["note"])
+        self.assertNotIn("variables", regions["boston"])
+
+    def test_filtered_regions_keep_variables(self):
+        regions = {r["id"]: r for r in area_analysis.list_regions(["temperature"])}
+        self.assertIn("variables", regions["bavaria"])
+
+
 if __name__ == "__main__":
     unittest.main()

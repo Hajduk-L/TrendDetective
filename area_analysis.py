@@ -188,6 +188,35 @@ def region_outlines() -> dict[str, Any]:
     return _outlines
 
 
+VARIABLES_PATH: Path = Path(__file__).resolve().parent / "data" / "region_variables.json"
+"""Station count per region and variable, written by ``python region_variables.py``."""
+
+_variables: dict[str, Any] | None = None
+
+
+def region_variables() -> dict[str, Any]:
+    """``{"period": [...], "regions": {region id: {topic: stations}}}``; empty if missing."""
+    global _variables
+    if _variables is None:
+        try:
+            data = json.loads(VARIABLES_PATH.read_text(encoding="utf-8"))
+            _variables = data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            _variables = {}
+    return _variables
+
+
+def _with_variables(result: dict[str, Any], region: Region) -> dict[str, Any]:
+    """Add the variables the region has data for, so a click shows them without a request."""
+    data = region_variables()
+    known = data.get("regions", {}).get(region.id)
+    if isinstance(known, dict):
+        result["variables"] = known
+        result["variables_period"] = data.get("period")
+        result["note"] = f"{result.get('note', '')} · {len(known)} variables with data, click to see them"
+    return result
+
+
 def _with_outline(result: dict[str, Any], region: Region, topics: list[str]) -> dict[str, Any]:
     """Add the outline of the stations of the first selected topic that has one.
 
@@ -220,7 +249,7 @@ def _region_for_topics(region: Region, topics: list[str]) -> dict[str, Any] | No
         return None
     result = region.to_dict()
     result["note"] = " · ".join(usable)
-    return _with_outline(result, region, topics)
+    return _with_variables(_with_outline(result, region, topics), region)
 
 
 def list_regions(topics: list[str] | None = None) -> list[dict[str, Any]]:
@@ -231,7 +260,7 @@ def list_regions(topics: list[str] | None = None) -> list[dict[str, Any]]:
         those topics; without topics every region is listed.
     """
     if not topics:
-        return [_with_outline(region.to_dict(), region, []) for region in REGIONS]
+        return [_with_variables(_with_outline(region.to_dict(), region, []), region) for region in REGIONS]
     listed = (_region_for_topics(region, topics) for region in REGIONS)
     return [region for region in listed if region is not None]
 

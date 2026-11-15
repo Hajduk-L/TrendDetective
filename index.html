@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="/static/plots/plots.css">
     <link rel="stylesheet" href="/static/plots/evolution.css">
     <link rel="stylesheet" href="/static/plots/compare.css">
+    <link rel="stylesheet" href="/static/plots/simple.css">
+    <link rel="stylesheet" href="/static/mode.css">
+    <script src="/static/mode.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -241,6 +244,9 @@
             font-size: 0.95rem;
             color: #334155;
         }
+        .task-output > summary { cursor: pointer; list-style-position: inside; }
+        .task-output > summary h3 { display: inline; margin: 0; }
+        .task-output[open] > summary { margin-bottom: 0.75rem; }
         .viz-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -464,6 +470,29 @@
         .apply-status { font-size: 0.78rem; color: #64748b; line-height: 1.35; }
         .apply-status strong { color: #b45309; font-weight: 600; }
         .top-bar { gap: 0.6rem; flex-wrap: wrap; }
+
+        /* Variables with data in the selected region */
+        .area-vars {
+            border: 1px solid #dbeafe; background: #f8fbff; border-radius: 8px;
+            padding: 0.55rem 0.65rem; font-size: 0.8rem; color: #334155;
+        }
+        .area-vars[hidden] { display: none; }
+        .area-vars-head { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.2rem; }
+        .area-vars-head strong { color: #0f172a; font-weight: 600; }
+        .area-vars-sub { font-size: 0.72rem; color: #64748b; margin: 0 0 0.4rem; }
+        .area-vars-warn { font-size: 0.74rem; color: #b45309; margin: 0 0 0.4rem; }
+        .area-vars-list { display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 9.5rem; overflow-y: auto; }
+        .area-var {
+            font: inherit; font-size: 0.74rem; line-height: 1.2; cursor: pointer;
+            border: 1px solid #cbd5e1; background: #fff; color: #1e293b;
+            border-radius: 999px; padding: 0.18rem 0.55rem;
+        }
+        .area-var:hover { border-color: #2563eb; }
+        .area-var[aria-pressed="true"] { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .area-var .n { opacity: 0.65; margin-left: 0.25rem; font-variant-numeric: tabular-nums; }
+        .topic-item.not-in-area .topic-name { color: #94a3b8; }
+        .topic-item .in-area { color: #15803d; }
+        .topic-item .not-area { color: #b45309; }
 
         /* Grouped topic list */
         .topic-item .topic-text { display: flex; flex-direction: column; min-width: 0; }
@@ -715,11 +744,27 @@
 <body>
     <!-- Left Sidebar -->
     <aside class="sidebar">
+        <!-- Simple / Scientific display mode (static/mode.js, static/mode.css) -->
+        <div class="mode-switch">
+            <span class="mode-switch-label" id="mode-switch-label">Mode</span>
+            <div class="mode-seg" role="group" aria-labelledby="mode-switch-label">
+                <button type="button" data-mode-set="simple" aria-pressed="true">Simple</button>
+                <button type="button" data-mode-set="scientific" aria-pressed="false">Scientific</button>
+            </div>
+        </div>
+        <p class="mode-hint">
+            <span class="mode-hint-simple">Plain-language results. Switch to Scientific for statistics, tests and correlations.</span>
+            <span class="mode-hint-scientific">All statistics: confidence intervals, p-values, running trends, correlations.</span>
+        </p>
+
         <!-- Top-left Apply button (disabled until >=1 topic, valid DD.MM.YYYY timeintervall, and interval > 0) -->
         <div class="top-bar">
-            <button id="apply" class="py-button" type="button" disabled>Apply</button>
+            <button id="apply" class="py-button" type="button" disabled>Analyze</button>
             <span id="apply-status" class="apply-status" aria-live="polite"></span>
         </div>
+
+        <!-- Variables with data in the selected region (preloaded, data/region_variables.json) -->
+        <section id="area-vars" class="area-vars" hidden aria-live="polite"></section>
 
         <!-- Timeintervall brackets [DD.MM.YYYY] - [DD.MM.YYYY] above the search bar -->
         <div class="field-group">
@@ -747,7 +792,7 @@
         </div>
 
         <!-- Two-part Interval length: float (> 0) and unit (Day, Month, Year) -->
-        <div class="field-group">
+        <div class="field-group field-group-advanced">
             <label class="field-label" for="interval-value">Interval Length</label>
             <div class="interval-row">
                 <input
@@ -774,15 +819,15 @@
                 id="topic-search"
                 class="search-input"
                 type="search"
-                placeholder="Search topics..."
-                aria-label="Search topics"
+                placeholder="Search variables..."
+                aria-label="Search variables"
             >
         </div>
 
         <!-- Topics Dropdown Menu (starts closed) -->
         <div id="topics-dropdown" class="dropdown open">
             <button id="dropdown-toggle-btn" class="dropdown-toggle" type="button" aria-expanded="true">
-                <span>Topics</span>
+                <span>Variables</span>
                 <span id="topics-count" class="dropdown-count"></span>
                 <span class="dropdown-arrow">&#9662;</span>
             </button>
@@ -820,17 +865,23 @@
             </div>
         </div>
 
+        <!-- Simple mode: one widget per variable (static/plots/simple.js) -->
+        <section class="status-card simple-card" aria-label="Results at a glance">
+            <div id="simple-panel"></div>
+        </section>
+
         <!-- Plot panel: timeline, years overlaid, period across years (static/plots/plots.js) -->
-        <section class="status-card" aria-label="Plot of the requested data">
+        <section class="status-card plot-card" aria-label="Plot of the requested data">
             <div id="plot-panel"></div>
         </section>
 
-        <div class="status-card">
-            <h3>Request Visualization &amp; Task Output (<code>src/task.py</code>)</h3>
+        <!-- Raw task output per series; the same figures are in the plot panel's data summaries. -->
+        <details class="status-card task-output">
+            <summary><h3>Raw task output per series (<code>src/task.py</code>)</h3></summary>
             <div id="visualization-container" class="viz-grid">
-                <div class="empty-message">Select topics, fill the timeintervall, and click "Apply" to run tasks and visualize results.</div>
+                <div class="empty-message">Select variables, fill the timeintervall, and click "Analyze" to run tasks and visualize results.</div>
             </div>
-        </div>
+        </details>
     </main>
 
     <script>
@@ -984,8 +1035,10 @@
     <script src="/static/plots/plots.js"></script>
     <script src="/static/plots/evolution.js"></script>
     <script src="/static/plots/compare.js"></script>
+    <script src="/static/plots/simple.js"></script>
     <script>
         if (window.TrendPlots) window.TrendPlots.mount(document.getElementById('plot-panel'));
+        if (window.TrendSimple) window.TrendSimple.mount(document.getElementById('simple-panel'));
     </script>
     <script type="module" src="/static/map-widget/map-widget.js"></script>
     <script type="module">
@@ -1019,6 +1072,55 @@
         // map's Areas button). Reloaded on every topic change; only the newest answer is
         // applied, so a slow reply for an earlier selection cannot overwrite it.
         let regionsRequest = 0;
+        // Every region the server listed so far (id -> region), with its preloaded variables.
+        const regionsById = new Map();
+
+        // {variable: stations} of the selected region, or null for a point / unknown region.
+        function selectedRegionVariables() {
+            const area = window.getSelectedArea && window.getSelectedArea();
+            const p = (area && area.properties) || {};
+            if (p.shape !== 'region') return null;
+            const region = regionsById.get(String(p.regionId));
+            return region && region.variables ? region.variables : null;
+        }
+
+        // Clicking a region shows at once which variables have data there (counted in
+        // advance by region_variables.py), so nobody has to run an analysis to find out.
+        function renderAreaVariables() {
+            const box = document.getElementById('area-vars');
+            if (!box) return;
+            const vars = selectedRegionVariables();
+            if (!vars) {
+                box.hidden = true;
+                box.innerHTML = '';
+                return;
+            }
+            const area = window.getSelectedArea();
+            const region = regionsById.get(String(area.properties.regionId)) || {};
+            const period = Array.isArray(region.variables_period) ? region.variables_period.map((d) => String(d).slice(0, 4)).join('–') : '';
+            const keys = Object.keys(vars).sort((a, b) => (vars[b] - vars[a]) || topicLabel(a).localeCompare(topicLabel(b)));
+            const missing = Object.keys(selectedTopics).filter((t) => selectedTopics[t] && !(t in vars));
+            box.innerHTML = `
+                <div class="area-vars-head"><strong>Data in ${escapeText(region.name || describeArea(area))}</strong>
+                    <span>${keys.length} variable${keys.length === 1 ? '' : 's'}</span></div>
+                <p class="area-vars-sub">Number = measuring stations${period ? ` (${escapeText(period)})` : ''}. Click to select.</p>
+                ${missing.length ? `<p class="area-vars-warn">No data here for: ${missing.map((t) => escapeText(topicLabel(t))).join(', ')}</p>` : ''}
+                <div class="area-vars-list">${keys.map((t) => `<button type="button" class="area-var" data-var="${escapeText(t)}" aria-pressed="${Boolean(selectedTopics[t])}" title="${escapeText(t)}">${escapeText(topicLabel(t))}<span class="n">${vars[t]}</span></button>`).join('')}</div>`;
+            box.hidden = false;
+        }
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest && event.target.closest('#area-vars .area-var');
+            if (!button) return;
+            const topic = button.dataset.var;
+            selectedTopics[topic] = !selectedTopics[topic];
+            renderTopics(document.getElementById('topic-search').value);
+            updateApplyButtonState();
+            refreshRegions();
+        });
+        window.addEventListener('trend:area', () => {
+            renderAreaVariables();
+            if (allTopics.length) renderTopics(document.getElementById('topic-search').value);
+        });
         function refreshRegions() {
             // The map is mounted by a module script, which runs after this one.
             if (!window.trendMap) return;
@@ -1028,7 +1130,9 @@
             fetch(`${API_BASE}/api/regions${query}`)
                 .then((r) => (r.ok ? r.json() : { regions: [] }))
                 .then((d) => {
+                    for (const region of d.regions || []) regionsById.set(region.id, region);
                     if (request === regionsRequest) window.trendMap.setRegions(d.regions || []);
+                    renderAreaVariables();
                 })
                 .catch(() => {});
         }
@@ -1124,7 +1228,7 @@
             // Say what is still missing instead of a silently disabled button.
             const missing = [];
             if (!hasArea) missing.push('pick a point on the map or a region (Areas)');
-            if (!hasSelectedTopic) missing.push('choose a topic');
+            if (!hasSelectedTopic) missing.push('choose a variable');
             if (!startValid || !endValid) missing.push('enter a valid time range');
             if (!validInterval) missing.push('enter an interval length');
             const status = document.getElementById('apply-status');
@@ -1132,7 +1236,7 @@
                 const count = Object.values(selectedTopics).filter(Boolean).length;
                 status.innerHTML = missing.length
                     ? `<strong>To start:</strong> ${missing.map(escapeText).join(', ')}.`
-                    : `${count} topic${count === 1 ? '' : 's'} at ${escapeText(describeArea(window.getSelectedArea()))}`;
+                    : `${count} variable${count === 1 ? '' : 's'} at ${escapeText(describeArea(window.getSelectedArea()))}`;
             }
             const counter = document.getElementById('topics-count');
             if (counter) {
@@ -1251,7 +1355,7 @@
             if (matchingTopics.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'empty-message';
-                empty.textContent = 'No matching topics found.';
+                empty.textContent = 'No matching variables found.';
                 listContainer.appendChild(empty);
                 return;
             }
@@ -1264,6 +1368,7 @@
             }
             const order = [...groups.keys()].sort((a, b) => GROUP_ORDER.indexOf(a) - GROUP_ORDER.indexOf(b));
             const searching = normalizedFilter.length > 0;
+            const areaVars = selectedRegionVariables();
 
             const tools = document.createElement('div');
             tools.className = 'topics-tools';
@@ -1332,6 +1437,7 @@
                         updateCount();
                         updateApplyButtonState();
                         refreshRegions();
+                        renderAreaVariables();
                     });
 
                     const text = document.createElement('span');
@@ -1350,6 +1456,20 @@
                     const meta = document.createElement('span');
                     meta.className = 'topic-meta';
                     meta.textContent = d.sources && d.sources.length ? d.sources.join(' · ') : topic;
+                    if (areaVars) {
+                        const mark = document.createElement('span');
+                        if (topic in areaVars) {
+                            mark.className = 'in-area';
+                            mark.textContent = ` · ${areaVars[topic]} stations here`;
+                        } else {
+                            label.classList.add('not-in-area');
+                            if (checkbox.checked) {
+                                mark.className = 'not-area';
+                                mark.textContent = ' · no data in this area';
+                            }
+                        }
+                        meta.appendChild(mark);
+                    }
                     text.append(topicName, meta);
 
                     label.appendChild(checkbox);
@@ -1625,7 +1745,7 @@
 
             const entries = Object.entries(visualization.topics);
             if (entries.length === 0) {
-                container.innerHTML = '<div class="empty-message">No topics selected.</div>';
+                container.innerHTML = '<div class="empty-message">No variables selected.</div>';
                 return;
             }
 
@@ -1819,8 +1939,8 @@
             if (!data.codes || data.codes.length === 0) {
                 box.classList.add('coverage-muted');
                 box.textContent = data.scope === 'region'
-                    ? `No station in ${data.place} has ever reported this topic.`
-                    : `No station within about ${data.radius_km} km has ever reported this topic. Try another place or topic.`;
+                    ? `No station in ${data.place} has ever reported this variable.`
+                    : `No station within about ${data.radius_km} km has ever reported this variable. Try another place or variable.`;
                 return;
             }
             const reqText = data.requested
@@ -1940,6 +2060,7 @@
                     window.trendMap.setLoading(true);
                 }
                 if (window.TrendPlots) window.TrendPlots.setLoading(true);
+                if (window.TrendSimple) window.TrendSimple.setLoading(true);
 
                 const payload = {
                     topics: selectedTopics,
@@ -1983,12 +2104,13 @@
                         shown = msg.visualization;
                         renderVisualization(shown, { partial: !finished, pending });
                         if (window.TrendPlots) window.TrendPlots.setData(shown, ur);
+                        if (window.TrendSimple) window.TrendSimple.setData(shown, ur);
                     } else if (msg.type === 'error') {
                         throw new Error(msg.error);
                     }
                 });
                 if (!finished && run === applyRun) {
-                    throw new Error('The connection closed before all topics were loaded.');
+                    throw new Error('The connection closed before all variables were loaded.');
                 }
             } catch (error) {
                 if (run !== applyRun) return; // replaced by a newer 'Apply'
@@ -2008,6 +2130,7 @@
                         window.trendMap.setLoading(false);
                     }
                     if (window.TrendPlots) window.TrendPlots.setLoading(false);
+                    if (window.TrendSimple) window.TrendSimple.setLoading(false);
                 }
             }
         }
