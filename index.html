@@ -471,28 +471,8 @@
         .apply-status strong { color: #b45309; font-weight: 600; }
         .top-bar { gap: 0.6rem; flex-wrap: wrap; }
 
-        /* Variables with data in the selected region */
-        .area-vars {
-            border: 1px solid #dbeafe; background: #f8fbff; border-radius: 8px;
-            padding: 0.55rem 0.65rem; font-size: 0.8rem; color: #334155;
-        }
-        .area-vars[hidden] { display: none; }
-        .area-vars-head { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.2rem; }
-        .area-vars-head strong { color: #0f172a; font-weight: 600; }
-        .area-vars-sub { font-size: 0.72rem; color: #64748b; margin: 0 0 0.4rem; }
-        .area-vars-warn { font-size: 0.74rem; color: #b45309; margin: 0 0 0.4rem; }
-        .area-vars-list { display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 9.5rem; overflow-y: auto; }
-        .area-var {
-            font: inherit; font-size: 0.74rem; line-height: 1.2; cursor: pointer;
-            border: 1px solid #cbd5e1; background: #fff; color: #1e293b;
-            border-radius: 999px; padding: 0.18rem 0.55rem;
-        }
-        .area-var:hover { border-color: #2563eb; }
-        .area-var[aria-pressed="true"] { background: #2563eb; border-color: #2563eb; color: #fff; }
-        .area-var .n { opacity: 0.65; margin-left: 0.25rem; font-variant-numeric: tabular-nums; }
-        .topic-item.not-in-area .topic-name { color: #94a3b8; }
-        .topic-item .in-area { color: #15803d; }
-        .topic-item .not-area { color: #b45309; }
+        /* Variable without data in the selected region (data/region_variables.json) */
+        .topic-item .no-area-data { color: #dc2626; font-weight: 700; margin-left: 0.3rem; }
 
         /* Grouped topic list */
         .topic-item .topic-text { display: flex; flex-direction: column; min-width: 0; }
@@ -531,8 +511,7 @@
             letter-spacing: 0.08em;
             color: #334155;
         }
-        .examples-head p { margin: 0; font-size: 0.76rem; color: #64748b; flex: 1 1 16rem; }
-        .examples-toggle { font: inherit; font-size: 0.76rem; background: none; border: none; color: #475569; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+        .examples-toggle { margin-left: auto; font: inherit; font-size: 0.76rem; background: none; border: none; color: #475569; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
         .examples-card.collapsed .examples-list { display: none; }
         .examples-list {
             margin-top: 0.45rem;
@@ -746,25 +725,17 @@
     <aside class="sidebar">
         <!-- Simple / Scientific display mode (static/mode.js, static/mode.css) -->
         <div class="mode-switch">
-            <span class="mode-switch-label" id="mode-switch-label">Mode</span>
-            <div class="mode-seg" role="group" aria-labelledby="mode-switch-label">
-                <button type="button" data-mode-set="simple" aria-pressed="true">Simple</button>
-                <button type="button" data-mode-set="scientific" aria-pressed="false">Scientific</button>
+            <div class="mode-seg" role="group" aria-label="Display mode">
+                <button type="button" data-mode-set="simple" aria-pressed="true" title="Trend per variable in plain words">Simple</button>
+                <button type="button" data-mode-set="scientific" aria-pressed="false" title="All plots, tests, confidence intervals and correlations">Scientific</button>
             </div>
         </div>
-        <p class="mode-hint">
-            <span class="mode-hint-simple">Plain-language results. Switch to Scientific for statistics, tests and correlations.</span>
-            <span class="mode-hint-scientific">All statistics: confidence intervals, p-values, running trends, correlations.</span>
-        </p>
 
         <!-- Top-left Apply button (disabled until >=1 topic, valid DD.MM.YYYY timeintervall, and interval > 0) -->
         <div class="top-bar">
             <button id="apply" class="py-button" type="button" disabled>Analyze</button>
             <span id="apply-status" class="apply-status" aria-live="polite"></span>
         </div>
-
-        <!-- Variables with data in the selected region (preloaded, data/region_variables.json) -->
-        <section id="area-vars" class="area-vars" hidden aria-live="polite"></section>
 
         <!-- Timeintervall brackets [DD.MM.YYYY] - [DD.MM.YYYY] above the search bar -->
         <div class="field-group">
@@ -840,8 +811,7 @@
     <main class="main-content">
         <section class="status-card examples-card" id="examples-card" aria-label="Suggested case studies">
             <div class="examples-head">
-                <h3>Suggested case studies</h3>
-                <p>Documented extremes. Selecting one loads ten years of daily data at the site and zooms the plot to the event.</p>
+                <h3 title="Documented extremes. Selecting one loads ten years of daily data at the site and zooms the plot to the event.">Suggested case studies</h3>
                 <button type="button" class="examples-toggle" id="examples-toggle" aria-expanded="true">Hide</button>
             </div>
             <div class="examples-list" id="examples-list"></div>
@@ -877,10 +847,8 @@
 
         <!-- Raw task output per series; the same figures are in the plot panel's data summaries. -->
         <details class="status-card task-output">
-            <summary><h3>Raw task output per series (<code>src/task.py</code>)</h3></summary>
-            <div id="visualization-container" class="viz-grid">
-                <div class="empty-message">Select variables, fill the timeintervall, and click "Analyze" to run tasks and visualize results.</div>
-            </div>
+            <summary><h3>Raw output</h3></summary>
+            <div id="visualization-container" class="viz-grid"></div>
         </details>
     </main>
 
@@ -1084,41 +1052,9 @@
             return region && region.variables ? region.variables : null;
         }
 
-        // Clicking a region shows at once which variables have data there (counted in
-        // advance by region_variables.py), so nobody has to run an analysis to find out.
-        function renderAreaVariables() {
-            const box = document.getElementById('area-vars');
-            if (!box) return;
-            const vars = selectedRegionVariables();
-            if (!vars) {
-                box.hidden = true;
-                box.innerHTML = '';
-                return;
-            }
-            const area = window.getSelectedArea();
-            const region = regionsById.get(String(area.properties.regionId)) || {};
-            const period = Array.isArray(region.variables_period) ? region.variables_period.map((d) => String(d).slice(0, 4)).join('–') : '';
-            const keys = Object.keys(vars).sort((a, b) => (vars[b] - vars[a]) || topicLabel(a).localeCompare(topicLabel(b)));
-            const missing = Object.keys(selectedTopics).filter((t) => selectedTopics[t] && !(t in vars));
-            box.innerHTML = `
-                <div class="area-vars-head"><strong>Data in ${escapeText(region.name || describeArea(area))}</strong>
-                    <span>${keys.length} variable${keys.length === 1 ? '' : 's'}</span></div>
-                <p class="area-vars-sub">Number = measuring stations${period ? ` (${escapeText(period)})` : ''}. Click to select.</p>
-                ${missing.length ? `<p class="area-vars-warn">No data here for: ${missing.map((t) => escapeText(topicLabel(t))).join(', ')}</p>` : ''}
-                <div class="area-vars-list">${keys.map((t) => `<button type="button" class="area-var" data-var="${escapeText(t)}" aria-pressed="${Boolean(selectedTopics[t])}" title="${escapeText(t)}">${escapeText(topicLabel(t))}<span class="n">${vars[t]}</span></button>`).join('')}</div>`;
-            box.hidden = false;
-        }
-        document.addEventListener('click', (event) => {
-            const button = event.target.closest && event.target.closest('#area-vars .area-var');
-            if (!button) return;
-            const topic = button.dataset.var;
-            selectedTopics[topic] = !selectedTopics[topic];
-            renderTopics(document.getElementById('topic-search').value);
-            updateApplyButtonState();
-            refreshRegions();
-        });
+        // A region marks the variables without data there (counted in advance by
+        // region_variables.py), so nobody has to run an analysis to find out.
         window.addEventListener('trend:area', () => {
-            renderAreaVariables();
             if (allTopics.length) renderTopics(document.getElementById('topic-search').value);
         });
         function refreshRegions() {
@@ -1132,7 +1068,7 @@
                 .then((d) => {
                     for (const region of d.regions || []) regionsById.set(region.id, region);
                     if (request === regionsRequest) window.trendMap.setRegions(d.regions || []);
-                    renderAreaVariables();
+                    if (allTopics.length) renderTopics(document.getElementById('topic-search').value);
                 })
                 .catch(() => {});
         }
@@ -1437,7 +1373,6 @@
                         updateCount();
                         updateApplyButtonState();
                         refreshRegions();
-                        renderAreaVariables();
                     });
 
                     const text = document.createElement('span');
@@ -1445,6 +1380,14 @@
                     const topicName = document.createElement('span');
                     topicName.className = 'topic-name';
                     topicName.textContent = topicLabel(topic).replace(/ \((ERA5 model|VIIRS satellite)\)$/, '');
+                    if (areaVars && !(topic in areaVars)) {
+                        const x = document.createElement('span');
+                        x.className = 'no-area-data';
+                        x.textContent = '✕';
+                        x.title = 'No data for this variable in the selected area';
+                        x.setAttribute('aria-label', 'No data in the selected area');
+                        topicName.appendChild(x);
+                    }
                     const badge = KIND_BADGE[d.kind] || (d.hourly ? ['hourly', 'Hourly reports: large downloads for long time ranges'] : null);
                     if (badge) {
                         const b = document.createElement('span');
@@ -1456,20 +1399,6 @@
                     const meta = document.createElement('span');
                     meta.className = 'topic-meta';
                     meta.textContent = d.sources && d.sources.length ? d.sources.join(' · ') : topic;
-                    if (areaVars) {
-                        const mark = document.createElement('span');
-                        if (topic in areaVars) {
-                            mark.className = 'in-area';
-                            mark.textContent = ` · ${areaVars[topic]} stations here`;
-                        } else {
-                            label.classList.add('not-in-area');
-                            if (checkbox.checked) {
-                                mark.className = 'not-area';
-                                mark.textContent = ' · no data in this area';
-                            }
-                        }
-                        meta.appendChild(mark);
-                    }
                     text.append(topicName, meta);
 
                     label.appendChild(checkbox);

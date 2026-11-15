@@ -213,7 +213,7 @@ def _with_variables(result: dict[str, Any], region: Region) -> dict[str, Any]:
     if isinstance(known, dict):
         result["variables"] = known
         result["variables_period"] = data.get("period")
-        result["note"] = f"{result.get('note', '')} · {len(known)} variables with data, click to see them"
+        result["note"] = f"{result.get('note', '')} · {len(known)} variables with data"
     return result
 
 

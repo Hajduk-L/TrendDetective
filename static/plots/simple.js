@@ -1,34 +1,65 @@
 /*
- * Simple mode: one widget per variable (static/mode.js switches modes).
+ * Simple mode: an automatic dashboard of widgets (static/mode.js switches modes).
  *
- * Each widget answers "is it changing?" in plain words for one series:
- *   - the change every 10 years, with a certainty label (from the p-value)
- *   - a small chart: every complete year as a bar above / below its average,
- *     with the trend line
- *   - one sentence about the warmest / coldest (wettest / driest ...) year
- *   - average, highest and lowest single value with their dates
+ * In Scientific mode the user picks time frames and methods. Here the software
+ * does that itself: for every variable it runs all analyses, keeps only the
+ * widgets that have something to say and puts the strongest result first.
  *
- * The yearly averages are computed here from the raw values the Apply stream
- * delivers; the trend comes from POST /api/evolution (the same statistics the
- * scientific view shows). index.html calls setData / setLoading next to the
- * plot panel's. "Details" switches to Scientific mode and opens that series.
+ *   - Key findings: the most prominent results of all variables, ranked
+ *   - per variable, one widget each, ordered by the strength of their signal:
+ *       Trend         one value per year with trend line and certainty
+ *       Whole record  every value with a running one-year mean and notable events
+ *       Seasons       the trend of every season; the one changing most is marked
+ *       Typical year  each month in the first years vs. the last years
+ *       Sudden shift  a step change of the level (only when it is clear)
+ *       Decades       the mean of every decade
+ *       Extremes      highest / lowest values and the most notable events
+ *   - How the variables relate (two or more variables): the strongest links
+ *
+ * Every widget has a "How this was worked out" fold-out with the numbers, so
+ * details do not need Scientific mode. No sentences repeat what a chart shows;
+ * explanations sit in title attributes.
+ *
+ * Statistics come from the server, the same as in the scientific view:
+ * POST /api/evolution (OLS + Mann-Kendall trend, decades), POST /api/analyze
+ * (Pettitt change point) and POST /api/correlate. index.html calls
+ * setData / setLoading next to the plot panel's. #simple-panel stays empty
+ * while nothing is analysed, so mode.css hides its card.
  */
 (function () {
     'use strict';
 
-    const API = '/api/evolution';
     const INTERVAL_DAYS = { Day: 1, Month: 30.436875, Year: 365.2425 };
+    const DAY_MS = 86400000;
     const MIN_YEARS = 3;
+    const TREND_YEARS = 8;
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const MONTH_START = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+    const SEASONS = [
+        { id: 'djf', months: [12, 1, 2], north: 'Winter', south: 'Summer', span: 'Dec–Feb' },
+        { id: 'mam', months: [3, 4, 5], north: 'Spring', south: 'Autumn', span: 'Mar–May' },
+        { id: 'jja', months: [6, 7, 8], north: 'Summer', south: 'Winter', span: 'Jun–Aug' },
+        { id: 'son', months: [9, 10, 11], north: 'Autumn', south: 'Spring', span: 'Sep–Nov' },
+    ];
 
     const PALETTE = {
         warm: { up: '#cb181d', down: '#2171b5', upW: 'warmer', downW: 'colder', hiW: 'warmest', loW: 'coldest' },
         wet: { up: '#35978f', down: '#bf812d', upW: 'wetter', downW: 'drier', hiW: 'wettest', loW: 'driest' },
         neutral: { up: '#6250d6', down: '#8f6a00', upW: 'higher', downW: 'lower', hiW: 'highest', loW: 'lowest' },
     };
+    const LINE = '#2a78d6';
+    const LIGHT = 'rgba(42, 120, 214, 0.28)';
+    const EARLY = '#9aa5b1';
+    const ACCENT = '#eb6834';
+    const REF = '#52514e';
 
-    const state = { host: null, viz: null, request: null, loading: false };
-    const cache = new Map(); // request body -> { pending } | { data } | { error }
+    const state = { host: null, viz: null, request: null, loading: false, raf: 0, html: '' };
+    const cache = new Map(); // request key -> { pending } | { data } | { error }
+    const prepared = new WeakMap(); // info -> { stepDays, s }
+    let observer = null;
 
     // ----------------------------------------------------------------- helpers
 
@@ -44,9 +75,27 @@
         return typeof v === 'number' && Number.isFinite(v) ? v : null;
     }
 
+    function mean(vs) {
+        return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+    }
+
+    function sd(vs) {
+        if (vs.length < 2) return null;
+        const m = mean(vs);
+        return Math.sqrt(vs.reduce((a, v) => a + (v - m) ** 2, 0) / (vs.length - 1));
+    }
+
     function label(key) {
         const k = K();
         return k && k.topicLabel ? k.topicLabel(key) : key;
+    }
+
+    function cap(w) {
+        return w.charAt(0).toUpperCase() + w.slice(1);
+    }
+
+    function slug(s) {
+        return String(s).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
     }
 
     // One decimal from 1 up (records read as on the station sheet: 112.8 mm), more below.
@@ -63,8 +112,16 @@
         return `${sign}${s}${unit ? (unit.startsWith('%') ? unit : ` ${unit}`) : ''}`;
     }
 
-    function parseDate(label) {
-        const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(label || ''));
+    // Chance as a percentage, two significant digits without exponent notation (1 → "100 %").
+    function pct(p) {
+        const v = p * 100;
+        if (v >= 10) return `${Math.round(v)} %`;
+        if (v < 0.1) return '< 0.1 %';
+        return `${Number(v.toPrecision(2))} %`;
+    }
+
+    function parseDate(text) {
+        const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(text || ''));
         return m ? { d: Number(m[1]), m: Number(m[2]), y: Number(m[3]) } : null;
     }
 
@@ -73,6 +130,23 @@
         if (stepDays >= 300) return String(dt.y);
         if (stepDays >= 20) return `${MONTHS[dt.m - 1]} ${dt.y}`;
         return `${dt.d} ${MONTHS[dt.m - 1]} ${dt.y}`;
+    }
+
+    function timeText(t, stepDays) {
+        const d = new Date(t);
+        return dateText({ y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() }, stepDays);
+    }
+
+    function isoText(iso, stepDays) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+        return m ? dateText({ y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) }, stepDays) : '';
+    }
+
+    function pWords(p) {
+        if (p === null) return '';
+        if (p < 0.01) return 'very unlikely to be chance';
+        if (p < 0.05) return 'unlikely to be chance';
+        return 'could be chance';
     }
 
     function kindOf(key, unit) {
@@ -95,12 +169,23 @@
         return '';
     }
 
-    // ------------------------------------------------------------ yearly values
+    // Latitude of the series, if known (season names flip south of the equator).
+    function latitudeOf(info) {
+        const st = info.station || {};
+        const lat = num(Number(st.latitude ?? st.lat));
+        if (lat !== null) return lat;
+        if (info.region && Array.isArray(info.region.bbox)) return (info.region.bbox[1] + info.region.bbox[3]) / 2;
+        const area = window.getSelectedArea && window.getSelectedArea();
+        const c = area && area.geometry && area.geometry.type === 'Point' ? area.geometry.coordinates : null;
+        return Array.isArray(c) ? Number(c[1]) : null;
+    }
 
-    const MONTH_START = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-    const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    function seasonName(season, lat) {
+        return `${lat !== null && lat < 0 ? season.south : season.north} (${season.span})`;
+    }
 
-    // Day of the year 0..364 (29 Feb shares 28 Feb's slot), as in plots.js.
+    // ------------------------------------------------------------ preparation
+
     function dayOfYear(month, day) {
         if (month === 2 && day === 29) return MONTH_START[1] + 27;
         return MONTH_START[month - 1] + Math.min(day, MONTH_DAYS[month - 1]) - 1;
@@ -109,16 +194,38 @@
     // The interval's midpoint decides its year and time of year (as in plots.js).
     function midpoint(dt, stepDays) {
         if (stepDays <= 1) return dt;
-        const t = Date.UTC(dt.y, dt.m - 1, dt.d) + (stepDays * 86400000) / 2;
-        const d = new Date(t);
+        const d = new Date(Date.UTC(dt.y, dt.m - 1, dt.d) + (stepDays * DAY_MS) / 2);
         return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() };
     }
 
-    // One value per year, computed like the scientific view's annual mean: the mean
-    // normal of the year plus the year's mean departure from the normal of each
-    // calendar day (or month), so missing days do not bias a year. A year counts
-    // with at least half of its values. Daily precipitation is shown as the yearly total.
-    function summarise(key, info, stepDays) {
+    // One value per (season) year, like the scientific view's annual mean: the mean normal
+    // of the selected values plus their mean departure from the normal of each calendar
+    // day (or month), so missing days do not bias a year. A year needs half of its values.
+    function aggregate(pts, normals, select, yearOf, expected, scale) {
+        const chosen = pts.filter(select);
+        if (!chosen.length) return [];
+        const groups = new Map();
+        for (const p of chosen) {
+            const y = yearOf(p);
+            if (!groups.has(y)) groups.set(y, []);
+            groups.get(y).push(p);
+        }
+        const periodNormal = normals ? mean(chosen.map((p) => normals.get(p.bucket))) : null;
+        const need = Math.max(1, Math.floor(expected * 0.5));
+        return [...groups.keys()].sort((a, b) => a - b)
+            .filter((y) => groups.get(y).length >= need)
+            .map((y) => {
+                const ps = groups.get(y);
+                const value = normals
+                    ? periodNormal + mean(ps.map((p) => p.v - normals.get(p.bucket)))
+                    : mean(ps.map((p) => p.v));
+                return { year: y, value: value * scale };
+            });
+    }
+
+    function prepare(key, info, stepDays) {
+        const hit = prepared.get(info);
+        if (hit && hit.stepDays === stepDays) return hit.s;
         const labels = Array.isArray(info.labels) ? info.labels : [];
         const values = Array.isArray(info.values) ? info.values : [];
         const unit = info.unit || '';
@@ -131,76 +238,546 @@
             const dt = parseDate(l);
             if (num(v) === null || !dt) return;
             const mid = midpoint(dt, stepDays);
-            pts.push({ v, year: mid.y, bucket: monthly ? mid.m - 1 : dayOfYear(mid.m, mid.d) });
+            pts.push({ v, y: mid.y, m: mid.m, dt, t: Date.UTC(dt.y, dt.m - 1, dt.d) + (stepDays * DAY_MS) / 2, bucket: monthly ? mid.m - 1 : dayOfYear(mid.m, mid.d) });
             if (!hi || v > hi.v) hi = { v, dt };
             if (!lo || v < lo.v) lo = { v, dt };
         });
-        const n = pts.length;
-        const mean = n ? pts.reduce((a, p) => a + p.v, 0) / n : null;
-        const yearSet = [...new Set(pts.map((p) => p.year))].sort((a, b) => a - b);
         const totals = unit === 'mm/day' && stepDays <= 1;
-        const scale = totals ? 365.2425 : 1;
-        let years;
-        if (stepDays >= 300) {
-            years = pts.map((p) => ({ year: p.year, value: p.v * scale }));
-        } else {
-            const normals = new Map();
-            const useNormals = stepDays <= 62 && yearSet.length >= 2;
-            if (useNormals) {
-                const acc = new Map();
-                for (const p of pts) {
-                    const a = acc.get(p.bucket) || [0, 0];
-                    a[0] += p.v; a[1] += 1;
-                    acc.set(p.bucket, a);
-                }
-                for (const [b, [sum, cnt]] of acc) normals.set(b, sum / cnt);
+        let normals = null;
+        if (stepDays <= 62 && new Set(pts.map((p) => p.y)).size >= 2) {
+            const acc = new Map();
+            for (const p of pts) {
+                const a = acc.get(p.bucket) || [0, 0];
+                a[0] += p.v; a[1] += 1;
+                acc.set(p.bucket, a);
             }
-            const periodNormal = useNormals ? pts.reduce((a, p) => a + normals.get(p.bucket), 0) / n : null;
-            const expected = Math.max(1, Math.round(365 / stepDays));
-            years = yearSet.map((y) => {
-                const ps = pts.filter((p) => p.year === y);
-                const value = useNormals
-                    ? periodNormal + ps.reduce((a, p) => a + (p.v - normals.get(p.bucket)), 0) / ps.length
-                    : ps.reduce((a, p) => a + p.v, 0) / ps.length;
-                return { year: y, value: value * scale, complete: ps.length >= Math.max(1, Math.floor(expected * 0.5)) };
-            }).filter((r) => r.complete);
+            normals = new Map([...acc].map(([b, [sum, n]]) => [b, sum / n]));
         }
-        return {
-            key, info, unit, totals,
+        const years = stepDays >= 300
+            ? pts.map((p) => ({ year: p.y, value: p.v * (totals ? 365.2425 : 1) }))
+            : aggregate(pts, normals, () => true, (p) => p.y, 365 / stepDays, totals ? 365.2425 : 1);
+
+        // Seasons and months need at least monthly values.
+        const seasons = [];
+        if (stepDays <= 31) {
+            for (const season of SEASONS) {
+                const days = season.months.reduce((a, m) => a + MONTH_DAYS[m - 1], 0);
+                seasons.push({
+                    season,
+                    years: aggregate(
+                        pts, normals,
+                        (p) => season.months.includes(p.m),
+                        (p) => (season.id === 'djf' && p.m === 12 ? p.y + 1 : p.y),
+                        days / stepDays, totals ? days : 1,
+                    ),
+                });
+            }
+        }
+
+        const s = {
+            key, info, unit, totals, stepDays, pts, years, seasons, hi, lo,
+            n: pts.length,
+            mean: mean(pts.map((p) => p.v)),
             yearUnit: totals ? 'mm' : unit,
             kind: kindOf(key, unit),
-            years, hi, lo, n, mean,
+            lat: latitudeOf(info),
+            typical: stepDays <= 31 ? typicalYear(pts, years, totals) : null,
         };
+        prepared.set(info, { stepDays, s });
+        return s;
     }
 
-    function evolutionFor(s) {
-        if (s.years.length < MIN_YEARS) return null;
-        const body = JSON.stringify({ years: s.years.map((r) => r.year), values: s.years.map((r) => r.value) });
-        let entry = cache.get(body);
+    // Each month in the first years vs. the last years of the range.
+    function typicalYear(pts, years, totals) {
+        const ys = years.map((r) => r.year);
+        if (ys.length < 6) return null;
+        const k = Math.max(3, Math.min(10, Math.floor(ys.length / 3)));
+        const early = ys.slice(0, k);
+        const late = ys.slice(-k);
+        const monthMeans = (list) => {
+            const set = new Set(list);
+            return MONTH_NAMES.map((_, i) => {
+                const m = mean(pts.filter((p) => p.m === i + 1 && set.has(p.y)).map((p) => p.v));
+                return m === null ? null : m * (totals ? MONTH_DAYS[i] : 1);
+            });
+        };
+        const a = monthMeans(early);
+        const b = monthMeans(late);
+        if (a.filter((v) => v !== null).length < 6) return null;
+        const span = (l) => (l.length > 1 ? `${l[0]}–${l[l.length - 1]}` : String(l[0]));
+        return { early: a, late: b, earlyLabel: span(early), lateLabel: span(late), k };
+    }
+
+    // ---------------------------------------------------------------- requests
+
+    function fetchOnce(url, body) {
+        const text = JSON.stringify(body);
+        const key = `${url} ${text}`;
+        let entry = cache.get(key);
         if (!entry) {
             entry = { pending: true };
-            cache.set(body, entry);
-            fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+            cache.set(key, entry);
+            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text })
                 .then(async (res) => {
                     const data = await res.json().catch(() => ({}));
                     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                    cache.set(body, { data });
+                    cache.set(key, { data });
                 })
-                .catch((err) => cache.set(body, { error: String((err && err.message) || err) }))
-                .finally(render);
+                .catch((err) => cache.set(key, { error: String((err && err.message) || err) }))
+                .finally(scheduleRender);
         }
         return entry;
     }
 
-    // ----------------------------------------------------------------- verdict
+    function evolutionOf(years) {
+        if (years.length < MIN_YEARS) return null;
+        return fetchOnce('/api/evolution', { years: years.map((r) => r.year), values: years.map((r) => r.value) });
+    }
 
-    function verdict(t, nYears) {
-        const p = num(t.p_value ?? t.p);
-        if (nYears < 8) return { cls: 'is-weak', word: 'Too few years', text: `${nYears} years are too few to tell a trend from chance. Choose a longer time range.` };
-        if (p === null) return null;
-        if (p < 0.01) return { cls: 'is-clear', word: 'Clear trend', text: 'This change is clear in the data and very unlikely to be chance.' };
-        if (p < 0.05) return { cls: 'is-likely', word: 'Likely trend', text: 'This change is probably real, but not certain.' };
-        return { cls: 'is-weak', word: 'Could be chance', text: 'The years go up and down a lot, so this change could still be chance.' };
+    function changePointOf(years) {
+        if (years.length < TREND_YEARS) return null;
+        return fetchOnce('/api/analyze', { x: years.map((r) => r.year), values: years.map((r) => r.value), tools: ['Change Point'] });
+    }
+
+    // Monthly departures from each month's normal (yearly values for yearly data) on one grid.
+    function correlationOf(list) {
+        const usable = list.filter((s) => s.pts.length >= 5).slice(0, 8);
+        if (usable.length < 2) return null;
+        const yearly = usable[0].stepDays >= 300;
+        const series = usable.map((s) => {
+            if (yearly) return { name: s.key, x: s.years.map((r) => r.year), values: s.years.map((r) => r.value) };
+            const byMonth = new Map();
+            for (const p of s.pts) {
+                const idx = p.y * 12 + p.m - 1;
+                if (!byMonth.has(idx)) byMonth.set(idx, []);
+                byMonth.get(idx).push(p.v);
+            }
+            const monthMean = new Map([...byMonth].map(([i, vs]) => [i, mean(vs)]));
+            const normal = MONTHS.map((_, m) => mean([...monthMean].filter(([i]) => i % 12 === m).map(([, v]) => v)));
+            const xs = [...monthMean.keys()].sort((a, b) => a - b);
+            return { name: s.key, x: xs, values: xs.map((i) => monthMean.get(i) - normal[i % 12]) };
+        });
+        return { entry: fetchOnce('/api/correlate', { series, max_lag: 0 }), yearly };
+    }
+
+    // ---------------------------------------------------------------- analyses
+
+    const CLEAR = ['Clear', 'is-clear'];
+    const LIKELY = ['Likely', 'is-likely'];
+
+    // All analyses of one variable: widgets (each with a score: how strong its signal
+    // is) and findings for the key-findings list.
+    function analyse(s) {
+        const pal = PALETTE[s.kind];
+        const out = { widgets: [], findings: [], pending: false };
+        const name = label(s.key);
+        const yearSd = sd(s.years.map((r) => r.value));
+        const track = (e) => { if (e && e.pending) out.pending = true; return e; };
+
+        // Trend of the yearly values.
+        const evo = track(evolutionOf(s.years));
+        const evoData = evo && evo.data ? evo.data : null;
+        const t = evoData && evoData.trend && evoData.trend.available !== false ? evoData.trend : null;
+        let annualDec = null;
+        let annualSig = false;
+        if (t) {
+            annualDec = num(t.slope_per_decade);
+            const p = num(t.p_value) ?? 1;
+            annualSig = p < 0.05 && s.years.length >= TREND_YEARS;
+            const span = s.years[s.years.length - 1].year - s.years[0].year;
+            const size = yearSd ? Math.abs((num(t.slope) || 0) * span) / yearSd : 0;
+            // A trend that could be chance is worth mentioning, but below every real result.
+            const score = !annualSig ? 0.5 : (p < 0.01 ? 3 : 2) + Math.min(2, size);
+            const flat = annualDec === null || round(annualDec) === 0;
+            out.findings.push({
+                score,
+                text: annualSig && !flat
+                    ? `${name}: ${annualDec > 0 ? pal.upW : pal.downW} by ${show(annualDec, s.yearUnit, true)} every 10 years`
+                    : `${name}: no clear trend over ${s.years.length} years`,
+                badge: annualSig ? (p < 0.01 ? CLEAR : LIKELY) : ['Weak', 'is-weak'],
+                target: 'trend',
+            });
+        }
+        out.widgets.push({ id: 'trend', wide: true, fixed: 0, score: 99, html: (ctx, w) => trendWidget(s, evo, pal, ctx, w) });
+        out.widgets.push({ id: 'record', wide: true, fixed: 1, score: 98, html: (ctx, w) => recordWidget(s, ctx, w) });
+
+        // Seasons: which part of the year changes most.
+        if (s.seasons.length && s.years.length >= TREND_YEARS) {
+            const rows = s.seasons.map((x) => {
+                const e = track(evolutionOf(x.years));
+                const tr = e && e.data && e.data.trend && e.data.trend.available !== false ? e.data.trend : null;
+                return { ...x, trend: tr, dec: tr ? num(tr.slope_per_decade) : null, p: tr ? num(tr.p_value) : null };
+            });
+            const top = rows
+                .filter((r) => r.dec !== null && r.p !== null && r.p < 0.05 && r.years.length >= TREND_YEARS)
+                .sort((a, b) => Math.abs(b.dec) - Math.abs(a.dec))[0] || null;
+            let score = 0.6;
+            if (top) {
+                const stronger = !annualSig || annualDec === null || Math.abs(top.dec) > 1.5 * Math.abs(annualDec);
+                score = stronger ? 1.6 + (top.p < 0.01 ? 0.6 : 0) : 1.0;
+                if (stronger) {
+                    out.findings.push({
+                        score,
+                        text: `${name}: strongest change in ${seasonName(top.season, s.lat)}, ${show(top.dec, s.yearUnit, true)} every 10 years`,
+                        badge: top.p < 0.01 ? CLEAR : LIKELY,
+                        target: 'seasons',
+                    });
+                }
+            }
+            if (rows.some((r) => r.dec !== null)) out.widgets.push({ id: 'seasons', score, html: (ctx, w) => seasonsWidget(s, rows, top, pal, w) });
+        }
+
+        // A sudden shift of the level, only when it is clear.
+        const cpEntry = track(changePointOf(s.years));
+        const cp = cpEntry && cpEntry.data && cpEntry.data.tools ? cpEntry.data.tools['Change Point'] : null;
+        if (cp && cp.available && num(cp.p_value) !== null && cp.p_value < 0.05) {
+            const score = (cp.p_value < 0.01 ? 1.9 : 1.4) - (annualSig ? 0.6 : 0);
+            out.findings.push({
+                score,
+                text: `${name}: step change around ${Math.round(cp.x_after)}, ${show(cp.mean_before, s.yearUnit)} → ${show(cp.mean_after, s.yearUnit)}`,
+                badge: cp.p_value < 0.01 ? CLEAR : LIKELY,
+                target: 'shift',
+            });
+            out.widgets.push({ id: 'shift', score, html: (ctx, w) => shiftWidget(s, cp, pal, w) });
+        }
+
+        // Typical year: first vs. last years, month by month.
+        if (s.typical) {
+            const diffs = s.typical.early.map((v, i) => (v !== null && s.typical.late[i] !== null ? s.typical.late[i] - v : null));
+            const valid = diffs.filter((d) => d !== null);
+            let topMonth = -1;
+            diffs.forEach((d, i) => { if (d !== null && (topMonth < 0 || Math.abs(d) > Math.abs(diffs[topMonth]))) topMonth = i; });
+            const spread = sd(valid) || 0;
+            const stand = topMonth >= 0 && spread > 0 ? Math.abs(diffs[topMonth] - (mean(valid) || 0)) / spread : 0;
+            const score = 0.7 + Math.min(0.6, stand / 4);
+            if (topMonth >= 0 && stand >= 1.8) {
+                out.findings.push({
+                    score: score + 0.2,
+                    text: `${name}: ${MONTH_NAMES[topMonth]} ${show(diffs[topMonth], s.totals ? 'mm' : s.unit, true)} in ${s.typical.lateLabel} vs. ${s.typical.earlyLabel}`,
+                    badge: ['Pattern', 'is-pattern'],
+                    target: 'typical',
+                });
+            }
+            out.widgets.push({ id: 'typical', wide: true, score, html: (ctx, w) => typicalWidget(s, diffs, topMonth, pal, ctx, w) });
+        }
+
+        // Decades.
+        const decades = evoData && Array.isArray(evoData.decades) ? evoData.decades.filter((d) => num(d.mean) !== null) : [];
+        if (decades.length >= 2) out.widgets.push({ id: 'decades', score: 0.5 + Math.min(0.4, decades.length / 10), html: (ctx, w) => decadesWidget(s, decades, pal, w) });
+
+        // Extremes and notable events.
+        const events = Array.isArray(s.info.events) ? s.info.events : [];
+        const lastYear = s.years.length ? s.years[s.years.length - 1].year : null;
+        let evScore = 0.45;
+        const first = events[0];
+        if (first) {
+            const year = Number(String(first.peak_date || first.date).slice(0, 4));
+            evScore = (/^record/.test(first.kind || '') ? 1.1 : 0.8) + (lastYear !== null && year >= lastYear - 2 ? 0.4 : 0);
+            out.findings.push({
+                score: evScore,
+                text: `${name}: ${first.title || 'notable event'}, ${isoText(first.peak_date || first.date, s.stepDays)}${num(first.value) !== null ? ` (${show(first.value, s.unit)})` : ''}`,
+                badge: ['Event', 'is-event'],
+                target: 'extremes',
+            });
+        }
+        out.widgets.push({ id: 'extremes', score: evScore, html: (ctx, w) => extremesWidget(s, events, pal, w) });
+
+        // Order: trend and record first, then by strength; mark the strongest one.
+        out.widgets.sort((a, b) => (a.fixed ?? 9) - (b.fixed ?? 9) || b.score - a.score);
+        const strongest = out.widgets.filter((w) => w.fixed === undefined).sort((a, b) => b.score - a.score)[0];
+        if (strongest && strongest.score >= 1.2) strongest.strongest = true;
+        return out;
+    }
+
+    // ------------------------------------------------------------------ widgets
+
+    function widget(s, w, parts) {
+        return `<article class="sw-w${w.wide ? ' sw-w-wide' : ''}" id="sw-${slug(s.key)}-${w.id}">`
+            + `<header class="sw-w-head"><h5 class="sw-w-title"${parts.tip ? ` title="${esc(parts.tip)}"` : ''}>${esc(parts.title)}</h5>`
+            + (parts.badge || '')
+            + (w.strongest ? '<span class="sw-badge is-top" title="The widget with the strongest signal for this variable">Strongest signal</span>' : '')
+            + '</header>'
+            + (parts.lead ? `<p class="sw-w-lead">${esc(parts.lead)}</p>` : '')
+            + (parts.body || '')
+            + (parts.how ? `<details class="sw-how"><summary>How this was worked out</summary>${parts.how}</details>` : '')
+            + '</article>';
+    }
+
+    function chartSlot(ctx, spec, legend, tip) {
+        const i = ctx.specs.push(spec) - 1;
+        const leg = legend && legend.length ? `<div class="tp-legend sw-legend">${K().legendHtml(legend)}</div>` : '';
+        return `<div class="tp-chart sw-chart-host" data-sw-chart="${i}"${tip ? ` title="${esc(tip)}"` : ''}></div>${leg}`;
+    }
+
+    function facts(list) {
+        const rows = list.filter(Boolean);
+        if (!rows.length) return '';
+        return `<dl class="sw-facts">${rows.map(([k, v, sub]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}${sub ? `<span>${esc(sub)}</span>` : ''}</dd></div>`).join('')}</dl>`;
+    }
+
+    function howList(rows) {
+        return `<dl class="sw-how-list">${rows.filter(Boolean).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+    }
+
+    function verdictBadge(cls, word, tip) {
+        return `<span class="sw-verdict ${cls}" title="${esc(tip)}">${esc(word)}</span>`;
+    }
+
+    function yearTicks(domain) {
+        return (plotW, shown = domain) => {
+            const ys = [];
+            for (let y = Math.ceil(shown[0]); y <= Math.floor(shown[1]); y++) ys.push(y);
+            const every = Math.max(1, Math.ceil(ys.length / Math.max(2, Math.floor(plotW / 48))));
+            const step = every <= 1 ? 1 : every <= 2 ? 2 : every <= 5 ? 5 : every <= 10 ? 10 : Math.ceil(every / 10) * 10;
+            return ys.filter((y) => y % step === 0 || step === 1).map((y) => ({ v: y, label: String(y) }));
+        };
+    }
+
+    function trendWidget(s, entry, pal, ctx, w) {
+        const title = s.totals ? 'Trend of the yearly total' : 'Trend';
+        if (!entry) return widget(s, w, { title, lead: `${s.years.length} full year${s.years.length === 1 ? '' : 's'}: too few for a trend.` });
+        if (entry.pending) return widget(s, w, { title, body: '<p class="sw-note" role="status">Working out…</p>' });
+        if (entry.error) return widget(s, w, { title, lead: `Not available: ${entry.error}` });
+        const d = entry.data;
+        const t = d.trend || {};
+        const series = (d.series || []).filter((p) => num(p.value) !== null);
+        const dec = num(t.slope_per_decade);
+        let head = '';
+        let badge = '';
+        if (t.available !== false && dec !== null) {
+            const p = num(t.p_value);
+            const both = num(t.mk_p_value) !== null && t.mk_p_value < 0.05;
+            if (series.length < TREND_YEARS) badge = verdictBadge('is-weak', 'Too few years', `${series.length} years are too few to tell a trend from chance.`);
+            else if (p !== null && p < 0.01) badge = verdictBadge('is-clear', 'Clear trend', `Very unlikely to be chance${both ? '; an outlier-proof test agrees' : ''}.`);
+            else if (p !== null && p < 0.05) badge = verdictBadge('is-likely', 'Likely trend', `Probably real, but not certain${both ? '; an outlier-proof test agrees' : ''}.`);
+            else if (p !== null) badge = verdictBadge('is-weak', 'Could be chance', 'The years vary too much to be sure of this change.');
+            const flat = round(dec) === 0;
+            const color = flat ? REF : dec > 0 ? pal.up : pal.down;
+            head = '<div class="sw-trend">'
+                + `<div class="sw-big" style="color:${color}"><span class="sw-arrow" aria-hidden="true">${flat ? '→' : dec > 0 ? '↑' : '↓'}</span>${esc(show(dec, s.yearUnit, true))}</div>`
+                + `<div class="sw-big-sub">per 10 years${flat ? '' : ` · ${esc(dec > 0 ? pal.upW : pal.downW)}`}</div>`
+                + (num(t.total_change) !== null ? `<div class="sw-big-sub">${esc(show(t.total_change, s.yearUnit, true))} over ${t.first_year}–${t.last_year}</div>` : '')
+                + '</div>';
+        }
+        let chart = '';
+        if (series.length >= 2) {
+            const avg = mean(series.map((p) => p.value));
+            const pts = series.map((p) => ({ x: p.year, y: p.value, meta: p }));
+            const hiP = pts.reduce((a, b) => (b.y > a.y ? b : a));
+            const loP = pts.reduce((a, b) => (b.y < a.y ? b : a));
+            const domain = [series[0].year - 0.6, series[series.length - 1].year + 0.6];
+            const out = [{ id: 'val', kind: 'line', name: s.totals ? 'Yearly total' : 'Yearly mean', color: LINE, width: 1, points: pts, markers: 3.4, emphasize: (p) => p === hiP || p === loP }];
+            const legend = [{ name: s.totals ? 'Yearly total' : 'Yearly mean', color: LINE, style: 'dot' }];
+            if (num(t.slope) !== null) {
+                const xs = series.map((p) => p.year);
+                const mx = mean(xs);
+                out.push({ id: 'trend', kind: 'line', name: 'Trend', color: ACCENT, width: 1.8, hover: false, points: [xs[0], xs[xs.length - 1]].map((x) => ({ x, y: avg + t.slope * (x - mx) })) });
+                legend.push({ name: 'Trend', color: ACCENT, style: 'line' });
+            }
+            out.push({ id: 'avg', kind: 'line', name: 'Average', color: REF, width: 1, dash: '4,3', hover: false, points: [{ x: domain[0], y: avg }, { x: domain[1], y: avg }] });
+            legend.push({ name: `Average ${show(avg, s.yearUnit)}`, color: REF, style: 'dash' });
+            chart = chartSlot(ctx, {
+                kind: 'year', height: 210, xDomain: domain, xTicks: yearTicks(domain), formatX: (x) => String(x),
+                series: out, unit: s.yearUnit, yLabel: s.yearUnit, ariaLabel: `${label(s.key)}: one value per year with trend line`,
+                tooltipExtra: (p) => (p && p.meta ? `${show(p.meta.value - avg, s.yearUnit, true)} vs. average` : ''),
+            }, legend);
+        }
+        const c = d.consistency || {};
+        const how = howList([
+            ['Method', 'Straight-line trend through the yearly values, corrected for similar neighbouring years'],
+            ['Years', `${series.length} (${t.first_year ?? '–'}–${t.last_year ?? '–'}), each with at least half of its values`],
+            num(t.ci_low_per_decade) !== null ? ['95 % range', `${show(t.ci_low_per_decade, s.yearUnit, true)} to ${show(t.ci_high_per_decade, s.yearUnit, true)} per 10 years`] : null,
+            num(t.p_value) !== null ? ['Chance by luck', `${pct(t.p_value)} (${pWords(t.p_value)})`] : null,
+            num(t.sen_slope_per_decade) !== null ? ['Outlier-proof trend (Sen)', `${show(t.sen_slope_per_decade, s.yearUnit, true)} per 10 years`] : null,
+            num(t.mk_p_value) !== null ? ['Mann-Kendall test', t.mk_significant ? `${t.mk_direction}, ${pct(t.mk_p_value)}` : `no clear direction (${pct(t.mk_p_value)})`] : null,
+            num(c.years_compared) ? ['Years above reference', `${c.years_above_baseline} of ${c.years_compared}`] : null,
+        ]);
+        return widget(s, w, { title, badge, body: head + chart, how });
+    }
+
+    function recordWidget(s, ctx, w) {
+        const title = 'Whole record';
+        if (s.pts.length < 2) return widget(s, w, { title, lead: 'Too few values.' });
+        const pts = s.pts.map((p) => ({ x: p.t, y: p.v }));
+        // Centred one-year running mean, so the seasons do not hide the long-term movement.
+        const win = s.stepDays >= 300 ? 1 : Math.max(1, Math.round(365.2425 / s.stepDays));
+        const smooth = [];
+        if (win > 1 && pts.length > win) {
+            let sum = 0;
+            for (let i = 0; i < pts.length; i++) {
+                sum += pts[i].y;
+                if (i >= win) sum -= pts[i - win].y;
+                if (i >= win - 1) smooth.push({ x: pts[i - Math.floor(win / 2)].x, y: sum / win });
+            }
+        }
+        const domain = [pts[0].x, pts[pts.length - 1].x];
+        const events = (Array.isArray(s.info.events) ? s.info.events : []).slice(0, 5);
+        const marks = events.map((ev, i) => {
+            const at = Date.parse(String(ev.peak_date || ev.date)) + DAY_MS / 2;
+            let best = null;
+            for (const p of pts) if (!best || Math.abs(p.x - at) < Math.abs(best.x - at)) best = p;
+            const cold = /low|cold/.test(ev.kind || '');
+            return best ? { x: best.x, y: best.y, n: i + 1, color: cold ? '#2f5f8f' : '#a1452f', title: `${ev.title || ''} · ${isoText(ev.peak_date || ev.date, s.stepDays)}` } : null;
+        }).filter(Boolean);
+        const raw = smooth.length ? LIGHT : LINE;
+        const per = s.stepDays <= 1 ? 'Daily value' : s.stepDays >= 300 ? 'Yearly value' : s.stepDays >= 20 ? 'Monthly value' : 'Value';
+        const series = [{ id: 'raw', kind: 'line', name: per, color: raw, width: 1, points: pts }];
+        const legend = [{ name: per, color: raw, style: 'line' }];
+        if (smooth.length) {
+            series.push({ id: 'smooth', kind: 'line', name: 'One-year mean', color: LINE, width: 2, points: smooth });
+            legend.push({ name: 'One-year mean', color: LINE, style: 'line' });
+        }
+        if (marks.length) legend.push({ name: 'Notable events (see Extremes)', color: '#a1452f', style: 'hollow' });
+        const spec = {
+            height: 230, xDomain: domain, fullDomain: domain, xTicks: K().timeTicks(domain),
+            formatX: (x) => timeText(x, s.stepDays),
+            series, unit: s.unit, yLabel: s.unit, eventMarks: marks, zoomable: true,
+            ariaLabel: `${label(s.key)}: every value with a running one-year mean`,
+        };
+        const how = howList([
+            ['Values', `${s.n.toLocaleString('en-US')}, ${dateText(s.pts[0].dt, s.stepDays)} – ${dateText(s.pts[s.pts.length - 1].dt, s.stepDays)}`],
+            ['Measured at', siteOf(s.info)],
+            win > 1 ? ['Smoothing', `running mean of ${win} values (one year)`] : null,
+        ]);
+        return widget(s, w, { title, body: chartSlot(ctx, spec, legend, 'Drag across the chart to zoom in, double-click to zoom out'), how });
+    }
+
+    // Horizontal bars from the centre: rows = [{ name, v, sub, weak }].
+    function bars(rows, unit, pal, highlight) {
+        const max = Math.max(...rows.map((r) => Math.abs(r.v ?? 0))) || 1;
+        return `<ul class="sw-bars">${rows.map((r) => {
+            if (r.v === null) return `<li class="is-weak"><span class="sw-bar-name">${esc(r.name)}</span><span class="sw-bar-track"></span><span class="sw-bar-val">–</span></li>`;
+            const f = (Math.abs(r.v) / max) * 50;
+            const left = r.v < 0 ? 50 - f : 50;
+            return `<li class="${r === highlight ? 'is-top' : ''}${r.weak ? ' is-weak' : ''}"${r.tip ? ` title="${esc(r.tip)}"` : ''}><span class="sw-bar-name">${esc(r.name)}</span>`
+                + `<span class="sw-bar-track"><span style="left:${left.toFixed(1)}%;width:${f.toFixed(1)}%;background:${r.v >= 0 ? pal.up : pal.down}"></span></span>`
+                + `<span class="sw-bar-val">${esc(show(r.v, unit, true))}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span></li>`;
+        }).join('')}</ul>`;
+    }
+
+    function seasonsWidget(s, rows, top, pal, w) {
+        const list = rows.map((r) => ({
+            name: seasonName(r.season, s.lat), v: r.dec, ref: r,
+            sub: r.p === null ? '' : r.p < 0.01 ? 'clear' : r.p < 0.05 ? 'likely' : 'could be chance',
+            weak: r.p === null || r.p >= 0.05,
+        }));
+        const hi = top ? list.find((x) => x.ref === top) : null;
+        const how = howList([
+            ['Method', 'One value per season and year (winter counts to the year of its January), then the same trend test as the whole year'],
+            ...rows.map((r) => [seasonName(r.season, s.lat), r.trend ? `${r.years.length} years, ${show(r.dec, s.yearUnit, true)} per 10 years, ${pWords(r.p)}` : `${r.years.length} years: too few`]),
+        ]);
+        return widget(s, w, {
+            title: 'Seasons', tip: 'Change per 10 years in each season; faded bars could be chance',
+            badge: top ? verdictBadge(top.p < 0.01 ? 'is-clear' : 'is-likely', `${seasonName(top.season, s.lat).split(' ')[0]} changes most`, 'The season with the largest clear change') : '',
+            body: `${bars(list, s.yearUnit, pal, hi)}<p class="sw-unit">per 10 years${s.totals ? ' (season total)' : ''}</p>`, how,
+        });
+    }
+
+    function shiftWidget(s, cp, pal, w) {
+        const when = Math.round(cp.x_after);
+        const body = facts([
+            [`Before ${when}`, show(cp.mean_before, s.yearUnit), `${s.years[0].year}–${Math.round(cp.x_before)}`],
+            [`From ${when}`, show(cp.mean_after, s.yearUnit), `${when}–${s.years[s.years.length - 1].year}`],
+            ['Step', show(cp.shift, s.yearUnit, true), cp.shift > 0 ? pal.upW : pal.downW],
+        ]);
+        const how = howList([
+            ['Method', 'Pettitt test on the yearly values: the year where the values before and after differ most'],
+            ['Chance by luck', `${pct(cp.p_value)} (${pWords(cp.p_value)})`],
+            ['Note', 'A steady trend can also appear as a step'],
+        ]);
+        return widget(s, w, { title: 'Sudden shift', badge: verdictBadge(cp.p_value < 0.01 ? 'is-clear' : 'is-likely', cp.p_value < 0.01 ? 'Clear' : 'Likely', pWords(cp.p_value)), body, how });
+    }
+
+    function typicalWidget(s, diffs, topMonth, pal, ctx, w) {
+        const ty = s.typical;
+        const unit = s.totals ? 'mm' : s.unit;
+        const mk = (vs) => vs.map((v, i) => ({ x: i + 1, y: v })).filter((p) => p.y !== null);
+        const spec = {
+            kind: 'year', height: 210, xDomain: [0.6, 12.4],
+            xTicks: () => MONTHS.map((m, i) => ({ v: i + 1, label: m })),
+            formatX: (x) => MONTH_NAMES[Math.round(x) - 1] || '',
+            series: [
+                { id: 'early', kind: 'line', name: ty.earlyLabel, color: EARLY, width: 1.6, points: mk(ty.early), markers: 3 },
+                { id: 'late', kind: 'line', name: ty.lateLabel, color: pal.up, width: 2.2, points: mk(ty.late), markers: 3.4, emphasize: (p) => p.x === topMonth + 1 },
+            ],
+            unit, yLabel: `${s.totals ? 'Monthly total' : 'Monthly mean'}${unit ? ` (${unit})` : ''}`,
+            ariaLabel: `Each month in ${ty.earlyLabel} compared with ${ty.lateLabel}`,
+            tooltipExtra: (p) => { const d = p ? diffs[p.x - 1] : null; return num(d) !== null ? `${show(d, unit, true)} later vs. earlier` : ''; },
+        };
+        const legend = [
+            { name: ty.earlyLabel, color: EARLY, style: 'dot' },
+            { name: ty.lateLabel, color: pal.up, style: 'dot' },
+        ];
+        const badge = topMonth >= 0
+            ? `<span class="sw-badge is-pattern" title="Month with the largest difference">${esc(MONTHS[topMonth])} ${esc(show(diffs[topMonth], unit, true))}</span>`
+            : '';
+        const how = howList([
+            ['Method', `Mean of each calendar month over the first ${ty.k} and the last ${ty.k} full years`],
+            ...diffs.map((d, i) => (d === null ? null : [MONTH_NAMES[i], show(d, unit, true)])),
+        ]);
+        return widget(s, w, { title: 'Typical year: then and now', badge, body: chartSlot(ctx, spec, legend), how });
+    }
+
+    function decadesWidget(s, decades, pal, w) {
+        const first = decades[0];
+        const rows = decades.map((d, i) => ({ name: d.label, v: i === 0 ? 0 : d.mean - first.mean, sub: show(d.mean, s.yearUnit) }));
+        const how = howList([
+            ['Method', 'Mean of every calendar decade (2010s = 2010–2019) with at least five years'],
+            ...decades.map((d) => [d.label, `${show(d.mean, s.yearUnit)} from ${d.n} years`]),
+        ]);
+        return widget(s, w, {
+            title: 'Decades', tip: `Difference of each decade to the ${first.label}; the decade mean is on the right`,
+            body: `${bars(rows, s.yearUnit, pal, rows[rows.length - 1])}<p class="sw-unit">vs. the ${esc(first.label)}</p>`, how,
+        });
+    }
+
+    function extremesWidget(s, events, pal, w) {
+        const per = s.stepDays <= 1 ? 'day' : s.stepDays >= 300 ? 'year' : s.stepDays >= 20 ? 'month' : 'value';
+        const u = s.unit;
+        const list = [];
+        if (num(s.mean) !== null) list.push(['Average', show(s.mean, u)]);
+        if (s.hi) list.push([s.kind === 'neutral' ? `Highest ${per}` : `${cap(pal.hiW)} ${per}`, show(s.hi.v, u), dateText(s.hi.dt, s.stepDays)]);
+        if (s.lo && s.kind !== 'wet') list.push([`${cap(s.kind === 'neutral' ? 'lowest' : pal.loW)} ${per}`, show(s.lo.v, u), dateText(s.lo.dt, s.stepDays)]);
+        if (s.years.length >= 2) {
+            const hiY = s.years.reduce((a, b) => (b.value > a.value ? b : a));
+            const loY = s.years.reduce((a, b) => (b.value < a.value ? b : a));
+            list.push([`${cap(pal.hiW)} year`, show(hiY.value, s.yearUnit), String(hiY.year)]);
+            list.push([`${cap(pal.loW)} year`, show(loY.value, s.yearUnit), String(loY.year)]);
+        }
+        const evs = events.slice(0, 5);
+        const evHtml = evs.length
+            ? `<ol class="sw-events">${evs.map((ev) => `<li${ev.description ? ` title="${esc(ev.description)}"` : ''}><strong>${esc(ev.title || 'Event')}</strong>`
+                + `<span>${esc(isoText(ev.peak_date || ev.date, s.stepDays))}${num(ev.value) !== null ? ` · ${esc(show(ev.value, u))}` : ''}</span></li>`).join('')}</ol>`
+            : '';
+        const how = howList([
+            ['Highest / lowest', 'single values as measured'],
+            evs.length ? ['Notable events', 'records and values far from the normal of that calendar day (or month), most remarkable first'] : null,
+        ]);
+        return widget(s, w, { title: 'Extremes', body: facts(list) + evHtml, how });
+    }
+
+    function relationSection(corr) {
+        if (!corr) return '';
+        const { entry, yearly } = corr;
+        const open = '<section class="sw-section" id="sw-relation"><article class="sw-w sw-w-wide"><header class="sw-w-head"><h5 class="sw-w-title" title="Correlation r: −1 always opposite, 0 no link, +1 always together">How the variables relate</h5></header>';
+        const close = '</article></section>';
+        if (entry.pending) return `${open}<p class="sw-note" role="status">Working out…</p>${close}`;
+        if (entry.error || !entry.data) return `${open}<p class="sw-note">Not available${entry.error ? `: ${esc(entry.error)}` : ''}</p>${close}`;
+        const pairs = (entry.data.pairs || []).filter((p) => p.available && num(p.pearson) !== null)
+            .sort((a, b) => Math.abs(b.pearson) - Math.abs(a.pearson));
+        if (!pairs.length) return `${open}<p class="sw-note">Too few overlapping values.</p>${close}`;
+        const rows = pairs.slice(0, 6).map((p) => {
+            const f = Math.abs(p.pearson) * 50;
+            const left = p.pearson < 0 ? 50 - f : 50;
+            return `<li class="${p.significant ? '' : 'is-weak'}"><span class="sw-bar-name">${esc(label(p.a))} & ${esc(label(p.b))}</span>`
+                + `<span class="sw-bar-track"><span style="left:${left.toFixed(1)}%;width:${f.toFixed(1)}%;background:${p.pearson >= 0 ? LINE : ACCENT}"></span></span>`
+                + `<span class="sw-bar-val">r = ${p.pearson.toFixed(2)}<small>${p.pearson >= 0 ? 'together' : 'opposite'}${p.significant ? '' : ', could be chance'}</small></span></li>`;
+        }).join('');
+        const how = howList([
+            ['Compared', yearly ? 'yearly values' : 'monthly departures from each month’s normal, so the seasons alone create no link'],
+            ...pairs.map((p) => [`${label(p.a)} & ${label(p.b)}`, `r = ${p.pearson.toFixed(2)} from ${p.n} ${yearly ? 'years' : 'months'}, ${pWords(num(p.p_value))}`]),
+        ]);
+        return `${open}<ul class="sw-bars sw-bars-r">${rows}</ul><details class="sw-how"><summary>How this was worked out</summary>${how}</details>${close}`;
     }
 
     // ------------------------------------------------------------------ render
@@ -208,178 +785,138 @@
     function mount(host) {
         state.host = host;
         host.addEventListener('click', (e) => {
-            const b = e.target.closest('button[data-simple-details]');
-            if (!b) return;
-            const key = b.dataset.simpleDetails;
-            if (window.TrendMode) window.TrendMode.set('scientific');
-            // The plot panel's availability list opens and scrolls to a series.
-            requestAnimationFrame(() => {
-                const go = [...document.querySelectorAll('#plot-panel [data-goto]')].find((x) => x.dataset.goto === key);
-                if (go) go.click();
-                else document.getElementById('plot-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
+            const a = e.target.closest('a[data-sw-goto]');
+            if (!a) return;
+            e.preventDefault();
+            const el = document.getElementById(a.dataset.swGoto);
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.remove('is-flash');
+            void el.offsetWidth;
+            el.classList.add('is-flash');
         });
+        if (typeof ResizeObserver === 'function') {
+            observer = new ResizeObserver((entries) => {
+                const K0 = K();
+                for (const en of entries) {
+                    const el = en.target;
+                    const width = Math.floor(el.clientWidth);
+                    if (K0 && el._spec && width && width !== el._swW) { el._swW = width; K0.renderChart(el, el._spec); }
+                }
+            });
+        }
         render();
     }
 
     function setData(viz, request) {
         state.viz = viz || null;
         state.request = request || null;
-        render();
+        scheduleRender();
     }
 
     function setLoading(on) {
         state.loading = Boolean(on);
         if (on) { state.viz = null; state.request = null; }
-        render();
+        scheduleRender();
+    }
+
+    function scheduleRender() {
+        if (state.raf) return;
+        // A timer, not requestAnimationFrame: that one pauses in a background tab.
+        state.raf = setTimeout(() => { state.raf = 0; render(); }, 16);
     }
 
     function render() {
         const host = state.host;
         if (!host) return;
         const topics = state.viz && state.viz.topics ? Object.entries(state.viz.topics) : [];
-        if (!topics.length) {
-            host.innerHTML = `<div class="sw-empty">${state.loading
-                ? 'Loading data…'
-                : 'Pick a place on the map (or a case study above), choose variables on the left and click “Analyze”. Each variable then gets its own card here.'}</div>`;
+        if (!topics.length || !K()) {
+            // Nothing analysed yet: empty, so the card is hidden (mode.css).
+            const html = state.loading ? '<div class="sw-empty">Loading data…</div>' : '';
+            if (html !== state.html) { host.innerHTML = html; state.html = html; }
             return;
         }
         const stepDays = stepDaysOf(state.request);
-        const range = state.request && Array.isArray(state.request.timeintervall) ? state.request.timeintervall : null;
-        const firstInfo = topics[0][1] || {};
-        const head = `<div class="sw-head"><h3 class="sw-title">At a glance</h3>`
-            + `<span class="sw-sub">${esc([siteOf(firstInfo), range ? `${range[0]} – ${range[1]}` : ''].filter(Boolean).join(' · '))}</span></div>`;
-        const cards = topics.map(([key, info]) => card(key, info || {}, stepDays)).join('');
-        const more = state.loading ? '<div class="sw-card sw-card-pending">Loading the next variable…</div>' : '';
-        host.innerHTML = `${head}<div class="sw-grid">${cards}${more}</div>`;
-    }
+        const ctx = { specs: [] };
 
-    function card(key, info, stepDays) {
-        const name = label(key);
-        const values = Array.isArray(info.values) ? info.values.filter((v) => num(v) !== null) : [];
-        if (info.error || !values.length) {
-            return `<article class="sw-card sw-card-failed"><h4 class="sw-name">${esc(name)}</h4>`
-                + `<p class="sw-note">No data for this place and time range${info.error ? `: ${esc(info.error)}` : '.'}</p></article>`;
+        const ok = [];
+        const failed = [];
+        for (const [key, info] of topics) {
+            const values = Array.isArray(info && info.values) ? info.values.filter((v) => num(v) !== null) : [];
+            if (!info || info.error || !values.length) failed.push([key, info || {}]);
+            else ok.push(prepare(key, info, stepDays));
         }
-        const s = summarise(key, info, stepDays);
-        const pal = PALETTE[s.kind];
-        const yearsText = s.years.length ? `${s.years[0].year}–${s.years[s.years.length - 1].year}` : '';
-        let html = `<article class="sw-card"><header class="sw-card-head"><h4 class="sw-name">${esc(name)}</h4>`
-            + `<span class="sw-meta">${esc([siteOf(info), yearsText].filter(Boolean).join(' · '))}</span></header>`;
+        const analysed = ok.map((s) => ({ s, a: analyse(s) }));
+        const corr = state.loading ? null : correlationOf(ok);
 
-        const entry = evolutionFor(s);
-        if (!entry) {
-            html += `<p class="sw-note">At least ${MIN_YEARS} full years are needed to show a trend; this selection has ${s.years.length}. Choose a longer time range.</p>`;
-        } else if (entry.pending) {
-            html += '<p class="sw-note" role="status">Working out the trend…</p>';
-        } else if (entry.error) {
-            html += `<p class="sw-note">The trend could not be computed: ${esc(entry.error)}</p>`;
-        } else {
-            html += trendBlock(s, entry.data, pal);
+        // Key findings: the strongest results of all variables.
+        const findings = [];
+        for (const { s, a } of analysed) for (const f of a.findings) findings.push({ ...f, anchor: `sw-${slug(s.key)}-${f.target}` });
+        if (corr && corr.entry.data) {
+            const best = (corr.entry.data.pairs || [])
+                // Two series of one variable (maximum / minimum temperature) are linked anyway.
+                .filter((p) => p.available && p.significant && num(p.pearson) !== null && Math.abs(p.pearson) >= 0.3
+                    && p.a.split(' · ')[0] !== p.b.split(' · ')[0])
+                .sort((a, b) => Math.abs(b.pearson) - Math.abs(a.pearson))[0];
+            if (best) {
+                findings.push({
+                    score: 0.9 + Math.abs(best.pearson),
+                    text: `${label(best.a)} and ${label(best.b)} ${best.pearson >= 0 ? 'rise and fall together' : 'move in opposite directions'} (r = ${best.pearson.toFixed(2)})`,
+                    badge: ['Link', 'is-link'], anchor: 'sw-relation',
+                });
+            }
         }
-        html += factsRow(s, stepDays, pal);
-        html += `<button type="button" class="sw-details" data-simple-details="${esc(key)}">Details and statistics →</button></article>`;
-        return html;
-    }
+        findings.sort((x, y) => y.score - x.score);
+        const shown = findings.filter((f, i) => i < 5 && (f.score >= 0.8 || i === 0));
+        const pending = analysed.some(({ a }) => a.pending) || Boolean(corr && corr.entry.pending);
 
-    function trendBlock(s, d, pal) {
-        const t = d.trend || {};
-        const dec = num(t.slope_per_decade) ?? (num(t.slope) !== null ? t.slope * 10 : null);
-        const series = (d.series || []).filter((p) => num(p.value) !== null);
         let html = '';
-        if (t.available !== false && dec !== null) {
-            const v = verdict(t, series.length);
-            const flat = round(dec) === 0;
-            const color = flat ? '#52514e' : dec > 0 ? pal.up : pal.down;
-            const arrow = flat ? '→' : dec > 0 ? '↑' : '↓';
-            const what = flat ? 'about the same' : dec > 0 ? pal.upW : pal.downW;
-            html += '<div class="sw-trend">'
-                + `<div class="sw-big" style="color:${color}"><span class="sw-arrow" aria-hidden="true">${arrow}</span>${esc(show(dec, s.yearUnit, true))}</div>`
-                + `<div class="sw-big-sub">every 10 years${s.totals ? ' (yearly total)' : ''}${flat ? '' : ` · ${esc(what)}`}</div>`
-                + (v ? `<span class="sw-verdict ${v.cls}">${esc(v.word)}</span>` : '')
-                + '</div>';
-            if (v) html += `<p class="sw-explain">${esc(v.text)}</p>`;
+        if (shown.length || pending) {
+            html += '<section class="sw-findings" aria-label="Key findings">'
+                + `<h4 class="sw-findings-title" title="Picked automatically from all analyses, strongest first">Key findings${pending ? '<span role="status">working out…</span>' : ''}</h4>`
+                + (shown.length ? `<ol>${shown.map((f) => `<li><span class="sw-badge ${f.badge[1]}">${esc(f.badge[0])}</span><a href="#${f.anchor}" data-sw-goto="${f.anchor}">${esc(f.text)}</a></li>`).join('')}</ol>` : '')
+                + '</section>';
         }
-        html += chart(s, d, pal);
-        html += yearsSentence(s, series, pal, d);
-        return html;
-    }
 
-    // Bars: each year's difference to the average of all shown years; line: the trend.
-    function chart(s, d, pal) {
-        const series = (d.series || []).filter((p) => num(p.value) !== null);
-        if (series.length < 2) return '';
-        const avg = series.reduce((a, p) => a + p.value, 0) / series.length;
-        const t = d.trend || {};
-        const W = 300;
-        const H = 84;
-        const pad = 4;
-        const n = series.length;
-        const bw = (W - 2 * pad) / n;
-        const xs = series.map((p) => p.year);
-        const mx = xs.reduce((a, b) => a + b, 0) / n;
-        const trendAt = (y) => (num(t.slope) !== null ? avg + t.slope * (y - mx) - avg : null);
-        const devs = series.map((p) => p.value - avg);
-        const ends = [trendAt(xs[0]), trendAt(xs[n - 1])].filter((v) => v !== null);
-        const amp = Math.max(...devs.map(Math.abs), ...ends.map(Math.abs)) || 1;
-        const y0 = H / 2;
-        const sy = (v) => y0 - (v / amp) * (H / 2 - pad);
-        let bars = '';
-        series.forEach((p, i) => {
-            const dv = devs[i];
-            const x = pad + i * bw + bw * 0.12;
-            const y = Math.min(sy(dv), y0);
-            const h = Math.max(0.8, Math.abs(sy(dv) - y0));
-            bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw * 0.76).toFixed(1)}" height="${h.toFixed(1)}" fill="${dv >= 0 ? pal.up : pal.down}" opacity="0.85">`
-                + `<title>${p.year}: ${esc(show(p.value, s.yearUnit))} (${esc(show(dv, s.yearUnit, true))} vs. average)</title></rect>`;
+        // Variables in the order of their strongest finding.
+        const strength = (a) => Math.max(0, ...a.findings.map((f) => f.score));
+        analysed.sort((x, y) => strength(y.a) - strength(x.a));
+        for (const { s, a } of analysed) {
+            const yearsText = s.years.length ? `${s.years[0].year}–${s.years[s.years.length - 1].year}` : '';
+            html += `<section class="sw-section" aria-label="${esc(label(s.key))}"><header class="sw-section-head"><h4 class="sw-name">${esc(label(s.key))}</h4>`
+                + `<span class="sw-meta">${esc([siteOf(s.info), yearsText].filter(Boolean).join(' · '))}</span></header>`
+                + `<div class="sw-grid">${a.widgets.map((w) => w.html(ctx, w)).join('')}</div></section>`;
+        }
+        if (failed.length) {
+            html += `<section class="sw-section"><div class="sw-grid">${failed.map(([key, info]) => `<article class="sw-w sw-card-failed"><header class="sw-w-head"><h5 class="sw-w-title">${esc(label(key))}</h5><span class="sw-x" aria-hidden="true">✕</span></header>`
+                + `<p class="sw-note">No data${info.error ? `: ${esc(info.error)}` : ''}</p></article>`).join('')}</div></section>`;
+        }
+        html += relationSection(corr);
+        if (state.loading) html += '<div class="sw-w sw-card-pending">Loading the next variable…</div>';
+
+        // Same content: keep the drawn charts (and their zoom) as they are.
+        if (html === state.html) return;
+        state.html = html;
+        const scrollY = window.scrollY;
+        if (observer) observer.disconnect();
+        host.innerHTML = html;
+        const K0 = K();
+        host.querySelectorAll('[data-sw-chart]').forEach((el) => {
+            const spec = ctx.specs[Number(el.dataset.swChart)];
+            if (!spec) return;
+            if (spec.zoomable) {
+                el._onZoom = (dom) => {
+                    const sp = el._spec;
+                    sp.xDomain = dom || sp.fullDomain;
+                    sp.zoomed = Boolean(dom);
+                    K0.renderChart(el, sp);
+                };
+            }
+            el._swW = Math.floor(el.clientWidth);
+            K0.renderChart(el, spec);
+            if (observer) observer.observe(el);
         });
-        let line = '';
-        if (ends.length === 2) {
-            const x1 = pad + bw / 2;
-            const x2 = W - pad - bw / 2;
-            line = `<line x1="${x1.toFixed(1)}" y1="${sy(ends[0]).toFixed(1)}" x2="${x2.toFixed(1)}" y2="${sy(ends[1]).toFixed(1)}" stroke="#0b0b0b" stroke-width="1.6" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"/>`;
-        }
-        const aria = `Each year from ${xs[0]} to ${xs[n - 1]} compared with the average of ${show(avg, s.yearUnit)}, with the trend line`;
-        return `<figure class="sw-chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(aria)}">`
-            + `<line x1="0" x2="${W}" y1="${y0}" y2="${y0}" stroke="#c8c6c1" stroke-width="1" vector-effect="non-scaling-stroke"/>${bars}${line}</svg>`
-            + `<figcaption class="sw-axis"><span>${xs[0]}</span><span>bars: year vs. average · dashed: trend</span><span>${xs[n - 1]}</span></figcaption></figure>`;
-    }
-
-    function yearsSentence(s, series, pal) {
-        if (series.length < 2) return '';
-        let top = series[0];
-        let bot = series[0];
-        for (const p of series) { if (p.value > top.value) top = p; if (p.value < bot.value) bot = p; }
-        const avg = series.reduce((a, p) => a + p.value, 0) / series.length;
-        const above = series.filter((p) => p.value > avg).length;
-        let txt = `${top.year} was the ${pal.hiW} year (${show(top.value, s.yearUnit)}), ${bot.year} the ${pal.loW} (${show(bot.value, s.yearUnit)}).`;
-        if (series.length >= 8) {
-            const lastAbove = series.slice(-5).filter((p) => p.value > avg).length;
-            txt += ` ${lastAbove} of the last 5 years were ${pal.upW} than average.`;
-        } else {
-            txt += ` ${above} of ${series.length} years were ${pal.upW} than average.`;
-        }
-        return `<p class="sw-years">${esc(txt)}</p>`;
-    }
-
-    function factsRow(s, stepDays, pal) {
-        const per = stepDays <= 1 ? 'day' : stepDays >= 300 ? 'year' : stepDays >= 20 ? 'month' : 'value';
-        const facts = [];
-        if (s.totals && s.years.length) {
-            const avgYear = s.years.reduce((a, r) => a + r.value, 0) / s.years.length;
-            facts.push(['Average year', show(avgYear, 'mm')]);
-        } else if (num(s.mean) !== null) {
-            facts.push(['Average', show(s.mean, s.unit)]);
-        }
-        const u = s.totals ? 'mm' : s.unit;
-        if (s.hi) facts.push([s.kind === 'neutral' ? `Highest ${per}` : `${cap(pal.hiW)} ${per}`, show(s.hi.v, u), dateText(s.hi.dt, stepDays)]);
-        if (s.lo && s.kind !== 'wet') facts.push([`${cap(s.kind === 'neutral' ? 'lowest' : pal.loW)} ${per}`, show(s.lo.v, u), dateText(s.lo.dt, stepDays)]);
-        if (!facts.length) return '';
-        return `<dl class="sw-facts">${facts.map(([k, v, sub]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}${sub ? `<span>${esc(sub)}</span>` : ''}</dd></div>`).join('')}</dl>`;
-    }
-
-    function cap(w) {
-        return w.charAt(0).toUpperCase() + w.slice(1);
+        window.scrollTo(0, scrollY);
     }
 
     window.TrendSimple = { mount, setData, setLoading };

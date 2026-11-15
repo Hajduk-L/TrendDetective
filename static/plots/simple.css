@@ -1,64 +1,90 @@
-/* Simple mode widgets (static/plots/simple.js): one card per variable. */
+/* Simple mode dashboard (static/plots/simple.js): key findings, then widgets per variable. */
 
-.sw-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    margin-bottom: 0.75rem;
+.sw-empty { color: #64748b; font-size: 0.85rem; }
+
+/* ---- Key findings ---- */
+.sw-findings {
+    margin-bottom: 1.1rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #f8fbff;
 }
-.sw-title {
-    margin: 0;
-    font-size: 1rem;
+.sw-findings-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0 0 0.45rem;
+    font-size: 0.95rem;
     font-weight: 600;
     color: #0f172a;
 }
-.sw-sub { font-size: 0.8rem; color: #64748b; }
+.sw-findings-title span { font-size: 0.74rem; font-weight: 400; color: #64748b; }
+.sw-findings ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.35rem; }
+.sw-findings li { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.86rem; line-height: 1.4; }
+.sw-findings a { color: #0f172a; text-decoration: none; }
+.sw-findings a:hover { color: #2563eb; text-decoration: underline; }
+.sw-findings a:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 2px; }
+
+.sw-badge,
+.sw-verdict {
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+}
+.is-clear { color: #166534; background: #f0fdf4; }
+.is-likely { color: #854d0e; background: #fefce8; }
+.is-weak { color: #475569; background: #f8fafc; }
+.is-event { color: #9a3412; background: #fff7ed; }
+.is-pattern { color: #5b21b6; background: #f5f3ff; }
+.is-link { color: #1e40af; background: #eff6ff; }
+.sw-badge.is-top { color: #ffffff; background: #eb6834; border-color: #eb6834; }
+
+/* ---- One section per variable ---- */
+.sw-section { margin-bottom: 1.25rem; }
+.sw-section-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.75rem; margin-bottom: 0.55rem; }
+.sw-name { margin: 0; font-size: 1rem; font-weight: 600; color: #0f172a; }
+.sw-meta { font-size: 0.76rem; color: #64748b; }
 
 .sw-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
     gap: 0.85rem;
 }
 
-.sw-card {
+/* ---- Widgets ---- */
+.sw-w {
     display: flex;
     flex-direction: column;
     gap: 0.55rem;
     min-width: 0;
-    padding: 0.9rem 1rem 0.8rem;
+    padding: 0.85rem 1rem 0.75rem;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
     background: #ffffff;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    scroll-margin: 80px;
 }
-.sw-card-pending,
-.sw-empty {
-    color: #64748b;
-    font-size: 0.85rem;
-}
-.sw-card-pending { justify-content: center; align-items: center; min-height: 120px; border-style: dashed; }
+.sw-w-wide { grid-column: span 2; }
+@media (max-width: 760px) { .sw-w-wide { grid-column: auto; } }
+.sw-w.is-flash { animation: sw-flash 1.4s ease-out; }
+@keyframes sw-flash { from { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.45); } to { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); } }
+.sw-card-pending { justify-content: center; align-items: center; min-height: 90px; border-style: dashed; color: #64748b; font-size: 0.85rem; }
 .sw-card-failed { background: #f8fafc; }
+.sw-x { color: #dc2626; font-weight: 700; }
 
-.sw-card-head { display: flex; flex-direction: column; gap: 2px; }
-.sw-name {
-    margin: 0;
-    font-size: 0.92rem;
-    font-weight: 600;
-    line-height: 1.3;
-    color: #0f172a;
-}
-.sw-meta { font-size: 0.74rem; color: #64748b; }
+.sw-w-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.sw-w-title { margin: 0 auto 0 0; font-size: 0.86rem; font-weight: 600; color: #0f172a; }
+.sw-w-lead, .sw-note { margin: 0; font-size: 0.8rem; line-height: 1.45; color: #334155; }
+.sw-note { color: #64748b; }
 
-.sw-trend {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-    align-items: center;
-    column-gap: 0.6rem;
-}
+/* Trend headline number */
+.sw-trend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.8rem; }
 .sw-big {
-    grid-row: 1 / span 2;
     display: flex;
     align-items: baseline;
     gap: 0.2rem;
@@ -69,68 +95,56 @@
 }
 .sw-arrow { font-size: 1.3rem; }
 .sw-big-sub { font-size: 0.78rem; color: #475569; }
-.sw-verdict {
-    justify-self: start;
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 0.12rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid currentColor;
-}
-.sw-verdict.is-clear { color: #166534; background: #f0fdf4; }
-.sw-verdict.is-likely { color: #854d0e; background: #fefce8; }
-.sw-verdict.is-weak { color: #475569; background: #f8fafc; }
 
-.sw-explain,
-.sw-years,
-.sw-note {
-    margin: 0;
-    font-size: 0.8rem;
-    line-height: 1.45;
-    color: #334155;
-}
-.sw-note { color: #64748b; }
+/* Charts (drawn with the plot panel's kit) */
+.sw-chart-host { min-height: 200px; }
+.sw-legend { margin-top: -0.2rem; }
 
-.sw-chart { margin: 0; }
-.sw-chart svg { display: block; width: 100%; height: 84px; }
-.sw-axis {
-    display: flex;
-    justify-content: space-between;
+/* Diverging bars: seasons, decades, correlations */
+.sw-bars { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.35rem; }
+.sw-bars li {
+    display: grid;
+    grid-template-columns: minmax(80px, 38%) 1fr auto;
+    align-items: center;
     gap: 0.5rem;
-    font-size: 0.68rem;
-    color: #94a3b8;
-    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    color: #0f172a;
 }
-.sw-axis span:nth-child(2) { text-align: center; }
+.sw-bars li.is-weak { opacity: 0.5; }
+.sw-bars li.is-top .sw-bar-name { font-weight: 700; }
+.sw-bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sw-bar-track {
+    position: relative;
+    height: 10px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, transparent calc(50% - 0.5px), #c8c6c1 calc(50% - 0.5px), #c8c6c1 calc(50% + 0.5px), transparent calc(50% + 0.5px)), #f1f5f9;
+}
+.sw-bar-track span { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.sw-bar-val { min-width: 5.5em; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sw-bar-val small { display: block; font-size: 0.66rem; font-weight: 400; color: #64748b; }
+.sw-bars-r li { grid-template-columns: minmax(120px, 45%) 1fr auto; }
+.sw-unit { margin: 0; font-size: 0.68rem; color: #94a3b8; text-align: right; }
 
+/* Facts */
 .sw-facts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-    gap: 0.4rem 0.6rem;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 0.45rem 0.6rem;
     margin: 0;
-    padding-top: 0.55rem;
-    border-top: 1px solid #f1f5f9;
 }
 .sw-facts dt { font-size: 0.68rem; color: #64748b; }
-.sw-facts dd {
-    margin: 0;
-    font-size: 0.86rem;
-    font-weight: 600;
-    color: #0f172a;
-    font-variant-numeric: tabular-nums;
-}
+.sw-facts dd { margin: 0; font-size: 0.86rem; font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
 .sw-facts dd span { display: block; font-size: 0.68rem; font-weight: 400; color: #64748b; }
 
-.sw-details {
-    align-self: flex-start;
-    margin-top: auto;
-    padding: 0;
-    border: 0;
-    background: none;
-    font: inherit;
-    font-size: 0.78rem;
-    color: #2563eb;
-    cursor: pointer;
-}
-.sw-details:hover { text-decoration: underline; }
-.sw-details:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 2px; }
+/* Notable events */
+.sw-events { margin: 0; padding: 0.5rem 0 0 1.2rem; border-top: 1px solid #f1f5f9; display: grid; gap: 0.25rem; font-size: 0.78rem; }
+.sw-events strong { font-weight: 600; color: #0f172a; }
+.sw-events span { color: #64748b; margin-left: 0.3rem; }
+
+/* "How this was worked out" */
+.sw-how { margin-top: auto; font-size: 0.76rem; color: #334155; }
+.sw-how summary { cursor: pointer; color: #2563eb; width: max-content; }
+.sw-how summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 2px; }
+.sw-how-list { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0.45rem 0 0; }
+.sw-how-list dt { color: #64748b; }
+.sw-how-list dd { margin: 0; font-variant-numeric: tabular-nums; }

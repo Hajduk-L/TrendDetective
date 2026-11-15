@@ -283,7 +283,7 @@
         const d = entry && entry.data;
         let html = '<section class="te-root" aria-label="Change over time">';
         html += `<header class="te-head"><h4 class="te-title"><span class="te-title-text">Change over time</span>${d ? help(K, methodsText(ctx, d, skipped)) : ''}</h4>`
-            + `<p class="te-lede">Each year as one value: ${frame.isPeriod ? `the mean of ${esc(frame.label)}` : 'the annual mean'}${ctx.anomaly ? ', as an anomaly' : ''}.</p></header>`;
+            + '</header>';
 
         // Controls: time frame, baseline.
         let controls = '';
@@ -315,13 +315,11 @@
             return `${html}</section>`;
         }
 
-        const unit = ctx.unit;
         const t = d.trend || {};
         const b = d.baseline || {};
         const kind = kindOf(ctx);
         const baseText = num(b.start) !== null ? `${labelOf(b.start)}–${labelOf(b.end)}` : 'baseline';
         const subject = subjectOf(ctx, frame);
-        const series = (d.series || []).filter((p) => num(p.value) !== null);
         const runPts = ((d.running && d.running.points) || []).filter((p) => num(p.slope) !== null && num(p.centre) !== null);
         const runN = (d.running && d.running.window_years) || windowYears;
         const showRunning = runPts.length >= MIN_WINDOWS;
@@ -332,18 +330,15 @@
 
         html += '<div class="te-figs">';
         html += figureHtml(K, 'a', `${subject} per year${t.available !== false ? ', with trend' : ''}`,
-            valuesText(K, ctx, kind, series, t, labelOf),
-            'values', `${subject} per year with trend line and ${baseText} mean`);
+            '', 'values', `${subject} per year with trend line and ${baseText} mean`);
         html += figureHtml(K, 'b', `Each year compared with the ${baseText} mean`,
-            barsText(K, ctx, kind, series, b, labelOf, baseText),
-            'bars', `Difference of each year to the ${baseText} mean`);
+            '', 'bars', `Difference of each year to the ${baseText} mean`);
 
         if (allowed.length) {
             const sizeButtons = WINDOW_CHOICES.map((w) => `<button type="button" data-te-window="${w}" data-te-focus="window-${w}" aria-pressed="${w === runN}"${allowed.includes(w) ? '' : ` disabled title="Too few ${w}-year windows fit into ${span} years"`}>${w}</button>`).join('');
             const sizeControl = `<div class="te-field te-field-inline"><span class="te-field-label" id="te-win-label-${uid}">Window</span><div class="te-seg te-seg-small" role="group" aria-labelledby="te-win-label-${uid}">${sizeButtons}</div><span class="te-field-unit">years</span></div>`;
             html += figureHtml(K, 'c', `Is the trend steady? ${runN}-year running trend`,
-                showRunning ? runningText(K, ctx, kind, d, runPts, labelOf) : '',
-                showRunning ? 'running' : null, `Trend of every ${runN}-year window`, sizeControl,
+                '', showRunning ? 'running' : null, `Trend of every ${runN}-year window`, sizeControl,
                 showRunning ? '' : `<div class="te-state">Too few ${esc(String(runN))}-year windows have enough years with values.</div>`,
                 'Each point is the linear trend of the window of years around it (ordinary least squares), with its 95 % confidence band, corrected for lag-1 autocorrelation. Filled points: p < 0.05. Windows overlap, so they are not independent tests.');
         }
@@ -486,56 +481,6 @@
         if (kind === 'warm') return ['warmest', 'coldest', 'warmer', 'colder'];
         if (kind === 'wet') return ['wettest', 'driest', 'wetter', 'drier'];
         return ['highest', 'lowest', 'higher', 'lower'];
-    }
-
-    function valuesText(K, ctx, kind, series, t, labelOf) {
-        if (!series.length) return '';
-        const unit = ctx.unit;
-        const [hiW, loW] = extremeWords(kind);
-        let top = series[0];
-        let bot = series[0];
-        for (const p of series) { if (p.value > top.value) top = p; if (p.value < bot.value) bot = p; }
-        const v = (x) => K.withUnit(K.fmt(x), unit);
-        let s = `${labelOf(top.year)} was the ${hiW} year (${v(top.value)}), ${labelOf(bot.year)} the ${loW} (${v(bot.value)}).`;
-        if (t.available !== false && num(t.total_change) !== null) {
-            const tc = t.total_change;
-            s += ` Along the trend line the value ${tc > 0 ? 'rises' : tc < 0 ? 'falls' : 'stays level'}${tc ? ` by ${K.withUnit(K.fmt(Math.abs(tc)), unit)}` : ''} from ${labelOf(t.first_year ?? series[0].year)} to ${labelOf(t.last_year ?? series[series.length - 1].year)}.`;
-        }
-        return s;
-    }
-
-    function barsText(K, ctx, kind, series, b, labelOf, baseText) {
-        const pts = series.filter((p) => num(p.anomaly) !== null);
-        if (!pts.length) return '';
-        const unit = ctx.unit;
-        const above = pts.filter((p) => p.anomaly > 0).length;
-        let big = pts[0];
-        for (const p of pts) if (Math.abs(p.anomaly) > Math.abs(big.anomaly)) big = p;
-        let s = `${above} of ${pts.length} years were above the ${baseText} mean${num(b.mean) !== null ? ` of ${K.withUnit(K.fmt(b.mean), unit)}` : ''}; the largest departure was ${labelOf(big.year)} (${K.withUnit(K.fmtSigned(big.anomaly), unit)}).`;
-        if (pts.length >= 8) {
-            const last = pts.slice(-5);
-            const lastAbove = last.filter((p) => p.anomaly > 0).length;
-            s += ` Of the last 5 years, ${lastAbove === 5 ? 'all were' : lastAbove === 0 ? 'none was' : `${lastAbove} were`} above.`;
-        }
-        return s;
-    }
-
-    function runningText(K, ctx, kind, d, pts, labelOf) {
-        const unit = ctx.unit;
-        const w = words(kind);
-        const total = pts.length;
-        const pos = pts.filter((p) => p.slope > 0).length;
-        const neg = pts.filter((p) => p.slope < 0).length;
-        const sig = pts.filter((p) => p.significant).length;
-        const sigText = sig === 0 ? 'none significant' : sig === total ? 'all significant' : `${sig} of them significant`;
-        let s;
-        if (pos === total) s = `All ${total} windows show ${w.up} (${sigText}).`;
-        else if (neg === total) s = `All ${total} windows show ${w.down} (${sigText}).`;
-        else if (Math.max(pos, neg) >= 0.75 * total) s = `Most windows show ${pos > neg ? w.up : w.down}: ${Math.max(pos, neg)} of ${total} (${sigText}).`;
-        else s = `${pos} of ${total} windows show ${w.up}, ${neg} ${w.down} (${sigText}): the direction is not stable.`;
-        const last = pts[pts.length - 1];
-        s += ` Latest window ${labelOf(last.start)}–${labelOf(last.end)}: ${rate(K, last.slope * 10, unit, 'decade')}.`;
-        return s;
     }
 
     function decadesFigure(K, ctx, kind, d) {

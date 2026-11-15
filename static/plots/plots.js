@@ -21,6 +21,7 @@
  *   setData(visualization, userRequest)  data from the 'Apply' response
  *   setLoading(boolean)
  *   focusDate(iso[, topicKey]), focusExample(iso, preferCodes, topic)
+ *   showSeries(topicKey)                 open a series' section and scroll to it
  *
  * Server calls: GET /api/topics (labels), GET /api/tools, POST /api/analyze.
  */
@@ -1897,7 +1898,8 @@
 
         for (const key of [...state.sections.keys()]) if (!keys.includes(key)) dropSection(key);
         if (!keys.length) {
-            r.topics.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose variables and click “Analyze” to plot the data here.'}</div>`;
+            // Nothing analysed yet: data-tp-idle hides the whole card (static/mode.css).
+            r.topics.innerHTML = state.loading ? '<div class="tp-empty">Loading data…</div>' : '<div class="tp-empty" data-tp-idle></div>';
             renderCompare();
             return;
         }
@@ -1928,18 +1930,14 @@
         ].filter(Boolean).join(' · ');
     }
 
-    // One line per series at the top: ✓ with values / station / years, or ✗ with the reason.
+    // One line per series without data at the top: ✗ with the reason, or … while it loads.
     function renderAvailability(keys) {
         const host = state.refs.avail;
         const items = keys.map((key) => {
             const model = buildModel(key);
             const label = topicLabel(key);
-            if (model && model.points.length) {
-                const meta = [`${model.points.length.toLocaleString('en-US')} values`, siteText(model), yearsText(model)].filter(Boolean).join(' · ');
-                return `<li class="tp-avail-item is-ok"><button type="button" class="tp-avail-btn" data-goto="${esc(key)}" title="Go to ${esc(label)}">`
-                    + `<span class="tp-avail-mark" aria-hidden="true">✓</span><span class="tp-visually-hidden">Available: </span>`
-                    + `<span class="tp-avail-name">${esc(label)}</span><span class="tp-avail-meta">${esc(meta)}</span></button></li>`;
-            }
+            // Series with data have their own section; only problems are listed here.
+            if (model && model.points.length) return '';
             const reason = (model && model.info.error) || 'No values in the selected time range.';
             return `<li class="tp-avail-item is-failed"><button type="button" class="tp-avail-btn" data-goto="${esc(key)}" title="${esc(reason)}">`
                 + `<span class="tp-avail-mark" aria-hidden="true">✗</span><span class="tp-visually-hidden">No data: </span>`
@@ -1952,8 +1950,9 @@
                 + `<span class="tp-avail-mark" aria-hidden="true">${state.loading ? '…' : '✗'}</span>`
                 + `<span class="tp-avail-name">${esc(topicLabel(t))}</span><span class="tp-avail-meta">${state.loading ? 'loading…' : 'no answer from the server'}</span></span></li>`);
         }
-        host.innerHTML = items.join('');
-        host.hidden = !items.length;
+        const shown = items.filter(Boolean);
+        host.innerHTML = shown.join('');
+        host.hidden = !shown.length;
     }
 
     function renderTopic(key, refs) {
@@ -2509,7 +2508,6 @@
                 links = pairs.length
                     ? `<table class="tp-ov-table"><caption>Strongest links (correlation of the ${corr.anomalies ? (withData[0].stepDays <= 1 ? 'day-to-day' : 'interval') + ' departures from the seasonal normal' : 'values'})</caption><tbody>${shown.map(prow).join('')}</tbody></table>`
                         + `${pairs.length > shown.length ? `<p class="tp-ov-sub">${pairs.length - shown.length} weaker pair${pairs.length - shown.length === 1 ? '' : 's'} not shown.</p>` : ''}`
-                        + `<p class="tp-ov-more"><button type="button" class="tp-inline-link" data-goto-compare="1">Plot them together and check time lags in “Compare variables” ↓</button></p>`
                     : `<p class="tp-ov-sub">No pair of series overlaps enough to correlate the ${what}.</p>`;
                 const best = pairs[0];
                 if (best && Math.abs(best.pearson) >= 0.2) {
@@ -2538,44 +2536,17 @@
         return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(1);
     }
 
-    // Short bold title of the main chart and one sentence of what the data shows.
+    // Short bold title of the main chart (the numbers are in the data summary below it).
     function figureHead(model, view, periodWins) {
         const label = topicLabel(model.key);
         const site = siteText(model);
         const years = yearsText(model);
-        const unit = model.unit;
-        const anomaly = state.fn.anomaly && model.anomalyOk;
         const at = site ? ` at ${site}` : '';
-        let title;
-        let text = '';
-        if (view === 'period') {
-            title = `${label}${at}: ${periodWins.map((w) => w.label).join(', ')} mean per year, ${years}`;
-            const win = periodWins[0];
-            const rows = win.allRows.filter((row) => row.complete && isNum(row.mean));
-            if (rows.length >= 2) {
-                const hi = rows.reduce((a, b) => (b.mean > a.mean ? b : a));
-                const lo = rows.reduce((a, b) => (b.mean < a.mean ? b : a));
-                text = `${win.label}: highest ${hi.label} (${withUnit(fmt(hi.mean), unit)}), lowest ${lo.label} (${withUnit(fmt(lo.mean), unit)}).`;
-            }
-        } else {
-            title = `${label}${anomaly ? ' anomaly' : ''}${at}, ${years}${view === 'overlay' ? ', years overlaid' : ''}`;
-            let lo = null;
-            let hi = null;
-            const vals = [];
-            for (const p of model.points) {
-                const v = transformed(model, p);
-                if (!isNum(v)) continue;
-                vals.push(v);
-                if (!lo || v < lo.v) lo = { v, t: p.t };
-                if (!hi || v > hi.v) hi = { v, t: p.t };
-            }
-            if (lo && hi) {
-                text = anomaly
-                    ? `Largest departures from normal: ${withUnit(fmtSigned(hi.v), unit)} (${timeLabel(model, hi.t)}) and ${withUnit(fmtSigned(lo.v), unit)} (${timeLabel(model, lo.t)}).`
-                    : `Mean ${withUnit(fmt(mean(vals)), unit)}; lowest ${withUnit(fmt(lo.v), unit)} (${timeLabel(model, lo.t)}), highest ${withUnit(fmt(hi.v), unit)} (${timeLabel(model, hi.t)}).`;
-            }
-        }
-        return `<div class="tp-fig-title">${esc(title)}</div>${text ? `<div class="tp-fig-text">${esc(text)}</div>` : ''}`;
+        const anomaly = state.fn.anomaly && model.anomalyOk;
+        const title = view === 'period'
+            ? `${label}${at}: ${periodWins.map((w) => w.label).join(', ')} mean per year, ${years}`
+            : `${label}${anomaly ? ' anomaly' : ''}${at}, ${years}${view === 'overlay' ? ', years overlaid' : ''}`;
+        return `<div class="tp-fig-title">${esc(title)}</div>`;
     }
 
     function setControlStates(models) {
@@ -2983,8 +2954,16 @@
         }
     }
 
+    // Open one series' section and scroll to it (the Simple cards' "Details" button).
+    function showSeries(key) {
+        if (!state.refs) return;
+        topicState(key).collapsed = false;
+        render();
+        scrollToTopic(key, 0);
+    }
+
     window.TrendPlots = {
-        mount, setData, setLoading, focusDate, focusExample,
+        mount, setData, setLoading, focusDate, focusExample, showSeries,
         // Drawing helpers shared with evolution.js and compare.js, so every chart looks the same.
         kit: { renderChart, legendHtml, esc, fmt, fmtSigned, withUnit, pLabel, mean, stdDev, isNum, COLOR, timeTicks, niceStep, tickDecimals, help, topicLabel },
     };

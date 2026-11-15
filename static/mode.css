@@ -6,13 +6,6 @@
     align-items: center;
     gap: 0.6rem;
 }
-.mode-switch-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #64748b;
-}
 .mode-seg {
     display: inline-flex;
     flex: 1 1 auto;
@@ -39,13 +32,6 @@
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 .mode-seg button:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
-.mode-hint {
-    margin: -0.55rem 0 0;
-    font-size: 0.72rem;
-    color: #64748b;
-}
-html[data-mode="simple"] .mode-hint-scientific,
-html[data-mode="scientific"] .mode-hint-simple { display: none; }
 
 /* ---- Which view shows ---- */
 
@@ -55,5 +41,14 @@ html[data-mode="simple"] .plot-card,
 html[data-mode="simple"] .task-output,
 html[data-mode="scientific"] .simple-card { display: none; }
 
+/* Nothing analysed yet: no empty results cards. */
+.simple-card:has(#simple-panel:empty),
+.plot-card:has([data-tp-idle]),
+.task-output:has(#visualization-container:empty) { display: none; }
+
 /* Sidebar: the interval length stays at its default (1 day) in simple mode. */
 html[data-mode="simple"] .field-group-advanced { display: none; }
+
+/* Data sources under each variable and case study: scientific mode only. */
+html[data-mode="simple"] .topic-item .topic-meta,
+html[data-mode="simple"] .example-source { display: none; }

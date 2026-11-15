@@ -266,7 +266,7 @@
         const help = (t) => (K.help ? K.help(t) : '');
         let html = '<section class="tc-root" aria-label="Compare variables">';
         html += `<header class="te-head"><h4 class="te-title">Compare variables ${help('See the chosen variables together, stacked on one time axis and correlated with each other, also with a time lag (does one lead the other?). Any variables can be combined; whether a comparison is meaningful (e.g. wind direction in degrees) is up to you.')}</h4>`
-            + '<p class="te-lede">Pick variables to see how they move together.</p></header>';
+            + '</header>';
 
         if (withData.length < 2) {
             html += `<div class="te-state">${ctx.loading ? 'Waiting for more variables…' : 'At least two variables with data are needed to compare variables.'}</div>`;
@@ -307,14 +307,13 @@
         const mixed = st.axis === 'raw' && units.length > 1;
         const n = chosen.length;
         const combinedTitle = `${n === 1 ? esc(lab(chosen[0])) : n === 2 ? `${esc(lab(chosen[0]))} and ${esc(lab(chosen[1]))}` : `All ${n} selected variables`}, ${st.axis === 'z' ? 'standardised' : 'original units'}`;
-        const combinedText = mixed ? 'Mixed units on one axis: compare the shapes, not the levels.'
-            : st.axis === 'z' ? `0 = each variable’s mean; ±1 = one standard deviation. Curves rising and falling together point to a positive link.` : '';
+        const combinedText = mixed ? 'Mixed units on one axis: compare the shapes, not the levels.' : '';
         html += '<div class="tc-figs">';
         html += `<figure class="te-fig">${caption(K, combinedTitle, `${anomalyShown ? 'Anomalies' : 'Values'} of the chosen variables in one plot. ${axisHelp}`, esc(combinedText))}`
             + '<div class="tp-chart tc-chart" data-tc-chart="combined"></div><div class="tp-legend te-legend" data-tc-legend="combined"></div></figure>';
 
         const sites = new Set(chosen.map((t) => t.site || ''));
-        html += `<figure class="te-fig">${caption(K, 'Each variable in its own unit', `${anomalyShown ? 'Anomalies' : 'Values'} of each variable, stacked on the same time axis.`, 'Drag across any plot to zoom all of them; double-click to reset.')}`
+        html += `<figure class="te-fig">${caption(K, 'Each variable in its own unit', `${anomalyShown ? 'Anomalies' : 'Values'} of each variable, stacked on the same time axis. Drag across any plot to zoom all of them; double-click to reset.`)}`
             + chosen.map((t) => `<div class="tc-row">${sites.size > 1 && t.site ? `<div class="tc-row-head" style="--tc-c:${colorOf(ctx, t.name)}"><span class="te-dot"></span>${esc(lab(t))} <span class="tc-site">${esc(t.site)}</span></div>` : ''}<div class="tp-chart tc-chart tc-chart-row" data-tc-chart="row" data-tc-topic="${esc(t.name)}"></div></div>`).join('')
             + '</figure>';
         html += '</div>';
@@ -362,25 +361,10 @@
         if (seasonal) notes.push(canSwitch ? 'Includes the seasonal cycle – switch to Anomalies to remove it.' : 'Includes the seasonal cycle.');
         if (notes.length) html += `<p class="te-note">${esc(notes.join(' '))}</p>`;
 
-        // Scatter: what is plotted and the r at the chosen lag.
-        const lagRow = (res.lags || []).find((l) => l.lag === st.lag);
-        const lagText = st.lag === 0 ? 'same ' + intervalWord(ctx, false) : `${lb} ${Math.abs(st.lag)} ${intervalWord(ctx, Math.abs(st.lag) !== 1)} ${st.lag > 0 ? 'later' : 'earlier'}`;
-        const scatterText = lagRow && num(lagRow.r) !== null
-            ? `${lagText[0].toUpperCase()}${lagText.slice(1)}: r = ${rText(lagRow.r)} (${strengthOf(lagRow.r)}), n = ${lagRow.n}.`
-            : `${lagText[0].toUpperCase()}${lagText.slice(1)}.`;
-        // Lags: where the link is strongest and whether it stands out from noise.
-        const band = num(res.lag_band);
-        const best = res.best_lag;
-        let lagSentence = '';
-        if (best && num(best.r) !== null) {
-            const noise = band !== null && Math.abs(best.r) <= band;
-            lagSentence = `Strongest link ${best.lag === 0 ? 'with no lag' : `at ${lagWord(ctx, best.lag)}`} (r = ${rText(best.r)}) — ${noise ? 'within the noise range' : strengthOf(best.r)}.`;
-            if (best.lag !== 0 && !noise) lagSentence += ` ${best.lag > 0 ? la : lb} leads.`;
-        }
         html += '<div class="tc-figs tc-figs-2">';
-        html += `<figure class="te-fig">${caption(K, `${esc(la)} vs. ${esc(lb)}`, `Each dot is one ${intervalWord(ctx, false)}: ${what} of ${la} (x) against ${lb} (y)${st.lag ? `, ${lb} shifted by ${lagWord(ctx, st.lag)}` : ''}. Dashed: least-squares line. Click a bar in the lag chart to pick another lag.`, esc(scatterText))}`
+        html += `<figure class="te-fig">${caption(K, `${esc(la)} vs. ${esc(lb)}`, `Each dot is one ${intervalWord(ctx, false)}: ${what} of ${la} (x) against ${lb} (y)${st.lag ? `, ${lb} shifted by ${lagWord(ctx, st.lag)}` : ''}. Dashed: least-squares line. Click a bar in the lag chart to pick another lag.`)}`
             + '<div class="tp-chart tc-chart" data-tc-chart="scatter"></div></figure>';
-        html += `<figure class="te-fig">${caption(K, 'Correlation at different time lags', `Pearson r of ${la} at interval t with ${lb} at t + k. A peak at k > 0 means ${la} leads ${lb} by k ${intervalWord(ctx, true)}. Dashed lines: rough 95 % range of r without any relation (±1.96/√n_eff); faded bars lie inside it. Click a bar to show that lag in the scatter plot.`, esc(lagSentence))}`
+        html += `<figure class="te-fig">${caption(K, 'Correlation at different time lags', `Pearson r of ${la} at interval t with ${lb} at t + k. A peak at k > 0 means ${la} leads ${lb} by k ${intervalWord(ctx, true)}. Dashed lines: rough 95 % range of r without any relation (±1.96/√n_eff); faded bars lie inside it. Click a bar to show that lag in the scatter plot.`)}`
             + '<div class="tp-chart tc-chart" data-tc-chart="lags"></div></figure>';
         html += '</div>';
         return `${html}</div>`;
