@@ -7,12 +7,17 @@
  * to POST /api/evolution (evolution.py) and draws the answer as numbers and
  * figures a scientist can quote:
  *
- *   headline   trend per decade with its 95 % CI and p, years above the baseline,
- *              share of running windows with the same sign
- *   Fig. 3a    yearly values with 95 % CI, OLS trend, baseline mean
- *   Fig. 3b    anomaly vs. the baseline per year (diverging bars)
- *   Fig. 3c    running trend: slope of every N-year window with its 95 % CI
- *   Fig. 3d    decadal means with the difference to the first decade
+ *   headline   one plain sentence: direction, size and significance of the trend
+ *   facts      trend per decade, change along the trend, robust check, years
+ *              above the baseline
+ *   figures    yearly values with trend; each year vs. the baseline (bars);
+ *              running trend (only when at least MIN_WINDOWS windows fit);
+ *              decade means (only with two or more decades)
+ *
+ * Every figure has a title saying what it shows and one sentence computed from
+ * the data saying what to read from it. Methods and caveats sit behind the
+ * kit's "?" help icons. Several instances may exist on a page (one per topic),
+ * so element ids carry a per-host number.
  *
  * Rendering is idempotent: a signature of everything shown is compared with
  * the last one, so repeated calls with the same data do nothing. Server
@@ -27,7 +32,7 @@
     const MIN_YEARS = 3;
     const DEBOUNCE_MS = 180;
     const CACHE_MAX = 80;
-    const FIG = 'Fig. 3';
+    const MIN_WINDOWS = 4; // running-trend figure only with at least this many windows
 
     // Diverging pairs for Fig. 3b (above / below the baseline), taken from the
     // warming-stripes palettes in plots.js so both read the same.
@@ -39,6 +44,7 @@
 
     const cache = new Map(); // request body (JSON) -> { pending } | { data, v } | { error, v }
     let version = 0;
+    let instances = 0;
 
     function kit() {
         return (window.TrendPlots && window.TrendPlots.kit) || null;
@@ -95,7 +101,7 @@
 
     function kindOf(ctx) {
         const unit = ctx.unit || '';
-        const topic = String(ctx.topic || '');
+        const topic = `${ctx.topicKey || ''} ${ctx.topic || ''}`;
         if (unit === 'mm/day' || unit === '% of days' || /precip|rain|snow|wet day/i.test(topic)) return 'wet';
         if (/°|\bK\b/.test(unit) || /temp/i.test(topic)) return 'warm';
         return 'neutral';
@@ -183,7 +189,7 @@
         const K = kit();
         if (!host) return;
         if (!K) { host.innerHTML = ''; return; }
-        const st = host._te || (host._te = { frameId: null, windowYears: DEFAULT_WINDOW, baseline: 'auto', sig: null });
+        const st = host._te || (host._te = { uid: ++instances, frameId: null, windowYears: DEFAULT_WINDOW, baseline: 'auto', sig: null });
         st.ctx = ctx;
         const frames = (ctx && ctx.frames) || [];
         if (!frames.length) {
@@ -199,8 +205,8 @@
         const used = rows.filter((r, i) => i === 0 || r.year !== rows[i - 1].year);
         const span = used.length ? used[used.length - 1].year - used[0].year + 1 : 0;
 
-        // Running-window choices that fit into the series.
-        const allowed = WINDOW_CHOICES.filter((w) => w <= span);
+        // Running-window lengths that leave at least MIN_WINDOWS windows in the series.
+        const allowed = WINDOW_CHOICES.filter((w) => span - w + 1 >= MIN_WINDOWS);
         let windowYears = st.windowYears;
         if (!allowed.includes(windowYears)) windowYears = allowed.length ? allowed.filter((w) => w <= DEFAULT_WINDOW).pop() || allowed[0] : null;
 
@@ -227,7 +233,7 @@
 
         const sig = JSON.stringify([
             key, entry ? (entry.pending ? 'p' : entry.v) : null, frame.id,
-            frames.map((f) => [f.id, f.label, f.color]), ctx.unit, ctx.anomaly, ctx.topic,
+            frames.map((f) => [f.id, f.label, f.color]), ctx.unit, ctx.anomaly, ctx.topic, ctx.topicKey, ctx.intervalText,
             frame.inside && frame.inside.map((q) => [q.year, q.slope, q.significant]), frame.insidePending,
             windowYears, st.baseline, frame.rows.length, frame.label,
         ]);
@@ -236,7 +242,7 @@
 
         const keepFocus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.getAttribute('data-te-focus') : null;
         teardown(host);
-        host.innerHTML = sectionHtml(K, ctx, frames, frame, used, span, allowed, windowYears, baselines, st.baseline, entry);
+        host.innerHTML = sectionHtml(K, ctx, frames, frame, used, span, allowed, windowYears, baselines, st.baseline, entry, st.uid);
         bind(host, st);
         if (entry && entry.data) drawFigures(K, host, ctx, frame, used, entry.data);
         if (keepFocus) {
@@ -270,18 +276,20 @@
         return out;
     }
 
-    function sectionHtml(K, ctx, frames, frame, used, span, allowed, windowYears, baselines, baselineId, entry) {
+    function sectionHtml(K, ctx, frames, frame, used, span, allowed, windowYears, baselines, baselineId, entry, uid) {
         const { esc } = K;
         const labelOf = labeller(frame);
+        const skipped = frame.rows.length - used.length;
+        const d = entry && entry.data;
         let html = '<section class="te-root" aria-label="Change over time">';
-        html += '<header class="te-head"><h4 class="te-title">Change over time</h4>'
-            + `<p class="te-lede">One value per year${frame.isPeriod ? ` (the mean of ${esc(frame.label)})` : ' (the annual mean)'}: how large the change is, how certain, and how consistently the years and decades follow it.</p></header>`;
+        html += `<header class="te-head"><h4 class="te-title"><span class="te-title-text">Change over time</span>${d ? help(K, methodsText(ctx, d, skipped)) : ''}</h4>`
+            + `<p class="te-lede">Each year as one value: ${frame.isPeriod ? `the mean of ${esc(frame.label)}` : 'the annual mean'}${ctx.anomaly ? ', as an anomaly' : ''}.</p></header>`;
 
         // Controls: time frame, baseline.
         let controls = '';
         if (frames.length > 1) {
-            controls += '<div class="te-field"><span class="te-field-label" id="te-frame-label">Time frame</span>'
-                + '<div class="te-seg" role="group" aria-labelledby="te-frame-label">'
+            controls += `<div class="te-field"><span class="te-field-label" id="te-frame-label-${uid}">Time frame</span>`
+                + `<div class="te-seg" role="group" aria-labelledby="te-frame-label-${uid}">`
                 + frames.map((f) => `<button type="button" data-te-frame="${esc(String(f.id))}" data-te-focus="frame-${esc(String(f.id))}" aria-pressed="${f.id === frame.id}"><span class="te-dot" style="background:${esc(f.color)}"></span>${esc(f.label)}</button>`).join('')
                 + '</div></div>';
         }
@@ -291,17 +299,11 @@
         }
         if (controls) html += `<div class="te-controls">${controls}</div>`;
 
-        if (ctx.anomaly) {
-            html += '<p class="te-note">Anomaly mode: the yearly values are already departures from the multi-year mean of the same time of year. Fig. 3b re-references them to the baseline period below.</p>';
-        }
-
-        const skipped = frame.rows.length - used.length;
         if (used.length < MIN_YEARS) {
-            html += `<div class="te-state">Needs at least ${MIN_YEARS} complete years of ${esc(frame.isPeriod ? frame.label : 'data')}; this selection has ${used.length}${skipped > 0 ? ` (${skipped} more ${skipped === 1 ? 'is' : 'are'} incomplete)` : ''}. Choose a time range over more years${frame.isPeriod ? '' : ' with Day or Month intervals'}.</div>`;
+            html += `<div class="te-state">Needs at least ${MIN_YEARS} complete years; this selection has ${used.length}${skipped > 0 ? ` (${skipped} more incomplete)` : ''}. Choose a longer time range.</div>`;
             html += insideHtml(K, ctx, frame);
             return `${html}</section>`;
         }
-
         if (!entry || entry.pending) {
             html += '<div class="te-state" role="status">Computing…</div>';
             html += insideHtml(K, ctx, frame);
@@ -313,45 +315,70 @@
             return `${html}</section>`;
         }
 
-        const d = entry.data;
         const unit = ctx.unit;
         const t = d.trend || {};
         const b = d.baseline || {};
+        const kind = kindOf(ctx);
         const baseText = num(b.start) !== null ? `${labelOf(b.start)}–${labelOf(b.end)}` : 'baseline';
+        const subject = subjectOf(ctx, frame);
+        const series = (d.series || []).filter((p) => num(p.value) !== null);
+        const runPts = ((d.running && d.running.points) || []).filter((p) => num(p.slope) !== null && num(p.centre) !== null);
+        const runN = (d.running && d.running.window_years) || windowYears;
+        const showRunning = runPts.length >= MIN_WINDOWS;
 
-        html += `<p class="te-headline">${esc(headline(K, ctx, frame, used, d, labelOf))}</p>`;
+        html += `<p class="te-headline">${esc(headline(K, ctx, frame, used, d, labelOf, showRunning))}</p>`;
         html += factsHtml(K, ctx, d, used, labelOf);
         html += insideHtml(K, ctx, frame);
 
-        const subject = frame.isPeriod ? `${frame.label} mean` : 'Annual mean';
-        const anomalyWord = ctx.anomaly ? ' anomaly' : '';
-        const runPts = (d.running && d.running.points) || [];
-        const runN = (d.running && d.running.window_years) || windowYears;
-
         html += '<div class="te-figs">';
-        html += figureHtml('a', `${esc(subject)}${anomalyWord} per year${t.available !== false ? ' with the ordinary least-squares trend' : ''} and the ${esc(baseText)} baseline mean.${skipped > 0 ? ` ${skipped} incomplete year${skipped === 1 ? ' is' : 's are'} left out.` : ''}`,
-            `Yearly ${subject}${anomalyWord}, trend and baseline`, 'values');
-        html += figureHtml('b', `Anomaly of each year relative to the ${esc(baseText)} mean${num(b.mean) !== null ? ` (${esc(K.withUnit(K.fmt(b.mean), unit))})` : ''}.`,
-            `Anomaly per year relative to the ${baseText} baseline`, 'bars');
+        html += figureHtml(K, 'a', `${subject} per year${t.available !== false ? ', with trend' : ''}`,
+            valuesText(K, ctx, kind, series, t, labelOf),
+            'values', `${subject} per year with trend line and ${baseText} mean`);
+        html += figureHtml(K, 'b', `Each year compared with the ${baseText} mean`,
+            barsText(K, ctx, kind, series, b, labelOf, baseText),
+            'bars', `Difference of each year to the ${baseText} mean`);
 
-        const sizeButtons = WINDOW_CHOICES.map((w) => `<button type="button" data-te-window="${w}" data-te-focus="window-${w}" aria-pressed="${w === runN}"${allowed.includes(w) ? '' : ` disabled title="Longer than the ${span} years of the series"`}>${w}</button>`).join('');
-        const sizeControl = `<div class="te-field te-field-inline"><span class="te-field-label" id="te-win-label">Window</span><div class="te-seg te-seg-small" role="group" aria-labelledby="te-win-label">${sizeButtons}</div><span class="te-field-unit">years</span></div>`;
-        html += figureHtml('c', allowed.length
-            ? `Running trend: slope of the ordinary least-squares fit in every ${esc(String(runN))}-year window, plotted at the window centre, with 95 % CI (autocorrelation-corrected). Filled markers: p < 0.05.`
-            : 'Running trend: slope of the ordinary least-squares fit in every N-year window.',
-            `Running ${runN}-year trend per decade`, runPts.length ? 'running' : null, allowed.length ? sizeControl : '',
-            runPts.length ? '' : `<div class="te-state">${allowed.length ? `No ${esc(String(runN))}-year window has enough years with values.` : `Running trends need a series of at least ${WINDOW_CHOICES[0]} years; this one spans ${span}.`}</div>`);
-        html += decadesFigure(K, ctx, d);
+        if (allowed.length) {
+            const sizeButtons = WINDOW_CHOICES.map((w) => `<button type="button" data-te-window="${w}" data-te-focus="window-${w}" aria-pressed="${w === runN}"${allowed.includes(w) ? '' : ` disabled title="Too few ${w}-year windows fit into ${span} years"`}>${w}</button>`).join('');
+            const sizeControl = `<div class="te-field te-field-inline"><span class="te-field-label" id="te-win-label-${uid}">Window</span><div class="te-seg te-seg-small" role="group" aria-labelledby="te-win-label-${uid}">${sizeButtons}</div><span class="te-field-unit">years</span></div>`;
+            html += figureHtml(K, 'c', `Is the trend steady? ${runN}-year running trend`,
+                showRunning ? runningText(K, ctx, kind, d, runPts, labelOf) : '',
+                showRunning ? 'running' : null, `Trend of every ${runN}-year window`, sizeControl,
+                showRunning ? '' : `<div class="te-state">Too few ${esc(String(runN))}-year windows have enough years with values.</div>`,
+                'Each point is the linear trend of the window of years around it (ordinary least squares), with its 95 % confidence band, corrected for lag-1 autocorrelation. Filled points: p < 0.05. Windows overlap, so they are not independent tests.');
+        }
+        html += decadesFigure(K, ctx, kind, d);
         html += '</div>';
-
-        const notes = (d.notes || []).filter(Boolean);
-        html += `<p class="te-methods"><span class="te-methods-head">Methods.</span> Error bars: 95 % t interval of each year's mean from the spread of its ${ctx.intervalText ? `${esc(ctx.intervalText)} ` : ''}values (only when a year has two or more). Trend: ordinary least squares on the yearly values; CI and p corrected for lag-1 autocorrelation. Sen's slope and Mann-Kendall test as a robust check. Only complete years are used.${notes.length ? ` ${notes.map((n) => esc(n)).join(' ')}` : ''}</p>`;
         return `${html}</section>`;
     }
 
-    function figureHtml(letter, caption, _aria, chartKind, controls = '', fallback = '') {
-        return `<figure class="te-fig te-fig-${letter}">`
-            + `<figcaption><span class="te-fig-no">${FIG}${letter}</span> ${caption}</figcaption>`
+    function help(K, text) {
+        return text && K.help ? ` ${K.help(text)}` : '';
+    }
+
+    function subjectOf(ctx, frame) {
+        return `${frame.isPeriod ? `${frame.label} mean` : 'Annual mean'}${ctx.anomaly ? ' anomaly' : ''}`;
+    }
+
+    function withUnitLabel(label, unit) {
+        return unit ? `${label} [${unit}]` : label;
+    }
+
+    function methodsText(ctx, d, skipped) {
+        const notes = (d.notes || []).filter(Boolean);
+        return [
+            `Each year's value is the mean of its ${ctx.intervalText ? `${ctx.intervalText} ` : ''}values; error bars are the 95 % t interval of that mean (years with two or more values).`,
+            ctx.anomaly ? 'Values are anomalies: departures from the multi-year mean of the same time of year.' : '',
+            'Trend: ordinary least squares on the yearly values; CI and p corrected for lag-1 autocorrelation. Sen\'s slope and the Mann-Kendall test as a robust check.',
+            `Only complete years are used${skipped > 0 ? ` (${skipped} incomplete left out)` : ''}.`,
+            ...notes,
+        ].filter(Boolean).join(' ');
+    }
+
+    function figureHtml(K, letter, title, text, chartKind, aria, controls = '', fallback = '', helpText = '') {
+        const { esc } = K;
+        return `<figure class="te-fig te-fig-${letter}" aria-label="${esc(aria)}">`
+            + `<figcaption><div class="tp-fig-title">${esc(title)}${help(K, helpText)}</div>${text ? `<p class="tp-fig-text">${esc(text)}</p>` : ''}</figcaption>`
             + (controls ? `<div class="te-fig-controls">${controls}</div>` : '')
             + (chartKind ? `<div class="tp-chart te-chart" data-te-chart="${chartKind}"></div><div class="tp-legend te-legend" data-te-legend="${chartKind}"></div>` : fallback)
             + '</figure>';
@@ -365,43 +392,38 @@
         };
     }
 
-    function headline(K, ctx, frame, used, d, labelOf) {
+    function slopePerDecade(t) {
+        return num(t.slope_per_decade) ?? (num(t.slope) !== null ? t.slope * 10 : null);
+    }
+
+    function headline(K, ctx, frame, used, d, labelOf, showRunning) {
         const unit = ctx.unit;
         const t = d.trend || {};
         const c = d.consistency || {};
-        const b = d.baseline || {};
         const w = words(kindOf(ctx));
-        const subject = `${frame.isPeriod ? `${frame.label} mean` : 'Annual mean'}${ctx.anomaly ? ' anomaly' : ''}`;
+        const subject = subjectOf(ctx, frame).toLowerCase();
         const range = `${labelOf(used[0].year)}–${labelOf(used[used.length - 1].year)}`;
         const parts = [];
-        const dec = num(t.slope_per_decade) ?? (num(t.slope) !== null ? t.slope * 10 : null);
+        const dec = slopePerDecade(t);
         if (t.available !== false && dec !== null) {
-            const lo = num(t.ci_low_per_decade) ?? (num(t.ci_low) !== null ? t.ci_low * 10 : null);
-            const hi = num(t.ci_high_per_decade) ?? (num(t.ci_high) !== null ? t.ci_high * 10 : null);
-            const dg = digitsFor([dec, lo, hi]);
-            const ci = lo !== null && hi !== null ? `95 % CI ${fixed(lo, dg, true)} to ${fixed(hi, dg, true)}, ` : '';
-            parts.push(`${subject}, ${range}: ${rate(K, dec, unit, 'decade', dg)} (${ci}${pText(t.p_value ?? t.p)}).`);
+            const dg = digitsFor([dec]);
+            const verb = Number(Math.abs(dec).toFixed(dg)) === 0 ? 'stayed about level' : `${dec > 0 ? 'rose' : 'fell'} by ${Math.abs(dec).toFixed(dg)} ${perUnit(unit, 'decade')}`;
+            const p = num(t.p_value ?? t.p);
+            const sig = p !== null && p < 0.05;
+            parts.push(`Over ${range}, the ${subject} ${verb}${p !== null ? ` (${sig ? 'statistically significant' : 'not statistically significant'}, ${pText(p)})` : ''}.`);
+            if (num(t.n_years) !== null && t.n_years < 15) parts.push(`With only ${t.n_years} years this is a hint, not a firm trend.`);
         } else {
-            parts.push(`${subject}, ${range}: no trend could be fitted.`);
-        }
-        const tail = [];
-        if (num(c.years_compared) && num(b.start) !== null) {
-            tail.push(`${c.years_above_baseline} of ${c.years_compared} years above the ${labelOf(b.start)}–${labelOf(b.end)} baseline`);
+            parts.push(`${subject.replace(/^./, (ch) => ch.toUpperCase())}, ${range}: no trend could be fitted.`);
         }
         const total = num(c.running_total);
-        if (total) {
-            const n = (d.running && d.running.window_years) || '';
+        if (showRunning && total) {
             const pos = c.running_positive || 0;
             const neg = c.running_negative || 0;
-            const sp = c.running_significant_positive || 0;
-            const sn = c.running_significant_negative || 0;
-            const win = `${n}-year windows`;
-            if (total === 1) tail.push(`the only ${n}-year window shows ${pos ? w.up : neg ? w.down : 'no change'}${(sp || sn) ? ' (significant)' : ' (not significant)'}`);
-            else if (pos === total) tail.push(`all ${total} ${win} show ${w.up}, ${sp} significantly`);
-            else if (neg === total) tail.push(`all ${total} ${win} show ${w.down}, ${sn} significantly`);
-            else tail.push(`${pos} of ${total} ${win} show ${w.up} (${sp} significant), ${neg} ${w.down} (${sn} significant)`);
+            if (pos === total) parts.push(`Every running window shows ${w.up}.`);
+            else if (neg === total) parts.push(`Every running window shows ${w.down}.`);
+            else if (Math.max(pos, neg) >= 0.75 * total) parts.push(`Most running windows (${Math.max(pos, neg)} of ${total}) show ${pos > neg ? w.up : w.down}.`);
+            else parts.push(`The running windows disagree on the direction (${pos} up, ${neg} down).`);
         }
-        if (tail.length) parts.push(`${tail.join('; ')}.`.replace(/^./, (ch) => ch.toUpperCase()));
         return parts.join(' ');
     }
 
@@ -410,31 +432,41 @@
         const unit = ctx.unit;
         const t = d.trend || {};
         const c = d.consistency || {};
+        const b = d.baseline || {};
         const facts = [];
         if (t.available !== false && num(t.slope) !== null) {
-            const dec = num(t.slope_per_decade) ?? t.slope * 10;
-            const dg = digitsFor([dec, t.ci_low_per_decade, t.ci_high_per_decade]);
-            facts.push(['OLS trend', rate(K, dec, unit, 'decade', dg), `R² ${K.fmt(t.r_squared, 2)} · ${pText(t.p_value)}${num(t.effective_n) !== null && num(t.n_years) !== null && t.effective_n < t.n_years * 0.9 ? ` · n_eff ≈ ${Math.round(t.effective_n)} of ${t.n_years}` : ''}`]);
+            const dec = slopePerDecade(t);
+            const lo = num(t.ci_low_per_decade);
+            const hi = num(t.ci_high_per_decade);
+            const dg = digitsFor([dec, lo, hi]);
+            const neff = num(t.effective_n) !== null && num(t.n_years) !== null && t.effective_n < t.n_years * 0.9 ? ` Effective sample size ≈ ${Math.round(t.effective_n)} of ${t.n_years} years.` : '';
+            facts.push(['Trend per decade', rate(K, dec, unit, 'decade', dg), lo !== null && hi !== null ? `95 % CI ${fixed(lo, dg, true)} to ${fixed(hi, dg, true)}` : pText(t.p_value),
+                `Ordinary least squares on the yearly values. ${pText(t.p_value)}, R² ${K.fmt(t.r_squared, 2)}. CI and p corrected for lag-1 autocorrelation.${neff}`]);
             if (num(t.total_change) !== null) {
-                facts.push(['Change along the trend', K.withUnit(K.fmtSigned(t.total_change), unit), `${labelOf(t.first_year ?? used[0].year)} to ${labelOf(t.last_year ?? used[used.length - 1].year)}`]);
+                facts.push(['Change along the trend', K.withUnit(K.fmtSigned(t.total_change), unit), `${labelOf(t.first_year ?? used[0].year)} to ${labelOf(t.last_year ?? used[used.length - 1].year)}`, '']);
             }
             if (num(t.sen_slope) !== null) {
                 const sdec = num(t.sen_slope_per_decade) ?? t.sen_slope * 10;
-                facts.push(["Sen's slope", rate(K, sdec, unit, 'decade', digitsFor([sdec])), `Mann-Kendall τ ${fixed(t.mk_tau, 2, false)} · ${pText(t.mk_p_value)}`]);
+                facts.push(['Robust check', rate(K, sdec, unit, 'decade', digitsFor([sdec])), `Mann-Kendall ${pText(t.mk_p_value)}`,
+                    `Sen's slope (median of all pairwise slopes) and the Mann-Kendall rank test, τ = ${fixed(t.mk_tau, 2, false)}. Less sensitive to single extreme years than the linear trend.`]);
             }
         }
-        if (num(c.years_compared)) facts.push(['Years above baseline', `${c.years_above_baseline} of ${c.years_compared}`, `${c.years_compared - c.years_above_baseline} at or below`]);
-        const steps = (c.increases_vs_previous || 0) + (c.decreases_vs_previous || 0);
-        if (steps) facts.push(['Year-on-year', `${c.increases_vs_previous} up · ${c.decreases_vs_previous} down`, 'compared with the previous year']);
+        if (num(c.years_compared)) {
+            const steps = (c.increases_vs_previous || 0) + (c.decreases_vs_previous || 0);
+            facts.push(['Years above baseline', `${c.years_above_baseline} of ${c.years_compared}`,
+                num(b.start) !== null ? `vs. the ${labelOf(b.start)}–${labelOf(b.end)} mean` : '',
+                steps ? `Year on year: ${c.increases_vs_previous} rises and ${c.decreases_vs_previous} falls compared with the previous year.` : '']);
+        }
         if (!facts.length) return '';
-        return `<dl class="te-facts">${facts.map(([k, v, s]) => `<div class="te-fact"><dt>${esc(k)}</dt><dd><span class="te-fact-value">${esc(v)}</span>${s ? `<span class="te-fact-sub">${esc(s)}</span>` : ''}</dd></div>`).join('')}</dl>`;
+        return `<dl class="te-facts">${facts.map(([k, v, s, h]) => `<div class="te-fact"><dt>${esc(k)}${help(K, h)}</dt><dd><span class="te-fact-value">${esc(v)}</span>${s ? `<span class="te-fact-sub">${esc(s)}</span>` : ''}</dd></div>`).join('')}</dl>`;
     }
 
     // One line about the regression inside every year's period (the chart of it lives in plots.js).
     function insideHtml(K, ctx, frame) {
         if (!frame.isPeriod) return '';
         const { esc } = K;
-        const lead = `Regression inside each ${esc(frame.label)} (x = day within the period)`;
+        const lead = `Within each ${esc(frame.label)}`;
+        const tip = help(K, `Linear regression of the value against the day within ${frame.label}, separately for every year. It mostly reflects the seasonal shape within the period.`);
         if (frame.insidePending && !(frame.inside && frame.inside.length)) return `<p class="te-inside">${lead}: computing…</p>`;
         const ins = (frame.inside || []).filter((q) => num(q.slope) !== null);
         if (!ins.length) return '';
@@ -445,31 +477,95 @@
         const med = median(ins.map((q) => q.slope));
         const unitDay = ctx.unit ? `${ctx.unit} per day` : 'per day';
         const dg = digitsFor([med]);
-        return `<p class="te-inside">${lead}: rising in ${up.length} of ${ins.length} years (${upSig} significant), falling in ${down.length} (${downSig} significant); median slope ${esc(`${K.fmtSigned(med, dg)} ${unitDay}`)}. This mostly reflects the seasonal shape within the period; the per-year chart is in the analysis section below.</p>`;
+        return `<p class="te-inside">${lead}, values rose in ${up.length} of ${ins.length} years (${upSig} significant) and fell in ${down.length} (${downSig} significant); median ${esc(`${K.fmtSigned(med, dg)} ${unitDay}`)}.${tip}</p>`;
     }
 
-    function decadesFigure(K, ctx, d) {
+    // ------------------------------------------------------- figure sentences
+
+    function extremeWords(kind) {
+        if (kind === 'warm') return ['warmest', 'coldest', 'warmer', 'colder'];
+        if (kind === 'wet') return ['wettest', 'driest', 'wetter', 'drier'];
+        return ['highest', 'lowest', 'higher', 'lower'];
+    }
+
+    function valuesText(K, ctx, kind, series, t, labelOf) {
+        if (!series.length) return '';
+        const unit = ctx.unit;
+        const [hiW, loW] = extremeWords(kind);
+        let top = series[0];
+        let bot = series[0];
+        for (const p of series) { if (p.value > top.value) top = p; if (p.value < bot.value) bot = p; }
+        const v = (x) => K.withUnit(K.fmt(x), unit);
+        let s = `${labelOf(top.year)} was the ${hiW} year (${v(top.value)}), ${labelOf(bot.year)} the ${loW} (${v(bot.value)}).`;
+        if (t.available !== false && num(t.total_change) !== null) {
+            const tc = t.total_change;
+            s += ` Along the trend line the value ${tc > 0 ? 'rises' : tc < 0 ? 'falls' : 'stays level'}${tc ? ` by ${K.withUnit(K.fmt(Math.abs(tc)), unit)}` : ''} from ${labelOf(t.first_year ?? series[0].year)} to ${labelOf(t.last_year ?? series[series.length - 1].year)}.`;
+        }
+        return s;
+    }
+
+    function barsText(K, ctx, kind, series, b, labelOf, baseText) {
+        const pts = series.filter((p) => num(p.anomaly) !== null);
+        if (!pts.length) return '';
+        const unit = ctx.unit;
+        const above = pts.filter((p) => p.anomaly > 0).length;
+        let big = pts[0];
+        for (const p of pts) if (Math.abs(p.anomaly) > Math.abs(big.anomaly)) big = p;
+        let s = `${above} of ${pts.length} years were above the ${baseText} mean${num(b.mean) !== null ? ` of ${K.withUnit(K.fmt(b.mean), unit)}` : ''}; the largest departure was ${labelOf(big.year)} (${K.withUnit(K.fmtSigned(big.anomaly), unit)}).`;
+        if (pts.length >= 8) {
+            const last = pts.slice(-5);
+            const lastAbove = last.filter((p) => p.anomaly > 0).length;
+            s += ` Of the last 5 years, ${lastAbove === 5 ? 'all were' : lastAbove === 0 ? 'none was' : `${lastAbove} were`} above.`;
+        }
+        return s;
+    }
+
+    function runningText(K, ctx, kind, d, pts, labelOf) {
+        const unit = ctx.unit;
+        const w = words(kind);
+        const total = pts.length;
+        const pos = pts.filter((p) => p.slope > 0).length;
+        const neg = pts.filter((p) => p.slope < 0).length;
+        const sig = pts.filter((p) => p.significant).length;
+        const sigText = sig === 0 ? 'none significant' : sig === total ? 'all significant' : `${sig} of them significant`;
+        let s;
+        if (pos === total) s = `All ${total} windows show ${w.up} (${sigText}).`;
+        else if (neg === total) s = `All ${total} windows show ${w.down} (${sigText}).`;
+        else if (Math.max(pos, neg) >= 0.75 * total) s = `Most windows show ${pos > neg ? w.up : w.down}: ${Math.max(pos, neg)} of ${total} (${sigText}).`;
+        else s = `${pos} of ${total} windows show ${w.up}, ${neg} ${w.down} (${sigText}): the direction is not stable.`;
+        const last = pts[pts.length - 1];
+        s += ` Latest window ${labelOf(last.start)}–${labelOf(last.end)}: ${rate(K, last.slope * 10, unit, 'decade')}.`;
+        return s;
+    }
+
+    function decadesFigure(K, ctx, kind, d) {
         const { esc } = K;
         const unit = ctx.unit;
         const decs = (d.decades || []).filter((x) => num(x.mean) !== null);
-        const u = unit ? ` (${esc(unit)})` : '';
-        let body;
-        if (!decs.length) {
-            body = '<div class="te-state">No calendar decade has five or more years with values.</div>';
-        } else {
-            const first = decs[0];
-            const dg = Math.min(3, digitsFor(decs.flatMap((x) => [x.ci_high - x.ci_low, x.diff_to_first].filter((v) => num(v) !== null).map(Math.abs))) );
-            body = '<div class="te-table-wrap" tabindex="0" role="region" aria-label="Decadal means"><table class="tp-table te-table">'
-                + `<caption class="te-sr">Decadal means with 95 % confidence interval and difference to the ${esc(first.label)}</caption>`
-                + `<thead><tr><th scope="col">Decade</th><th scope="col">Years</th><th scope="col">Mean${u}</th><th scope="col">95 % CI${u}</th><th scope="col">Δ to ${esc(first.label)}${u}</th></tr></thead><tbody>`
-                + decs.map((x, i) => `<tr><th scope="row">${esc(x.label)}</th><td>${esc(String(x.n))}</td><td>${fixed(x.mean, dg)}</td>`
-                    + `<td>${num(x.ci_low) !== null ? `${fixed(x.ci_low, dg)} to ${fixed(x.ci_high, dg)}` : '–'}</td>`
-                    + `<td>${i === 0 ? '<span class="te-muted">reference</span>' : fixed(x.diff_to_first, dg, true)}</td></tr>`).join('')
-                + '</tbody></table></div>';
+        if (decs.length < 2) return '';
+        const first = decs[0];
+        const last = decs[decs.length - 1];
+        const u = unit ? ` [${esc(unit)}]` : '';
+        const dg = Math.min(3, digitsFor(decs.flatMap((x) => [x.ci_high - x.ci_low, x.diff_to_first].filter((v) => num(v) !== null).map(Math.abs))));
+        const [, , upW, downW] = extremeWords(kind);
+        const diff = num(last.diff_to_first);
+        let text = '';
+        if (diff !== null) {
+            const separate = num(last.ci_low) !== null && num(first.ci_low) !== null && (last.ci_low > first.ci_high || last.ci_high < first.ci_low);
+            text = Number(Math.abs(diff).toFixed(dg)) === 0
+                ? `The ${last.label} averaged about the same as the ${first.label}.`
+                : `The ${last.label} were ${K.withUnit(Math.abs(diff).toFixed(dg), unit)} ${diff > 0 ? upW : downW} than the ${first.label}${separate ? '; their 95 % intervals do not overlap' : '; their 95 % intervals overlap'}.`;
         }
-        return '<figure class="te-fig te-fig-d">'
-            + `<figcaption><span class="te-fig-no">${FIG}d</span> Mean of every calendar decade with at least five years (1980s = 1980–1989), its 95 % t interval and the difference to the first decade.</figcaption>`
-            + `${body}</figure>`;
+        const table = `<div class="te-table-wrap" tabindex="0" role="region" aria-label="Decade means">`
+            + '<table class="tp-table te-table">'
+            + `<caption class="te-sr">Decade means with 95 % confidence interval and difference to the ${esc(first.label)}</caption>`
+            + `<thead><tr><th scope="col">Decade</th><th scope="col">Years</th><th scope="col">Mean${u}</th><th scope="col">95 % CI</th><th scope="col">Δ vs. ${esc(first.label)}</th></tr></thead><tbody>`
+            + decs.map((x, i) => `<tr><th scope="row">${esc(x.label)}</th><td>${esc(String(x.n))}</td><td>${fixed(x.mean, dg)}</td>`
+                + `<td>${num(x.ci_low) !== null ? `${fixed(x.ci_low, dg)} to ${fixed(x.ci_high, dg)}` : '–'}</td>`
+                + `<td>${i === 0 ? '<span class="te-muted">–</span>' : fixed(x.diff_to_first, dg, true)}</td></tr>`).join('')
+            + '</tbody></table></div>';
+        return figureHtml(K, 'd', 'Decade means', text, null, 'Mean of every calendar decade', '', table,
+            'Mean of every calendar decade (2010s = 2010–2019) with at least five years, its 95 % t interval and the difference to the first decade.');
     }
 
     // ----------------------------------------------------------------- figures
@@ -491,15 +587,16 @@
         if (barsHost) {
             const pal = DIVERGING[kindOf(ctx)];
             const b = d.baseline || {};
-            barsHost._teBars = { series, domain, unit: ctx.unit, pal, labelOf, baseText: num(b.start) !== null ? `${labelOf(b.start)}–${labelOf(b.end)}` : 'baseline' };
+            const baseText = num(b.start) !== null ? `${labelOf(b.start)}–${labelOf(b.end)}` : 'baseline';
+            barsHost._teBars = { series, domain, unit: ctx.unit, pal, labelOf, baseText };
             charts.push({ host: barsHost, bars: true });
             host.querySelector('[data-te-legend="bars"]').innerHTML = K.legendHtml([
-                { name: `Above the baseline mean (${pal.aboveWord})`, color: pal.above },
-                { name: `Below (${pal.belowWord})`, color: pal.below },
+                { name: `Year above the ${baseText} mean (${pal.aboveWord})`, color: pal.above },
+                { name: `Year below it (${pal.belowWord})`, color: pal.below },
             ]);
         }
         const runHost = host.querySelector('[data-te-chart="running"]');
-        if (runHost) {
+        if (runHost && d.running && d.running.points) {
             const spec = runningSpec(K, ctx, d, domain, labelOf);
             charts.push({ host: runHost, spec });
             host.querySelector('[data-te-legend="running"]').innerHTML = K.legendHtml(spec.legend);
@@ -527,10 +624,14 @@
         leftAlignUnit(el);
     }
 
-    // The kit right-aligns the unit to the y labels; long units ("°C/decade") would run off the left edge.
+    // Older kits right-align the y title to the tick labels, so long titles would run off the
+    // left edge; pin the top one (not an x-axis title near the bottom) to the left.
     function leftAlignUnit(el) {
-        const title = el.querySelector('text.tp-axis-title');
-        if (title) { title.setAttribute('text-anchor', 'start'); title.setAttribute('x', '4'); }
+        for (const title of el.querySelectorAll('text.tp-axis-title')) {
+            if (Number(title.getAttribute('y')) > 20) continue;
+            title.setAttribute('text-anchor', 'start');
+            title.setAttribute('x', '4');
+        }
     }
 
     function valuesSpec(K, ctx, frame, series, d, domain, labelOf) {
@@ -545,11 +646,13 @@
         if (num(b.start) !== null && num(b.end) !== null) {
             bands.push({ x0: b.start - 0.5, x1: b.end + 0.5, fill: 'rgba(82, 81, 78, 0.06)' });
         }
-        if (pts.some((p) => p.lo !== null)) {
+        const subject = subjectOf(ctx, frame);
+        const hasCi = pts.some((p) => p.lo !== null);
+        if (hasCi) {
             out.push({ id: 'ci', kind: 'whisker', name: '95 % CI', color: 'rgba(42, 120, 214, 0.45)', width: 1.4, points: pts, hover: false });
         }
-        out.push({ id: 'val', kind: 'line', name: frame.isPeriod ? `${frame.label} mean` : 'Annual mean', color: COLOR.series, width: 1, points: pts, markers: 3.2, gap: 1.5 });
-        legend.push({ name: `${frame.isPeriod ? `${frame.label} mean` : 'Annual mean'}${ctx.anomaly ? ' anomaly' : ''} per year${pts.some((p) => p.lo !== null) ? ' ± 95 % CI' : ''}`, color: COLOR.series, style: 'dot' });
+        out.push({ id: 'val', kind: 'line', name: subject, color: COLOR.series, width: 1, points: pts, markers: 3.2, gap: 1.5 });
+        legend.push({ name: `${subject} of each year${hasCi ? ' (bar: 95 % CI)' : ''}`, color: COLOR.series, style: 'dot' });
 
         if (t.available !== false && num(t.slope) !== null) {
             const xs = series.map((p) => p.year);
@@ -560,16 +663,17 @@
             const x1 = xs[xs.length - 1];
             out.push({ id: 'trend', kind: 'line', name: 'OLS trend', color: COLOR.accent, width: 1.6, points: [x0, x1].map((x) => ({ x, y: my + t.slope * (x - mx) })), hover: false });
             const dec = num(t.slope_per_decade) ?? t.slope * 10;
-            legend.push({ name: `OLS trend (${rate(K, dec, unit, 'decade', digitsFor([dec]))}, ${pText(t.p_value)})`, color: COLOR.accent, style: 'line' });
+            legend.push({ name: `Linear trend (${rate(K, dec, unit, 'decade', digitsFor([dec]))})`, color: COLOR.accent, style: 'line' });
         }
         if (num(b.mean) !== null) {
             out.push({ id: 'base', kind: 'line', name: 'Baseline mean', color: COLOR.reference, width: 1, dash: '4,3', points: [{ x: domain[0], y: b.mean }, { x: domain[1], y: b.mean }], hover: false });
-            legend.push({ name: `Baseline mean ${labelOf(b.start)}–${labelOf(b.end)} (${K.withUnit(K.fmt(b.mean), unit)}; shaded)`, color: COLOR.reference, style: 'dash' });
+            legend.push({ name: `Mean of ${labelOf(b.start)}–${labelOf(b.end)} (shaded years)`, color: COLOR.reference, style: 'dash' });
         }
         return {
             kind: 'year', height: 230, xDomain: domain, xTicks: yearTicks(domain, labelOf),
             formatX: (x) => `${frame.isPeriod ? `${frame.label} ` : ''}${labelOf(x)}`,
             series: out, bands, legend, unit, yInclude: ctx.anomaly ? [0] : [],
+            yLabel: withUnitLabel(subject, unit), xLabel: 'Year',
             tooltipExtra: (row) => {
                 const p = row.meta;
                 if (!p) return '';
@@ -579,7 +683,7 @@
                 if (num(p.change_from_previous) !== null) bits.push(`${K.fmtSigned(p.change_from_previous)} vs. previous year`);
                 return bits.join(' · ');
             },
-            ariaLabel: 'Yearly values with 95 % confidence intervals, linear trend and baseline mean',
+            ariaLabel: `${subject} of each year with 95 % confidence intervals, linear trend and baseline mean`,
         };
     }
 
@@ -596,15 +700,15 @@
             { id: 'run', kind: 'line', name: `${n}-year trend`, color: COLOR.series, width: 1.2, points: pts, markers: 3.2, gap: 1.01, hollow: (p) => !p.meta.significant },
         ];
         const legend = [
-            { name: `Slope of the ${n}-year window centred on the year (filled: p < 0.05)`, color: COLOR.series, style: 'dot' },
-            { name: '95 % CI', color: COLOR.series, style: 'band' },
+            { name: `Trend of the ${n} years around each point (filled: significant)`, color: COLOR.series, style: 'dot' },
+            { name: '95 % confidence band', color: COLOR.series, style: 'band' },
         ];
         const whole = num(t.slope_per_decade) ?? (num(t.slope) !== null ? t.slope * 10 : null);
         if (whole !== null) {
             series.push({ id: 'whole', kind: 'line', name: 'Whole-period trend', color: COLOR.accent, width: 1, dash: '4,3', points: [{ x: domain[0], y: whole }, { x: domain[1], y: whole }], hover: false });
-            legend.push({ name: `Whole-period trend (${rate(K, whole, unit, 'decade', digitsFor([whole]))})`, color: COLOR.accent, style: 'dash' });
+            legend.push({ name: `Trend over all years (${rate(K, whole, unit, 'decade', digitsFor([whole]))})`, color: COLOR.accent, style: 'dash' });
         }
-        legend.push({ name: 'Zero: no change', color: COLOR.axis, style: 'line' });
+        legend.push({ name: 'Zero line: no change', color: COLOR.axis, style: 'line' });
         return {
             kind: 'year', height: 210, xDomain: domain, xTicks: yearTicks(domain, labelOf),
             formatX: (x) => {
@@ -612,6 +716,7 @@
                 return p ? `Window ${labelOf(p.meta.start)}–${labelOf(p.meta.end)}` : String(x);
             },
             series, bands: [], legend, unit: perUnit(unit, 'decade'), yInclude: [0],
+            yLabel: withUnitLabel('Trend per decade', unit), xLabel: 'Centre of window (year)',
             tooltipExtra: (row) => {
                 const p = row.meta;
                 if (!p) return '';
@@ -626,9 +731,9 @@
         const { COLOR, esc } = K;
         const { series, domain, unit, pal, labelOf, baseText } = data;
         const pts = series.filter((p) => num(p.anomaly) !== null);
-        const height = 190;
+        const height = 204;
         const top = 22;
-        const bottom = 30;
+        const bottom = 44;
         const right = 18;
         let lo = 0;
         let hi = 0;
@@ -658,7 +763,8 @@
             out += `<line x1="${left}" x2="${left + plotW}" y1="${y}" y2="${y}" stroke="${COLOR.grid}" />`;
             out += `<text x="${left - 7}" y="${y}" text-anchor="end" dominant-baseline="middle">${labels[k]}</text>`;
         });
-        if (unit) out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start">${esc(unit)}</text>`;
+        out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start">${esc(withUnitLabel(`Difference to the ${baseText} mean`, unit))}</text>`;
+        out += `<text class="tp-axis-title" x="${f(left + plotW / 2)}" y="${height - 6}" text-anchor="middle">Year</text>`;
         out += `<line x1="${left}" x2="${left + plotW}" y1="${top + plotH}" y2="${top + plotH}" stroke="${COLOR.axis}" />`;
         const ticksX = yearTicks(domain, labelOf)(plotW);
         let lastEnd = -Infinity;

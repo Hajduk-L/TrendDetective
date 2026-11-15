@@ -1,19 +1,18 @@
 /*
  * TrendDetective plot panel (below the map).
  *
- * Plots one topic of the last request in three views:
- *   - Timeline: the whole series; a chosen period (e.g. every January) is
- *     shaded in every year and its points are emphasised.
- *   - Years overlaid: every year as its own line on a Jan..Dec axis, so the
- *     same time frame of different years lies on top of each other.
+ * Plots every series of the last request, one collapsible section per series
+ * (each key of visualization.topics), in one of three views shared by all:
+ *   - Timeline: the whole series; the analysis periods (e.g. every January)
+ *     are shaded in every year.
+ *   - Years overlaid: every year as its own line on a Jan..Dec axis.
  *   - Period across years: one value per year (the mean of a time frame,
  *     e.g. January) for every analysis time frame.
  * Analyses: any number of time frames (whole series, a month, a season, the
  * whole year or a custom DD.MM – DD.MM range), each with its own selection of
  * the analysis tools of src/task.py. For a period a tool runs inside every
- * year's period on its own (e.g. a linear regression over 1–31 January 2014,
- * another over January 2015, …); the per-year lines are drawn into the plot
- * and the slopes are compared year by year below it.
+ * year's period on its own; the per-year lines are drawn into the plot and the
+ * slopes are compared year by year below it.
  * Functions: anomaly (deviation from the multi-year mean of the same time of
  * year), moving average, multi-year mean ± 1σ, zoom to period.
  *
@@ -21,8 +20,9 @@
  *   mount(element)                       build the panel inside `element`
  *   setData(visualization, userRequest)  data from the 'Apply' response
  *   setLoading(boolean)
+ *   focusDate(iso[, topicKey]), focusExample(iso, preferCodes, topic)
  *
- * The only server call is POST /api/analyze (plot_analysis.py).
+ * Server calls: GET /api/topics (labels), GET /api/tools, POST /api/analyze.
  */
 (function () {
     'use strict';
@@ -52,8 +52,8 @@
         surface: '#fcfcfb',
     };
 
+    // Analysis time frames: presets (months, seasons, whole year) and a custom DD.MM range.
     const PERIOD_PRESETS = [
-        { id: 'none', label: 'No highlight' },
         { id: 'year', label: 'Whole year (annual mean)', start: [1, 1], end: [12, 31] },
         ...MONTH_NAMES.map((name, i) => ({ id: `m${i + 1}`, label: name, start: [i + 1, 1], end: [i + 1, i === 1 ? 29 : MONTH_DAYS[i]], group: 'Months' })),
         { id: 'djf', label: 'Winter (Dec–Feb)', start: [12, 1], end: [2, 29], group: 'Seasons' },
@@ -63,7 +63,7 @@
         { id: 'custom', label: 'Custom (DD.MM – DD.MM)…' },
     ];
 
-    const DEFAULT_TOOLS = ['Linear Regression', 'Mann-Kendall', "Sen's Slope", 'Change Point', 't-Test'];
+    const DEFAULT_TOOLS = ['Linear Regression', 'Mann-Kendall'];
     const TOOL_SHORT = { 'Linear Regression': 'Linear regression', 'Mann-Kendall': 'Mann-Kendall', 't-Test': 't-Test', "Sen's Slope": "Sen's slope", 'Change Point': 'Change point' };
     const TOOL_HELP = {
         'Linear Regression': 'Straight line through the values: the average change per year.',
@@ -81,9 +81,6 @@
         warm_spell: { icon: '▬', color: '#a1452f', label: 'Warm spell' },
         cold_spell: { icon: '▬', color: '#2f5f8f', label: 'Cold spell' },
     };
-    // Diverging ramps for the stripes view (blue = below the mean, red = above; brown/green for wetness).
-    const STRIPES_WARM = ['#08306b', '#08519c', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#a50f15', '#67000d'];
-    const STRIPES_WET = ['#543005', '#8c510a', '#bf812d', '#dfc27d', '#f6e8c3', '#f5f5f5', '#c7eae5', '#80cdc1', '#35978f', '#01665e', '#003c30'];
     // One colour per analysis time frame (distinct from the blue data series and the year ramp).
     const WINDOW_COLORS = ['#eb6834', '#1a9e74', '#c2399b', '#8f6a00', '#6250d6', '#d1394a'];
 
@@ -91,7 +88,13 @@
         { id: 'timeline', label: 'Timeline' },
         { id: 'overlay', label: 'Years overlaid' },
         { id: 'period', label: 'Period across years' },
-        { id: 'stripes', label: 'Stripes' },
+    ];
+
+    // Collapsible blocks inside every topic section.
+    const SUBS = [
+        { id: 'analysis', label: 'Statistical analysis' },
+        { id: 'events', label: 'Notable events' },
+        { id: 'evolution', label: 'Change over time' },
     ];
 
     const state = {
@@ -99,22 +102,21 @@
         refs: {},
         viz: null,
         request: null,
-        topic: null,
         view: 'timeline',
-        periodId: 'none',
-        custom: { start: '01.06', end: '31.08' },
         fn: { anomaly: false, ma: false, maWindow: 3, clim: false, zoom: false },
         tools: DEFAULT_TOOLS.slice(),
         // Analysis time frames: frame is 'all' (whole series) or a PERIOD_PRESETS id.
         windows: [{ id: 1, frame: 'all', custom: { start: '01.06', end: '31.08' }, tools: DEFAULT_TOOLS.slice() }],
         nextWindowId: 2,
-        hiddenYears: new Set(),
-        zoom: null,
-        showTable: false,
         loading: false,
         analysisCache: new Map(),
-        lastTable: null,
-        activeEvent: null,
+        // Human labels of the topics (GET /api/topics -> details).
+        labels: {},
+        labelsVersion: 0,
+        // Per series key: zoom, hidden years, active event, collapsed state, … (see topicState).
+        per: new Map(),
+        // Per series key: the section element and its refs (built once, reused).
+        sections: new Map(),
     };
 
     // ------------------------------------------------------------------ utils
@@ -224,18 +226,6 @@
     }
 
     // ------------------------------------------------------------- data model
-
-    function currentPeriod() {
-        const preset = PERIOD_PRESETS.find((p) => p.id === state.periodId) || PERIOD_PRESETS[0];
-        if (preset.id === 'none') return null;
-        if (preset.id === 'custom') {
-            const a = parseDayMonth(state.custom.start);
-            const b = parseDayMonth(state.custom.end);
-            if (!a || !b) return { invalid: true };
-            return makePeriod(a, b, `${state.custom.start}–${state.custom.end}`);
-        }
-        return makePeriod(preset.start, preset.end, preset.label.replace(/ \(.*\)$/, ''));
-    }
 
     function makePeriod(start, end, label) {
         const s = mdKey(start[0], start[1]);
@@ -353,7 +343,7 @@
                     // x is in years; for sub-annual intervals the change-point test and the
                     // autocorrelation corrections leave out the seasonal cycle (season_length 1 year).
                     const seasonLength = model.stepDays < 200 ? 1 : null;
-                    const key = JSON.stringify([state.topic, state.tools, seasonLength, rows.map((row) => [row.year, row.mean])]);
+                    const key = JSON.stringify([model.key, state.tools, seasonLength, rows.map((row) => [row.year, row.mean])]);
                     if (!state.analysisCache.has(key)) requestAnalysis(key, { x: rows.map((row) => row.year), values: rows.map((row) => row.mean), season_length: seasonLength });
                     analysis = state.analysisCache.get(key);
                 }
@@ -382,7 +372,7 @@
             else if (analysed.every((yr) => yr.pts.length < 3)) status = `Each ${label} has fewer than three values. Choose a shorter interval (e.g. 1 Day) to analyse inside the period.`;
             else {
                 const groups = analysed.map((yr) => ({ key: yr.year, x: yr.pts.map((q) => +q.x.toFixed(3)), values: yr.pts.map((q) => q.y) }));
-                const key = JSON.stringify([state.topic, state.tools, 'groups', groups]);
+                const key = JSON.stringify([model.key, state.tools, 'groups', groups]);
                 if (!state.analysisCache.has(key)) requestAnalysis(key, { groups });
                 analysis = state.analysisCache.get(key);
                 if (analysis && analysis.groups) {
@@ -395,7 +385,7 @@
             // One value per year (the period mean), x = year, so slopes are per year.
             let across = null;
             if (base.tools.length && rows.length >= 3) {
-                const acrossKey = JSON.stringify([state.topic, state.tools, 'across', rows.map((row) => [row.year, row.mean])]);
+                const acrossKey = JSON.stringify([model.key, state.tools, 'across', rows.map((row) => [row.year, row.mean])]);
                 if (!state.analysisCache.has(acrossKey)) requestAnalysis(acrossKey, { x: rows.map((row) => row.year), values: rows.map((row) => row.mean) });
                 across = state.analysisCache.get(acrossKey);
             }
@@ -424,9 +414,23 @@
         return pieces.filter((piece) => piece.length >= 2);
     }
 
-    function buildModel(topic = state.topic) {
+    // Models depend only on the data and the request, so they are cached per series.
+    let modelCache = { viz: null, request: null, map: new Map() };
+
+    function buildModel(topic) {
+        if (modelCache.viz !== state.viz || modelCache.request !== state.request) {
+            modelCache = { viz: state.viz, request: state.request, map: new Map() };
+        }
         const info = state.viz && state.viz.topics && state.viz.topics[topic];
         if (!info) return null;
+        const hit = modelCache.map.get(topic);
+        if (hit && hit.info === info) return hit;
+        const model = computeModel(topic, info);
+        modelCache.map.set(topic, model);
+        return model;
+    }
+
+    function computeModel(topic, info) {
         const req = state.request || {};
         const [ivValue, ivUnit] = Array.isArray(req.interval_length) ? req.interval_length : [1, 'Day'];
         const stepDays = (Number(ivValue) || 1) * (INTERVAL_DAYS[ivUnit] || 1);
@@ -478,6 +482,7 @@
             : [];
 
         return {
+            key: topic, ps: topicState(topic),
             info, points, stepDays, monthly, bucketOf, bucketPos, clim, years, domain,
             unit: info.unit || '',
             ivText: `${fmt(Number(ivValue), 2)} ${ivUnit}${Number(ivValue) === 1 ? '' : 's'}`,
@@ -656,7 +661,7 @@
                 if (!isNum(p.y) || p.meta.start > at || p.meta.start + model.stepDays * DAY_MS <= at - DAY_MS / 2) continue;
                 if (!best || Math.abs(p.x - at) < Math.abs(best.x - at)) best = p;
             }
-            if (best) marks.push({ x: best.x, y: best.y, n: ev.n, color: ev.style.color, active: state.activeEvent === ev.n, title: `${ev.label}: ${fmtIsoDate(ev.date)}` });
+            if (best) marks.push({ x: best.x, y: best.y, n: ev.n, color: ev.style.color, active: model.ps.activeEvent === ev.n, title: `${ev.label}: ${fmtIsoDate(ev.date)}` });
             if (ev.end) {
                 bands.push({ x0: isoToTime(ev.date), x1: isoToTime(ev.end) + DAY_MS, fill: ev.kind === 'cold_spell' ? 'rgba(47, 95, 143, 0.10)' : 'rgba(161, 69, 47, 0.09)' });
             }
@@ -664,16 +669,31 @@
         return { marks, bands };
     }
 
-    function buildTimeline(model, period, wins) {
+    // Light wash of a time frame's colour, e.g. '#eb6834' -> 'rgba(235, 104, 52, 0.10)'.
+    function wash(hex, alpha = 0.1) {
+        const m = /^#([0-9a-f]{6})$/i.exec(hex || '');
+        if (!m) return COLOR.accentWash;
+        const n = parseInt(m[1], 16);
+        return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+    }
+
+    // Analysis time frames with a (valid) period, e.g. January; their windows are shaded in the plots.
+    function periodWindows(wins) {
+        return (wins || []).filter((win) => win.period && !win.period.invalid);
+    }
+
+    function buildTimeline(model, wins) {
         const series = [];
         const legend = [];
         const unit = model.unit;
         const pts = model.points.map((p) => ({ x: p.t, y: transformed(model, p), meta: p }));
         const gap = model.stepDays * DAY_MS * 1.6;
         const markers = pts.length <= 120;
+        const shaded = periodWindows(wins);
 
         const bands = [];
-        if (period && !period.invalid) {
+        for (const win of shaded) {
+            const period = win.period;
             const [sm, sd] = period.start;
             const [em, ed] = period.end;
             const y0 = new Date(model.domain[0]).getUTCFullYear() - 1;
@@ -683,7 +703,7 @@
                 const lastDay = Math.min(ed, new Date(Date.UTC(endYear, em, 0)).getUTCDate());
                 const x0 = Math.max(model.domain[0], Date.UTC(y, sm - 1, Math.min(sd, new Date(Date.UTC(y, sm, 0)).getUTCDate())));
                 const x1 = Math.min(model.domain[1], Date.UTC(endYear, em - 1, lastDay) + DAY_MS);
-                if (x1 > x0) bands.push({ x0, x1, fill: COLOR.accentWash });
+                if (x1 > x0) bands.push({ x0, x1, fill: wash(win.color, 0.09) });
             }
         }
 
@@ -701,10 +721,9 @@
         series.push({
             id: 'values', kind: 'line', name: state.fn.anomaly ? 'Anomaly' : 'Value', color: COLOR.series, width: 2,
             points: pts, gap, markers: markers ? 3 : 0,
-            emphasize: period && !period.invalid ? (p) => inPeriod(p.meta, period) : null,
         });
-        legend.unshift({ name: state.fn.anomaly ? `${model.info.variables?.length ? 'Anomaly of interval mean' : 'Anomaly'}` : 'Interval mean', color: COLOR.series, style: 'line' });
-        if (period && !period.invalid) legend.push({ name: `${period.label} (highlighted)`, color: COLOR.accent, style: 'dot' });
+        legend.unshift({ name: state.fn.anomaly ? 'Anomaly' : ({ 1: 'Daily value' })[model.stepDays] || 'Interval mean', color: COLOR.series, style: 'line' });
+        for (const win of shaded) legend.push({ name: `${win.label} (shaded)`, color: win.color, style: 'band-color' });
 
         if (state.fn.ma) {
             const w = state.fn.maWindow;
@@ -751,7 +770,7 @@
         }
 
         const ev = eventMarks(model, pts);
-        if (ev.marks.length) legend.push({ name: 'Notable events (numbered, see Table 1 below the plot)', color: EVENT_STYLE.record_high.color, style: 'hollow' });
+        if (ev.marks.length) legend.push({ name: 'Notable events (numbered as in the list below)', color: EVENT_STYLE.record_high.color, style: 'hollow' });
         return {
             kind: 'time',
             xDomain: model.domain,
@@ -761,14 +780,16 @@
             eventMarks: ev.marks,
             yInclude: state.fn.anomaly ? [0] : [],
             tooltipExtra: (row) => (row.meta && row.meta.label ? `interval from ${row.meta.label}` : ''),
-            table: tableFrom(['Interval start', 'Mid date', state.fn.anomaly ? `Anomaly${unit ? ` (${unit})` : ''}` : `Value${unit ? ` (${unit})` : ''}`, 'In period'],
-                pts.map((p) => [p.meta.label, ddmmyyyy(p.x), p.y, period && !period.invalid ? (inPeriod(p.meta, period) ? 'yes' : '') : ''])),
+            table: tableFrom(['Interval start', 'Mid date', state.fn.anomaly ? `Anomaly${unit ? ` (${unit})` : ''}` : `Value${unit ? ` (${unit})` : ''}`, ...shaded.map((win) => `In ${win.label}`)],
+                pts.map((p) => [p.meta.label, ddmmyyyy(p.x), p.y, ...shaded.map((win) => (inPeriod(p.meta, win.period) ? 'yes' : ''))])),
         };
     }
 
-    function buildOverlay(model, period, wins) {
+    function buildOverlay(model, wins) {
         const unit = model.unit;
-        const usePeriod = period && !period.invalid ? period : null;
+        const shaded = periodWindows(wins);
+        // The first analysis period decides where a year starts (Dec–Feb: in December) and the zoom.
+        const usePeriod = shaded.length ? shaded[0].period : null;
         const offset = usePeriod && usePeriod.wraps ? yearPos(usePeriod.start[0], usePeriod.start[1]) : 0;
         const xOf = (pos) => ((pos - offset) % YEAR_DAYS + YEAR_DAYS) % YEAR_DAYS;
         let domain = [0, YEAR_DAYS];
@@ -788,15 +809,17 @@
         }
         const allYears = [...byYear.keys()].sort((a, b) => a - b);
         const colorModel = { years: allYears };
-        const visibleYears = allYears.filter((y) => !state.hiddenYears.has(y));
+        const visibleYears = allYears.filter((y) => !model.ps.hiddenYears.has(y));
         const latest = visibleYears[visibleYears.length - 1];
 
         const series = [];
         const bands = [];
-        if (usePeriod && !state.fn.zoom) {
-            const a = xOf(yearPos(usePeriod.start[0], usePeriod.start[1]));
-            const b = xOf(yearPos(usePeriod.end[0], usePeriod.end[1])) + 1;
-            bands.push({ x0: a, x1: b > a ? b : b + YEAR_DAYS, fill: COLOR.accentWash });
+        if (!state.fn.zoom) {
+            for (const win of shaded) {
+                const a = xOf(yearPos(win.period.start[0], win.period.start[1]));
+                const b = xOf(yearPos(win.period.end[0], win.period.end[1])) + 1;
+                bands.push({ x0: a, x1: b > a ? b : b + YEAR_DAYS, fill: wash(win.color, 0.09) });
+            }
         }
 
         if (state.fn.clim && model.years.length >= 2) {
@@ -830,9 +853,9 @@
             for (const yr of win.years) {
                 const lr = yr.res && yr.res['Linear Regression'];
                 if (!lr || !lr.available) continue;
-                // Years are keyed by the highlight period's season year; a point decides which line it belongs to.
+                // Years are keyed by the first analysis period's season year; a point decides which line it belongs to.
                 const lineYear = yr.pts.length ? seasonYear(model.points.find((p) => p.t === yr.pts[0].t), usePeriod) : yr.year;
-                if (state.hiddenYears.has(lineYear)) continue;
+                if (model.ps.hiddenYears.has(lineYear)) continue;
                 for (const piece of fittedPieces(yr, lr, (q) => xOf(q.pos))) {
                     series.push({ id: `win${win.w.id}-${yr.year}-${drawn}`, kind: 'line', name: `${win.label} ${yr.label}: regression`, color: yearColor(colorModel, lineYear), width: 2.5, dash: '6,3', points: piece.filter((q) => inDomain(q.x)), hover: false });
                     drawn += 1;
@@ -842,12 +865,12 @@
 
         const legend = allYears.map((y) => ({
             name: seasonYearLabel(y, usePeriod), color: yearColor(colorModel, y), style: 'line', toggleYear: y,
-            pressed: !state.hiddenYears.has(y),
+            pressed: !model.ps.hiddenYears.has(y),
         }));
         if (state.fn.clim && model.years.length >= 2) legend.push({ name: `Multi-year mean ± 1σ${model.monthly ? '' : ` (${CLIM_SMOOTH_DAYS}-day window)`}`, color: COLOR.reference, style: 'band' });
-        if (usePeriod && !state.fn.zoom) legend.push({ name: `${usePeriod.label} (highlighted)`, color: COLOR.accent, style: 'band-accent' });
+        if (!state.fn.zoom) for (const win of shaded) legend.push({ name: `${win.label} (shaded)`, color: win.color, style: 'band-color' });
         if ((wins || []).some((win) => win.period && win.years.some((yr) => yr.res && yr.res['Linear Regression'] && yr.res['Linear Regression'].available))) {
-            legend.push({ name: 'Dashed: linear regression inside each year\u2019s analysis period (colour of the year)', color: COLOR.reference, style: 'dash' });
+            legend.push({ name: 'Dashed: regression inside each year\u2019s period', color: COLOR.reference, style: 'dash' });
         }
 
         // Table: one row per position in the year, one column per year.
@@ -951,7 +974,7 @@
             hollow: (p) => !p.meta.complete,
         });
         legend.unshift({ name: `${period.label} mean per year`, color: COLOR.series, style: 'dot' }, { name: 'Min – max within the period', color: COLOR.whisker, style: 'line' });
-        if (rows.some((r) => !r.complete)) legend.push({ name: 'Incomplete year (less than half of the period has data; not analysed)', color: COLOR.series, style: 'hollow' });
+        if (rows.some((r) => !r.complete)) legend.push({ name: 'Incomplete year (under half of the period has data; not analysed)', color: COLOR.series, style: 'hollow' });
 
         if (state.fn.ma) {
             series.push({ id: 'ma', kind: 'line', name: `Moving average (${state.fn.maWindow} years)`, color: COLOR.movingAverage, width: 2, points: movingAverage(used.map((r) => ({ x: r.year, y: r.mean })), state.fn.maWindow, 1), gap: 1.5 });
@@ -1008,7 +1031,7 @@
             });
             legend.push({ name: `${win.label} mean per year`, color: win.color, style: 'dot' });
         }
-        if (wins.some((win) => win.allRows.some((row) => !row.complete))) legend.push({ name: 'Incomplete year (less than half of the period has data; not analysed)', color: COLOR.series, style: 'hollow' });
+        if (wins.some((win) => win.allRows.some((row) => !row.complete))) legend.push({ name: 'Incomplete year (under half of the period has data; not analysed)', color: COLOR.series, style: 'hollow' });
         const byYear = wins.map((win) => new Map(win.allRows.map((row) => [row.year, row.mean])));
         return {
             kind: 'year',
@@ -1166,7 +1189,7 @@
     function svgFor(spec, width) {
         const height = spec.height || 320;
         const top = 22;
-        const bottom = 30;
+        const bottom = spec.xLabel ? 46 : 30;
         const hasDirect = spec.series.some((s) => s.directLabel);
         const right = hasDirect ? 58 : 18;
 
@@ -1225,7 +1248,10 @@
             out += `<line x1="${left}" x2="${left + plotW}" y1="${y}" y2="${y}" stroke="${zero ? COLOR.axis : COLOR.grid}" />`;
             out += `<text x="${left - 7}" y="${y}" text-anchor="end" dominant-baseline="middle">${yLabels[k]}</text>`;
         });
-        if (spec.unit) out += `<text class="tp-axis-title" x="${left - 7}" y="${top - 9}" text-anchor="end">${esc(spec.unit)}</text>`;
+        // y-axis title: a full label ("Daily air temperature [°C]") left-aligned, or just the unit.
+        if (spec.yLabel) out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start">${esc(spec.yLabel)}</text>`;
+        else if (spec.unit) out += `<text class="tp-axis-title" x="${left - 7}" y="${top - 9}" text-anchor="end">${esc(spec.unit)}</text>`;
+        if (spec.xLabel) out += `<text class="tp-axis-title" x="${f(left + plotW / 2)}" y="${top + plotH + 36}" text-anchor="middle">${esc(spec.xLabel)}</text>`;
         out += `<line x1="${left}" x2="${left + plotW}" y1="${top + plotH}" y2="${top + plotH}" stroke="${COLOR.axis}" />`;
 
         // x ticks; drop labels that would overlap.
@@ -1436,26 +1462,131 @@
 
     // --------------------------------------------------------------- panel
 
+    const ZOOM_HELP = 'Drag across the plot to zoom in. Scroll with the bar below it (or Shift + wheel); double-click to reset.';
+    const ANALYSES_HELP = "For a period such as January, each tool runs inside every year's January on its own; the results are compared year by year.";
+    const EVENTS_HELP = 'Ordered by how far they depart from normal. Normal: mean of the same time of year over all years; anomaly = value − normal; z = anomaly in standard deviations of that time of year; percentile among all values. Select a row to zoom the plot to the event.';
+
+    // A small "?" that shows `text` on hover and keyboard focus (CSS tooltip, see plots.css).
+    function help(text) {
+        if (!text) return '';
+        const t = esc(text);
+        return `<span class="tp-help" tabindex="0" role="img" aria-label="${t}" data-tip="${t}">?</span>`;
+    }
+
+    // Keeps a "?" tooltip inside the viewport: shift it sideways and open it below near the top.
+    function placeHelpTip(evt) {
+        const h = evt.target && evt.target.closest ? evt.target.closest('.tp-help') : null;
+        if (!h) return;
+        const r = h.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth || window.innerWidth;
+        const w = Math.min(280, vw - 16);
+        const centre = r.left + r.width / 2;
+        let shift = 0;
+        if (centre - w / 2 < 8) shift = 8 - (centre - w / 2);
+        else if (centre + w / 2 > vw - 8) shift = vw - 8 - (centre + w / 2);
+        h.style.setProperty('--tp-tip-shift', `${Math.round(shift)}px`);
+        h.classList.toggle('tp-help-below', r.top < 150);
+    }
+    document.addEventListener('pointerover', placeHelpTip);
+    document.addEventListener('focusin', placeHelpTip);
+
+    // Human label of a series key: "precipitation" -> "Daily precipitation",
+    // "temperature · average (TAVG)" -> "Daily air temperature · average (TAVG)".
+    function topicLabel(key) {
+        const k = String(key ?? '');
+        const d = state.labels || {};
+        if (d[k] && d[k].label) return d[k].label;
+        const i = k.indexOf(' · ');
+        if (i > 0) {
+            const base = k.slice(0, i);
+            if (d[base] && d[base].label) return `${d[base].label}${k.slice(i)}`;
+        }
+        return k;
+    }
+
+    function topicState(key) {
+        let ps = state.per.get(key);
+        if (!ps) {
+            ps = { hiddenYears: new Set(), zoom: null, activeEvent: null, showTable: false, lastTable: null, lastView: 'timeline', collapsed: false, open: {} };
+            state.per.set(key, ps);
+        }
+        return ps;
+    }
+
+    function topicKeys() {
+        return state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
+    }
+
+    function hasValues(key) {
+        const info = state.viz && state.viz.topics && state.viz.topics[key];
+        return Boolean(info && Array.isArray(info.values) && info.values.some(isNum));
+    }
+
+    function firstWithData() {
+        return topicKeys().find(hasValues) || null;
+    }
+
+    // The heavy blocks are open for the first series with data, closed for the others, until toggled.
+    function isSubOpen(key, sub) {
+        const v = topicState(key).open[sub];
+        return v === undefined ? key === firstWithData() : v;
+    }
+
+    // Topic keys the request asked for (user_request.topics is {key: bool} or a list).
+    function requestedTopics() {
+        const t = state.request && state.request.topics;
+        if (Array.isArray(t)) return t.map(String);
+        if (t && typeof t === 'object') return Object.keys(t).filter((k) => t[k]);
+        return [];
+    }
+
+    function siteText(model) {
+        const info = model.info;
+        const st = info.station;
+        if (st && (st.name || st.id)) return st.name || st.id;
+        if (info.region && info.region.name) return `${info.region.name} (area mean${isNum(info.station_count) ? ` of ${info.station_count} stations` : ''})`;
+        if (Array.isArray(info.coordinates)) return `${fmt(Number(info.coordinates[0]), 2)}°, ${fmt(Number(info.coordinates[1]), 2)}°`;
+        return '';
+    }
+
+    function yearsText(model) {
+        const y = model.years;
+        if (!y.length) return '';
+        return y[0] === y[y.length - 1] ? String(y[0]) : `${y[0]}–${y[y.length - 1]}`;
+    }
+
+    // First sentence of an error message, for the availability list.
+    function shortReason(text) {
+        let t = String(text || 'No data in the selected time range.').replace(/\s+/g, ' ').trim();
+        const m = /^(.+?[.!?])(\s|$)/.exec(t);
+        if (m) t = m[1];
+        return t.length > 110 ? `${t.slice(0, 107).trimEnd()}…` : t;
+    }
+
+    function hasPeriodWindow() {
+        return state.windows.some((w) => {
+            if (w.frame === 'all') return false;
+            const p = presetPeriod(w.frame, w.custom);
+            return p && !p.invalid;
+        });
+    }
+
+    let renderQueued = false;
+    function scheduleRender() {
+        if (renderQueued) return;
+        renderQueued = true;
+        requestAnimationFrame(() => { renderQueued = false; render(); });
+    }
+
     const TEMPLATE = `
         <div class="tp-head">
-            <h3 class="tp-title" data-ref="title">Plot</h3>
+            <h3 class="tp-title" data-ref="title">Plots</h3>
             <span class="tp-subtitle" data-ref="subtitle"></span>
         </div>
+        <ul class="tp-avail" data-ref="avail" aria-label="Data availability"></ul>
         <div class="tp-controls">
-            <label class="tp-field">Topic<select data-ref="topic"></select></label>
             <div class="tp-field">View<div class="tp-segmented" role="group" aria-label="Plot view" data-ref="views">
                 ${VIEWS.map((v) => `<button type="button" data-view="${v.id}">${v.label}</button>`).join('')}
-            </div></div>
-            <label class="tp-field">Highlight period<select data-ref="period">
-                ${PERIOD_PRESETS.filter((p) => !p.group).slice(0, 2).map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}
-                <optgroup label="Months">${PERIOD_PRESETS.filter((p) => p.group === 'Months').map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</optgroup>
-                <optgroup label="Seasons">${PERIOD_PRESETS.filter((p) => p.group === 'Seasons').map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</optgroup>
-                <option value="custom">${esc(PERIOD_PRESETS[PERIOD_PRESETS.length - 1].label)}</option>
-            </select></label>
-            <div class="tp-field" data-ref="customField" hidden>Custom period<div class="tp-inline">
-                <input class="tp-md" data-ref="customStart" maxlength="5" placeholder="DD.MM" aria-label="Period start (DD.MM)">
-                <span>–</span>
-                <input class="tp-md" data-ref="customEnd" maxlength="5" placeholder="DD.MM" aria-label="Period end (DD.MM)">
             </div></div>
         </div>
         <div class="tp-chips" data-ref="functions">
@@ -1464,24 +1595,11 @@
             <button type="button" class="tp-chip" data-fn="ma" title="Centred moving average">Moving average
                 <input type="number" min="2" max="60" step="1" data-ref="maWindow" aria-label="Moving average window"></button>
             <button type="button" class="tp-chip" data-fn="clim" title="Mean and ±1 standard deviation over all years (needs ≥ 2 years)">Multi-year mean ± σ</button>
-            <button type="button" class="tp-chip" data-fn="zoom" title="Show only the highlighted period (Years overlaid)">Zoom to period</button>
+            <button type="button" class="tp-chip" data-fn="zoom" title="Years overlaid: show only the first analysis period">Zoom to period</button>
         </div>
         <div class="tp-windows" data-ref="windows" aria-label="Analysis time frames"></div>
-        <div data-ref="hint"></div>
-        <div class="tp-summary" data-ref="summary" aria-live="polite"></div>
-        <div class="tp-chart" data-ref="chart"></div>
-        <div class="tp-legend" data-ref="legend"></div>
-        <p class="tp-caption" data-ref="caption"></p>
-        <div class="tp-table-wrap" data-ref="table" hidden></div>
-        <div class="tp-footer" data-ref="footer">
-            <span class="tp-footer-note">Drag across the plot to zoom in · scroll with the bar below it (or Shift + wheel) · double-click to reset</span>
-            <button type="button" class="tp-link-btn" data-ref="tableBtn">Show table</button>
-            <button type="button" class="tp-link-btn" data-ref="csvBtn">Download CSV</button>
-        </div>
-        <div class="tp-compare" data-ref="compare"></div>
-        <div class="tp-evolution" data-ref="evolution"></div>
-        <div class="tp-events" data-ref="events"></div>
-        <div class="tp-analysis" data-ref="analysis"></div>`;
+        <div class="tp-topics" data-ref="topics"></div>
+        <div class="tp-compare" data-ref="compare"></div>`;
 
     function mount(element) {
         state.root = element;
@@ -1490,39 +1608,19 @@
         const refs = {};
         element.querySelectorAll('[data-ref]').forEach((el) => { refs[el.dataset.ref] = el; });
         state.refs = refs;
+        state.sections.clear();
 
-        refs.topic.addEventListener('change', () => { state.topic = refs.topic.value; state.activeEvent = null; state.hiddenYears.clear(); render(); });
-        const onEventClick = (e) => {
-            const sat = e.target.closest('button[data-sat]');
-            if (sat) {
-                // index.html draws the image on the map (NASA GIBS).
-                document.dispatchEvent(new CustomEvent('trendplots:satellite', { detail: { date: sat.dataset.sat } }));
-                return;
-            }
-            const b = e.target.closest('[data-event]');
-            if (!b) return;
-            focusEvent(Number(b.dataset.event));
-            refs.chart.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        };
-        refs.events.addEventListener('click', onEventClick);
-        refs.summary.addEventListener('click', onEventClick);
         refs.views.addEventListener('click', (e) => {
             const b = e.target.closest('button[data-view]');
             if (!b || b.disabled) return;
             state.view = b.dataset.view;
-            if (state.view === 'period' && state.periodId === 'none' && !state.windows.some((w) => w.frame !== 'all')) state.periodId = 'm1';
+            // The view needs a period: add January (like a new time frame) so it is never empty.
+            if (state.view === 'period' && !hasPeriodWindow()) {
+                state.windows.push({ id: state.nextWindowId++, frame: 'm1', custom: { start: '01.06', end: '31.08' }, tools: ['Linear Regression'] });
+                renderWindowsEditor();
+            }
             render();
         });
-        refs.period.addEventListener('change', () => { state.periodId = refs.period.value; state.hiddenYears.clear(); render(); });
-        const onCustom = () => {
-            state.custom.start = refs.customStart.value;
-            state.custom.end = refs.customEnd.value;
-            refs.customStart.setAttribute('aria-invalid', String(!parseDayMonth(refs.customStart.value)));
-            refs.customEnd.setAttribute('aria-invalid', String(!parseDayMonth(refs.customEnd.value)));
-            render();
-        };
-        refs.customStart.addEventListener('input', (e) => { formatDayMonthTyping(refs.customStart, e); onCustom(); });
-        refs.customEnd.addEventListener('input', (e) => { formatDayMonthTyping(refs.customEnd, e); onCustom(); });
         refs.functions.addEventListener('click', (e) => {
             if (e.target.matches('input')) return;
             const b = e.target.closest('button[data-fn]');
@@ -1538,17 +1636,28 @@
                 render();
             }
         });
-        refs.legend.addEventListener('click', (e) => {
-            const b = e.target.closest('button[data-year]');
+        refs.avail.addEventListener('click', (e) => {
+            const b = e.target.closest('button[data-goto]');
             if (!b) return;
-            const y = Number(b.dataset.year);
-            if (e.altKey || e.metaKey) {
-                // Alt/Cmd-click: show only this year (or all again).
-                const all = [...refs.legend.querySelectorAll('button[data-year]')].map((x) => Number(x.dataset.year));
-                const solo = state.hiddenYears.size === all.length - 1 && !state.hiddenYears.has(y);
-                state.hiddenYears = new Set(solo ? [] : all.filter((v) => v !== y));
-            } else if (state.hiddenYears.has(y)) state.hiddenYears.delete(y);
-            else state.hiddenYears.add(y);
+            const key = b.dataset.goto;
+            topicState(key).collapsed = false;
+            render();
+            scrollToTopic(key, 0);
+        });
+        refs.windows.addEventListener('click', (e) => {
+            // A "?" inside a tool's label must not toggle the checkbox.
+            if (e.target.closest('.tp-help')) { e.preventDefault(); return; }
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            if (btn.dataset.action === 'add') {
+                const used = new Set(state.windows.map((w) => w.frame));
+                const frame = PERIOD_PRESETS.filter((p) => p.group === 'Months').map((p) => p.id).find((id) => !used.has(id)) || 'm1';
+                state.windows.push({ id: state.nextWindowId++, frame, custom: { start: '01.06', end: '31.08' }, tools: ['Linear Regression'] });
+            } else if (btn.dataset.action === 'remove') {
+                const id = Number(btn.closest('[data-window]').dataset.window);
+                state.windows = state.windows.filter((w) => w.id !== id);
+            }
+            renderWindowsEditor();
             render();
         });
         refs.windows.addEventListener('change', (e) => {
@@ -1575,38 +1684,28 @@
             e.target.setAttribute('aria-invalid', String(!parseDayMonth(e.target.value)));
             render();
         });
-        refs.windows.addEventListener('click', (e) => {
-            const btn = e.target.closest('button[data-action]');
-            if (!btn) return;
-            if (btn.dataset.action === 'add') {
-                const used = new Set(state.windows.map((w) => w.frame));
-                const frame = PERIOD_PRESETS.filter((p) => p.group === 'Months').map((p) => p.id).find((id) => !used.has(id)) || 'm1';
-                state.windows.push({ id: state.nextWindowId++, frame, custom: { start: '01.06', end: '31.08' }, tools: ['Linear Regression'] });
-            } else if (btn.dataset.action === 'remove') {
-                const id = Number(btn.closest('[data-window]').dataset.window);
-                state.windows = state.windows.filter((w) => w.id !== id);
-            }
-            renderWindowsEditor();
-            render();
-        });
+
         fetch('/api/tools')
             .then((res) => (res.ok ? res.json() : null))
             .then((body) => {
                 if (body && Array.isArray(body.tools) && body.tools.length) {
                     state.tools = body.tools.slice();
                     renderWindowsEditor();
-                    render();
+                    scheduleRender();
+                }
+            })
+            .catch(() => {});
+        fetch('/api/topics')
+            .then((res) => (res.ok ? res.json() : null))
+            .then((body) => {
+                if (body && body.details && typeof body.details === 'object') {
+                    state.labels = body.details;
+                    state.labelsVersion += 1;
+                    scheduleRender();
                 }
             })
             .catch(() => {});
         renderWindowsEditor();
-
-        refs.tableBtn.addEventListener('click', () => { state.showTable = !state.showTable; render(); });
-        refs.csvBtn.addEventListener('click', downloadCsv);
-
-        if (typeof ResizeObserver === 'function') {
-            new ResizeObserver(() => layoutChart(refs.chart)).observe(refs.chart);
-        }
         render();
     }
 
@@ -1626,7 +1725,7 @@
         if (!host) return;
         const rows = state.windows.map((w) => {
             const color = windowColor(w);
-            const tools = state.tools.map((t) => `<label class="tp-tool${w.tools.includes(t) ? ' is-on' : ''}" title="${esc(TOOL_HELP[t] || '')}"><input type="checkbox" data-tool="${esc(t)}"${w.tools.includes(t) ? ' checked' : ''}>${esc(TOOL_SHORT[t] || t)}</label>`).join('');
+            const tools = state.tools.map((t) => `<label class="tp-tool${w.tools.includes(t) ? ' is-on' : ''}"><input type="checkbox" data-tool="${esc(t)}"${w.tools.includes(t) ? ' checked' : ''}>${esc(TOOL_SHORT[t] || t)}${help(TOOL_HELP[t])}</label>`).join('');
             const custom = w.frame === 'custom'
                 ? `<span class="tp-inline"><input class="tp-md" data-w="start" maxlength="5" placeholder="DD.MM" aria-label="Time frame start (DD.MM)" value="${esc(w.custom.start)}" aria-invalid="${!parseDayMonth(w.custom.start)}"><span>–</span><input class="tp-md" data-w="end" maxlength="5" placeholder="DD.MM" aria-label="Time frame end (DD.MM)" value="${esc(w.custom.end)}" aria-invalid="${!parseDayMonth(w.custom.end)}"></span>`
                 : '';
@@ -1638,227 +1737,328 @@
                 <button type="button" class="tp-window-remove" data-action="remove" title="Remove this time frame" aria-label="Remove this time frame">×</button>
             </div>`;
         }).join('');
-        host.innerHTML = `<div class="tp-windows-head"><span class="tp-chip-label">Analyses</span><span class="tp-windows-note">For a period such as January, each tool runs inside every year's January on its own; the results are compared year by year.</span></div>
+        host.innerHTML = `<div class="tp-windows-head"><span class="tp-chip-label">Analyses</span>${help(ANALYSES_HELP)}</div>
             ${rows}
             <button type="button" class="tp-link-btn tp-window-add" data-action="add">+ Add time frame</button>`;
     }
 
     function setData(visualization, userRequest) {
+        const newRequest = (userRequest || null) !== state.request;
         state.viz = visualization || null;
         state.request = userRequest || null;
-        const topics = state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
-        const withData = topics.filter((t) => (state.viz.topics[t].values || []).some(isNum));
-        // Also leave a topic without data once one with data arrives (topics stream in one by one).
-        if (!topics.includes(state.topic) || (withData.length && !withData.includes(state.topic))) {
-            state.topic = withData[0] || topics[0] || null;
+        // A new request: forget zoom, hidden years and the selected event (collapsed state stays).
+        if (newRequest) {
+            for (const ps of state.per.values()) {
+                ps.hiddenYears.clear();
+                ps.activeEvent = null;
+                ps.zoom = null;
+            }
         }
-        state.hiddenYears.clear();
-        state.activeEvent = null;
         render();
     }
 
     function setLoading(on) {
         state.loading = Boolean(on);
-        if (!state.refs.chart) return;
+        // A new 'Apply' starts: the old data goes, the new one streams in topic by topic.
         if (on) {
-            state.refs.chart._spec = null;
-            state.refs.chart.innerHTML = '<div class="tp-empty">Loading data…</div>';
-        } else {
-            render();
+            state.viz = null;
+            state.request = null;
         }
+        render();
+    }
+
+    // ------------------------------------------------------------ sections
+
+    let sectionSeq = 0;
+
+    function sectionHtml(id) {
+        const subs = SUBS.map((sub) => `<div class="tp-sub" data-r="${sub.id}Sub">
+                <div class="tp-sub-head">
+                    <button type="button" class="tp-sub-toggle" data-r="${sub.id}Toggle" aria-expanded="false" aria-controls="${id}-${sub.id}"><span class="tp-chev" aria-hidden="true"></span>${esc(sub.label)}</button>
+                    <span data-r="${sub.id}Help">${sub.id === 'events' ? help(EVENTS_HELP) : ''}</span>
+                </div>
+                <div class="tp-sub-body tp-${sub.id}" id="${id}-${sub.id}" data-r="${sub.id}"></div>
+            </div>`).join('');
+        return `<div class="tp-topic-head">
+                <h4 class="tp-topic-title" data-r="title"></h4>
+                <span class="tp-topic-meta" data-r="meta"></span>
+                <button type="button" class="tp-topic-toggle" data-r="toggle" aria-expanded="true" aria-controls="${id}-body">−</button>
+            </div>
+            <div class="tp-topic-error" data-r="error" hidden></div>
+            <div class="tp-topic-body" id="${id}-body" data-r="body">
+                <div data-r="hint"></div>
+                <div class="tp-summary" data-r="summary" aria-live="polite"></div>
+                <div class="tp-fig-head" data-r="figHead"></div>
+                <div class="tp-chart" data-r="chart"></div>
+                <div class="tp-legend" data-r="legend"></div>
+                <div class="tp-table-wrap" data-r="table" hidden></div>
+                <div class="tp-footer" data-r="footer">
+                    <span class="tp-footer-note">Zoom ${help(ZOOM_HELP)}</span>
+                    <button type="button" class="tp-link-btn" data-r="tableBtn">Show table</button>
+                    <button type="button" class="tp-link-btn" data-r="csvBtn">Download CSV</button>
+                </div>
+                ${subs}
+            </div>`;
+    }
+
+    // The section of one series; built once and reused, so charts and "Change over time" keep their state.
+    function ensureSection(key) {
+        let sec = state.sections.get(key);
+        if (sec) return sec;
+        const id = `tp-sec-${++sectionSeq}`;
+        const el = document.createElement('section');
+        el.className = 'tp-topic';
+        el.dataset.topic = key;
+        el.innerHTML = sectionHtml(id);
+        const refs = { section: el };
+        el.querySelectorAll('[data-r]').forEach((node) => { refs[node.dataset.r] = node; });
+        const ps = topicState(key);
+
+        refs.toggle.addEventListener('click', () => { ps.collapsed = !ps.collapsed; render(); });
+        for (const sub of SUBS) {
+            refs[`${sub.id}Toggle`].addEventListener('click', () => {
+                ps.open[sub.id] = !isSubOpen(key, sub.id);
+                render();
+            });
+        }
+        const onEventClick = (e) => {
+            const sat = e.target.closest('button[data-sat]');
+            if (sat) {
+                // index.html draws the image on the map (NASA GIBS).
+                document.dispatchEvent(new CustomEvent('trendplots:satellite', { detail: { date: sat.dataset.sat } }));
+                return;
+            }
+            const b = e.target.closest('[data-event]');
+            if (!b) return;
+            focusEvent(key, Number(b.dataset.event));
+            refs.chart.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        };
+        refs.events.addEventListener('click', onEventClick);
+        refs.summary.addEventListener('click', onEventClick);
+        refs.legend.addEventListener('click', (e) => {
+            const b = e.target.closest('button[data-year]');
+            if (!b) return;
+            const y = Number(b.dataset.year);
+            if (e.altKey || e.metaKey) {
+                // Alt/Cmd-click: show only this year (or all again).
+                const all = [...refs.legend.querySelectorAll('button[data-year]')].map((x) => Number(x.dataset.year));
+                const solo = ps.hiddenYears.size === all.length - 1 && !ps.hiddenYears.has(y);
+                ps.hiddenYears = new Set(solo ? [] : all.filter((v) => v !== y));
+            } else if (ps.hiddenYears.has(y)) ps.hiddenYears.delete(y);
+            else ps.hiddenYears.add(y);
+            render();
+        });
+        refs.tableBtn.addEventListener('click', () => { ps.showTable = !ps.showTable; render(); });
+        refs.csvBtn.addEventListener('click', () => downloadCsv(key));
+        if (typeof ResizeObserver === 'function') {
+            new ResizeObserver(() => layoutChart(refs.chart)).observe(refs.chart);
+        }
+        sec = { el, refs };
+        state.sections.set(key, sec);
+        return sec;
+    }
+
+    function dropSection(key) {
+        const sec = state.sections.get(key);
+        if (!sec) return;
+        clearEvolution(sec.refs.evolution);
+        sec.el.remove();
+        state.sections.delete(key);
     }
 
     function render() {
         const r = state.refs;
-        if (!r.chart) return;
-        const topics = state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
-        r.topic.innerHTML = topics.map((t) => `<option value="${esc(t)}"${t === state.topic ? ' selected' : ''}>${esc(t)}</option>`).join('');
-        r.topic.disabled = topics.length < 2;
-        r.period.value = state.periodId;
-        r.customField.hidden = state.periodId !== 'custom';
-        if (document.activeElement !== r.customStart) r.customStart.value = state.custom.start;
-        if (document.activeElement !== r.customEnd) r.customEnd.value = state.custom.end;
+        if (!r.topics) return;
         if (document.activeElement !== r.maWindow) r.maWindow.value = state.fn.maWindow;
+        const keys = topicKeys();
+        const models = keys.map((k) => buildModel(k)).filter(Boolean);
 
+        renderHead(models);
+        renderAvailability(keys);
+        setControlStates(models);
+
+        for (const key of [...state.sections.keys()]) if (!keys.includes(key)) dropSection(key);
+        if (!keys.length) {
+            r.topics.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose topics and click “Apply” to plot the data here.'}</div>`;
+            renderCompare();
+            return;
+        }
+        r.topics.querySelectorAll(':scope > .tp-empty').forEach((el) => el.remove());
+        keys.forEach((key, i) => {
+            const sec = ensureSection(key);
+            if (r.topics.children[i] !== sec.el) r.topics.insertBefore(sec.el, r.topics.children[i] || null);
+            try {
+                renderTopic(key, sec.refs);
+            } catch (err) {
+                sec.refs.body.hidden = false;
+                sec.refs.hint.innerHTML = `<div class="tp-hint">This series could not be drawn: ${esc(err.message || err)}</div>`;
+                if (window.console) console.error(err);
+            }
+        });
         renderCompare();
-        const model = buildModel();
-        if (!model) {
-            r.subtitle.textContent = '';
-            r.chart._spec = null;
-            r.chart.innerHTML = `<div class="tp-empty">${state.loading ? 'Loading data…' : 'Pick a point or an area (Areas) on the map, choose topics and click “Apply” to plot the data here.'}</div>`;
-            r.legend.innerHTML = '';
-            r.caption.innerHTML = '';
-            r.hint.innerHTML = '';
-            r.analysis.innerHTML = '';
-            clearEvolution();
-            r.summary.innerHTML = '';
-            r.events.innerHTML = '';
-            r.table.hidden = true;
-            r.footer.hidden = true;
-            setControlStates(null, null);
+    }
+
+    function renderHead(models) {
+        const r = state.refs;
+        const m = models[0];
+        const req = state.request || {};
+        const range = Array.isArray(req.timeintervall) ? req.timeintervall.join(' – ') : '';
+        r.subtitle.textContent = [
+            m ? `${m.ivText} intervals` : '',
+            range,
+            state.loading && models.length ? 'loading more…' : '',
+        ].filter(Boolean).join(' · ');
+    }
+
+    // One line per series at the top: ✓ with values / station / years, or ✗ with the reason.
+    function renderAvailability(keys) {
+        const host = state.refs.avail;
+        const items = keys.map((key) => {
+            const model = buildModel(key);
+            const label = topicLabel(key);
+            if (model && model.points.length) {
+                const meta = [`${model.points.length.toLocaleString('en-US')} values`, siteText(model), yearsText(model)].filter(Boolean).join(' · ');
+                return `<li class="tp-avail-item is-ok"><button type="button" class="tp-avail-btn" data-goto="${esc(key)}" title="Go to ${esc(label)}">`
+                    + `<span class="tp-avail-mark" aria-hidden="true">✓</span><span class="tp-visually-hidden">Available: </span>`
+                    + `<span class="tp-avail-name">${esc(label)}</span><span class="tp-avail-meta">${esc(meta)}</span></button></li>`;
+            }
+            const reason = (model && model.info.error) || 'No values in the selected time range.';
+            return `<li class="tp-avail-item is-failed"><button type="button" class="tp-avail-btn" data-goto="${esc(key)}" title="${esc(reason)}">`
+                + `<span class="tp-avail-mark" aria-hidden="true">✗</span><span class="tp-visually-hidden">No data: </span>`
+                + `<span class="tp-avail-name">${esc(label)}</span><span class="tp-avail-meta">${esc(shortReason(reason))}</span></button></li>`;
+        });
+        // Requested topics that have not arrived yet (topics stream in one by one).
+        for (const t of requestedTopics()) {
+            if (keys.some((k) => k === t || k.startsWith(`${t} · `))) continue;
+            items.push(`<li class="tp-avail-item ${state.loading ? 'is-pending' : 'is-failed'}"><span class="tp-avail-btn">`
+                + `<span class="tp-avail-mark" aria-hidden="true">${state.loading ? '…' : '✗'}</span>`
+                + `<span class="tp-avail-name">${esc(topicLabel(t))}</span><span class="tp-avail-meta">${state.loading ? 'loading…' : 'no answer from the server'}</span></span></li>`);
+        }
+        host.innerHTML = items.join('');
+        host.hidden = !items.length;
+    }
+
+    function renderTopic(key, refs) {
+        const model = buildModel(key);
+        const ps = model.ps;
+        const label = topicLabel(key);
+        refs.title.textContent = label;
+        refs.meta.textContent = [model.unit, siteText(model), yearsText(model), model.points.length ? `${model.points.length.toLocaleString('en-US')} values` : ''].filter(Boolean).join(' · ');
+
+        // No values (e.g. no station found): a compact section that says why.
+        if (!model.points.length) {
+            refs.section.classList.add('is-failed');
+            refs.meta.textContent = 'no data';
+            refs.toggle.hidden = true;
+            refs.body.hidden = true;
+            refs.chart._spec = null;
+            refs.error.hidden = false;
+            refs.error.innerHTML = `<span class="tp-x" aria-hidden="true">✗</span>${esc(model.info.error || 'No numeric values in the selected time range.')}`;
+            clearEvolution(refs.evolution);
+            return;
+        }
+        refs.section.classList.remove('is-failed');
+        refs.error.hidden = true;
+        refs.toggle.hidden = false;
+        refs.toggle.textContent = ps.collapsed ? '+' : '−';
+        refs.toggle.setAttribute('aria-expanded', String(!ps.collapsed));
+        refs.toggle.setAttribute('aria-label', `${ps.collapsed ? 'Expand' : 'Collapse'} ${label}`);
+        refs.toggle.title = ps.collapsed ? 'Expand' : 'Collapse';
+        refs.body.hidden = ps.collapsed;
+        if (ps.collapsed) {
+            // Nothing to lay out while hidden; drawn again when expanded.
+            refs.chart._spec = null;
             return;
         }
 
-        const period = currentPeriod();
         const canCompare = model.canCompare && model.years.length >= 2;
-        const stripesOk = model.years.length >= 2;
-        if (!canCompare && state.view !== 'timeline' && !(state.view === 'stripes' && stripesOk)) state.view = 'timeline';
-        setControlStates(model, period);
-
-        const st = model.info.station;
-        r.subtitle.textContent = [
-            `${model.points.length} intervals of ${model.ivText}`,
-            model.years.length ? `${model.years[0]}–${model.years[model.years.length - 1]}` : '',
-            st && st.name ? `station ${st.name}` : '',
-            // Topics arrive one by one (setData while loading): say that more is coming.
-            state.loading ? 'still loading other topics…' : '',
-        ].filter(Boolean).join(' · ');
-        r.title.textContent = state.topic;
+        const wins = evaluateWindows(model);
+        // Period across years: every analysis time frame with a period.
+        const periodWins = wins.filter((win) => win.period && win.allRows.length);
+        let view = canCompare ? state.view : 'timeline';
+        if (view === 'period' && !periodWins.length) view = 'timeline';
 
         const hints = [];
         if (model.info.error) hints.push(model.info.error);
         if (model.unit === 'mm/day') hints.push('Precipitation is shown as a density: the average rainfall per day (mm/day) in each interval. Monthly or yearly totals and multiday totals (MDPR) are divided by the number of days they cover, so 3 mm/day over a month means about 90 mm in that month.');
-        else if (model.unit === '% of days') hints.push('Share of days in each interval on which precipitation reached the threshold (monthly / yearly rain-day counts divided by the number of days), e.g. 50 % = every second day.');
-        if (model.info.dropped_intervals > 0) hints.push(`${model.info.dropped_intervals} interval${model.info.dropped_intervals === 1 ? ' was' : 's were'} left out because data covered less than three quarters of their days (e.g. a year with only its first months); their means would bias the trend.`);
-        if (!model.points.length) hints.push('This topic has no numeric values in the selected time range.');
-        else if (!model.canCompare) hints.push(`Comparing years needs intervals of up to 2 months; the current interval is ${model.ivText}. Choose Day or Month intervals.`);
-        else if (model.years.length < 2) hints.push('The time range covers only one year. Choose a range over several years to compare them.');
-        if (period && period.invalid) hints.push('Enter the custom period as DD.MM – DD.MM, e.g. 01.06 – 31.08 or 01.12 – 28.02.');
-        r.hint.innerHTML = hints.map((h) => `<div class="tp-hint"><span class="tp-hint-label">Note</span>${esc(h)}</div>`).join('');
+        else if (model.unit === '% of days') hints.push('Share of days in each interval on which precipitation reached the threshold, e.g. 50 % = every second day.');
+        if (model.info.dropped_intervals > 0) hints.push(`${model.info.dropped_intervals} interval${model.info.dropped_intervals === 1 ? ' was' : 's were'} left out because data covered less than three quarters of their days; their means would bias the trend.`);
+        if (!model.canCompare) hints.push(`Comparing years needs intervals of up to 2 months (now ${model.ivText}).`);
+        else if (model.years.length < 2) hints.push('The time range covers only one year; choose several years to compare them.');
+        else if (state.view === 'period' && view !== 'period') hints.push('No analysis period has data here; showing the timeline.');
+        refs.hint.innerHTML = hints.map((h) => `<div class="tp-hint"><span class="tp-hint-label">Note</span>${esc(h)}</div>`).join('');
 
-        if (!model.points.length) {
-            r.chart._spec = null;
-            r.chart.innerHTML = '<div class="tp-empty">No data to plot.</div>';
-            r.legend.innerHTML = '';
-            r.caption.innerHTML = '';
-            r.analysis.innerHTML = '';
-            clearEvolution();
-            r.summary.innerHTML = '';
-            r.events.innerHTML = '';
-            r.table.hidden = true;
-            r.footer.hidden = true;
-            return;
-        }
-
-        const usablePeriod = period && !period.invalid ? period : null;
-        const wins = evaluateWindows(model);
-        // Period across years: every analysis time frame with a period; without one, the highlight period.
-        const periodWins = wins.filter((win) => win.period && win.allRows.length);
-        if (state.view === 'period' && !periodWins.length && !usablePeriod) state.view = 'timeline';
-        setControlStates(model, period);
-
-        renderSummary(model, wins);
-        renderEvolution(model, wins);
-        renderEvents(model);
-        if (state.view === 'stripes') {
-            const out = renderStripes(r.chart, model, usablePeriod);
-            state.lastTable = out ? out.table : null;
-            r.legend.innerHTML = '';
-            r.caption.innerHTML = out ? figureCaption(model, usablePeriod) : '';
-            r.footer.hidden = !out;
-            r.footer.classList.add('tp-footer-stripes');
-            renderTable(state.lastTable);
-            renderAnalysis(model, wins);
-            return;
-        }
+        renderSummary(model, wins, refs);
 
         let spec;
-        if (state.view === 'overlay') spec = buildOverlay(model, usablePeriod, wins);
-        else if (state.view === 'period' && periodWins.length > 1) spec = buildPeriodMulti(model, periodWins);
-        else if (state.view === 'period' && periodWins.length === 1) spec = buildPeriod(model, periodWins[0].period, null, periodWins[0].color);
-        else if (state.view === 'period') spec = buildPeriod(model, usablePeriod, null);
-        else spec = buildTimeline(model, usablePeriod, wins);
-        spec.ariaLabel = `${state.topic}: ${VIEWS.find((v) => v.id === state.view).label}`;
-        state.lastTable = spec.table;
+        if (view === 'overlay') spec = buildOverlay(model, wins);
+        else if (view === 'period' && periodWins.length > 1) spec = buildPeriodMulti(model, periodWins);
+        else if (view === 'period') spec = buildPeriod(model, periodWins[0].period, null, periodWins[0].color);
+        else spec = buildTimeline(model, wins);
+        const anomaly = state.fn.anomaly && model.anomalyOk;
+        const unitPart = model.unit ? ` [${model.unit}]` : '';
+        spec.yLabel = anomaly ? `Anomaly${unitPart}` : `${label}${unitPart}`;
+        spec.xLabel = view === 'overlay' ? 'Day of year' : view === 'period' ? 'Year' : 'Date';
+        spec.ariaLabel = `${label}: ${VIEWS.find((v) => v.id === view).label}`;
+        ps.lastTable = spec.table;
+        ps.lastView = view;
 
-        // Drag-to-zoom: keep the zoomed range while the view, topic and full range stay the same.
+        // Drag-to-zoom: keep the zoomed range while the view and full range stay the same.
         const fullDomain = spec.xDomain;
-        const zoomKey = [state.topic, state.view, fullDomain[0], fullDomain[1]].join('|');
-        if (state.zoom && state.zoom.key === zoomKey) {
-            spec.xDomain = state.zoom.domain;
+        const zoomKey = [view, fullDomain[0], fullDomain[1]].join('|');
+        if (ps.zoom && ps.zoom.key === zoomKey) {
+            spec.xDomain = ps.zoom.domain;
             spec.zoomed = true;
         } else {
-            state.zoom = null;
+            ps.zoom = null;
         }
         spec.fullDomain = fullDomain;
-        r.chart._onZoom = (domain) => {
-            state.zoom = domain ? { key: zoomKey, domain } : null;
+        refs.chart._onZoom = (domain) => {
+            ps.zoom = domain ? { key: zoomKey, domain } : null;
             render();
         };
         // Scrolling only moves the visible window; the chart redraws itself (see panTo).
-        r.chart._onPan = (domain) => {
-            state.zoom = { key: zoomKey, domain };
+        refs.chart._onPan = (domain) => {
+            ps.zoom = { key: zoomKey, domain };
         };
 
-        r.footer.hidden = false;
-        r.footer.classList.remove('tp-footer-stripes');
-        renderChart(r.chart, spec);
-        r.legend.innerHTML = legendHtml(spec.legend);
-        r.caption.innerHTML = figureCaption(model, usablePeriod);
-        renderTable(spec.table);
-        renderAnalysis(model, wins);
-    }
+        refs.figHead.innerHTML = figureHead(model, view, periodWins);
+        renderChart(refs.chart, spec);
+        refs.legend.innerHTML = legendHtml(spec.legend);
+        renderTable(refs, ps, spec.table);
 
-    // ------------------------------------------------------------ stripes
-
-    // One stripe per year (or per year's highlighted period), coloured by its departure from the
-    // mean of all years: the "warming stripes" of Ed Hawkins, for any topic.
-    function stripesData(model, period) {
-        const use = period || presetPeriod('year', state.custom);
-        // Stricter than elsewhere: a year missing a fifth of its values would bias its colour.
-        const rows = periodSeries(model, use).filter((row) => row.n >= Math.floor(row.expected * 0.8) && isNum(row.mean));
-        if (rows.length < 2) return null;
-        const avg = mean(rows.map((row) => row.mean));
-        const anomalies = rows.map((row) => row.mean - avg);
-        const span = Math.max(...anomalies.map(Math.abs)) || 1;
-        const wet = /mm|snow|%/.test(model.unit) && !/°C/.test(model.unit);
-        const ramp = wet ? STRIPES_WET : STRIPES_WARM;
-        return {
-            label: use.label,
-            avg,
-            rows: rows.map((row, i) => {
-                const k = Math.round(((anomalies[i] / span + 1) / 2) * (ramp.length - 1));
-                return { ...row, anomaly: anomalies[i], color: ramp[Math.max(0, Math.min(ramp.length - 1, k))] };
-            }),
-            ramp,
-            span,
-        };
-    }
-
-    function renderStripes(host, model, period) {
-        const data = stripesData(model, period);
-        host._spec = null;
-        if (!data) {
-            host.innerHTML = '<div class="tp-empty">Stripes need at least two complete years (or two complete periods of the highlighted period).</div>';
-            return null;
+        // The three heavy blocks: drawn only while open.
+        const events = eventsOf(model);
+        refs.eventsSub.hidden = !events.length;
+        for (const sub of SUBS) {
+            const open = isSubOpen(key, sub.id);
+            refs[`${sub.id}Toggle`].setAttribute('aria-expanded', String(open));
+            refs[sub.id].hidden = !open;
         }
-        const unit = model.unit;
-        const n = data.rows.length;
-        const stripes = data.rows.map((row) => `<div class="tp-stripe" style="background:${row.color}" tabindex="0"
-            title="${esc(`${row.label}: ${withUnit(fmt(row.mean), unit)} (${withUnit(fmtSigned(row.anomaly), unit)} vs. the mean of all years)`)}"
-            aria-label="${esc(`${row.label}: ${withUnit(fmtSigned(row.anomaly), unit)}`)}"></div>`).join('');
-        const every = Math.max(1, Math.ceil(n / 12));
-        const ticks = data.rows.map((row, i) => `<span style="left:${((i + 0.5) / n) * 100}%">${i % every === 0 || i === n - 1 ? esc(row.label) : ''}</span>`).join('');
-        const scale = data.ramp.map((c) => `<span style="background:${c}"></span>`).join('');
-        host.innerHTML = `<div class="tp-stripes" role="img" aria-label="${esc(`Stripes of ${data.label}: one per year`)}">${stripes}</div>
-            <div class="tp-stripes-axis">${ticks}</div>
-            <div class="tp-stripes-scale"><span>${esc(withUnit(fmtSigned(-data.span), unit))}</span><span class="tp-stripes-ramp">${scale}</span><span>${esc(withUnit(fmtSigned(data.span), unit))}</span>
-            <span class="tp-stripes-note">departure of each year's ${esc(data.label === 'Whole year' ? 'annual mean' : data.label)} from the mean of all ${n} years (${esc(withUnit(fmt(data.avg), unit))})</span></div>`;
-        return {
-            legend: [],
-            table: tableFrom(['Year', `Mean${unit ? ` (${unit})` : ''}`, `Departure${unit ? ` (${unit})` : ''}`], data.rows.map((row) => [row.label, row.mean, row.anomaly])),
-        };
+        if (isSubOpen(key, 'analysis')) renderAnalysis(model, wins, refs.analysis);
+        else refs.analysis.innerHTML = '';
+        if (events.length && isSubOpen(key, 'events')) renderEvents(model, refs.events);
+        else refs.events.innerHTML = '';
+        if (isSubOpen(key, 'evolution')) renderEvolution(model, wins, refs.evolution);
+    }
+
+    function scrollToTopic(key, delay = 80) {
+        // Deferred, so it wins over a scroll the caller starts right after (index.html scrolls to the panel).
+        setTimeout(() => {
+            const sec = state.sections.get(key);
+            if (sec) sec.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, delay);
     }
 
     // ------------------------------------------------------------ events list
 
-    function renderEvents(model) {
-        const r = state.refs;
+    function renderEvents(model, host) {
         const list = eventsOf(model);
         if (!list.length) {
-            r.events.innerHTML = '';
+            host.innerHTML = '';
             return;
         }
+        const ps = model.ps;
         const unit = model.unit;
         const rows = list.map((ev) => {
             const when = ev.end ? `${fmtIsoDate(ev.date)} – ${fmtIsoDate(ev.end)}` : fmtIsoDate(ev.date);
@@ -1866,8 +2066,8 @@
             const normal = isNum(ev.normal) ? `<span class="tp-cell-sub">normal ${esc(withUnit(fmt(ev.normal), unit))}</span>` : '';
             const sat = ev.peak_date || ev.date;
             const satellite = isoToTime(sat) >= Date.UTC(2000, 1, 24)
-                ? `<button type="button" class="tp-link-btn tp-sat-btn" data-sat="${esc(sat)}" title="Show the NASA MODIS Terra true-colour image of ${esc(fmtIsoDate(sat))} on the map">Satellite image (MODIS)</button>` : '';
-            return `<tr class="tp-event${state.activeEvent === ev.n ? ' is-active' : ''}" data-event="${ev.n}" style="--tp-ev:${ev.style.color}" title="${esc(`${ev.title}: ${ev.description}`)}">
+                ? `<button type="button" class="tp-link-btn tp-sat-btn" data-sat="${esc(sat)}" title="Show the NASA MODIS Terra true-colour image of ${esc(fmtIsoDate(sat))} on the map">Satellite image</button>` : '';
+            return `<tr class="tp-event${ps.activeEvent === ev.n ? ' is-active' : ''}" data-event="${ev.n}" style="--tp-ev:${ev.style.color}" title="${esc(`${ev.title}: ${ev.description}`)}">
                 <td><button type="button" class="tp-event-num-badge" data-event="${ev.n}" aria-label="Show event ${ev.n} in the plot">${ev.n}</button></td>
                 <td class="tp-event-kind"><span class="tp-event-sym" aria-hidden="true">${esc(ev.style.icon)}</span>${esc(ev.label)}</td>
                 <td class="tp-event-when">${esc(when)}${peak}</td>
@@ -1878,58 +2078,67 @@
                 <td>${satellite}</td>
             </tr>`;
         }).join('');
-        r.events.innerHTML = `<div class="tp-analysis-title">Notable events</div>
-            <p class="tp-caption tp-table-caption"><span class="tp-caption-num">Table 1</span> — Notable events of the series, ordered by how far they depart from normal. Normal: mean of the same time of year over all years; anomaly = value − normal; z = anomaly in standard deviations of that time of year; percentile among all values. Select a row to zoom the plot to the event.</p>
-            <div class="tp-table-wrap tp-event-wrap"><table class="tp-table tp-event-table">
+        host.innerHTML = `<div class="tp-table-wrap tp-event-wrap"><table class="tp-table tp-event-table">
                 <thead><tr><th>#</th><th class="tp-th-left">Type</th><th class="tp-th-left">Date</th><th>Value</th><th>Anomaly</th><th>z</th><th>Pctl.</th><th><span class="tp-visually-hidden">Satellite image</span></th></tr></thead>
                 <tbody>${rows}</tbody></table></div>`;
     }
 
-    // Zoom the timeline to ±`days` around an event and mark it.
-    function focusEvent(n, days = 45) {
-        const model = buildModel();
+    // Zoom the timeline of one series to ±`days` around an event and mark it.
+    function focusEvent(key, n, days = 45) {
+        const model = buildModel(key);
         if (!model) return;
         const ev = eventsOf(model).find((e) => e.n === n);
         if (!ev) return;
-        state.activeEvent = n;
+        const ps = model.ps;
+        ps.activeEvent = n;
+        ps.collapsed = false;
         state.view = 'timeline';
         const first = isoToTime(ev.date);
         const last = isoToTime(ev.end || ev.date) + DAY_MS;
         const pad = Math.max(days * DAY_MS, model.stepDays * DAY_MS * 8);
         const domain = [Math.max(model.domain[0], first - pad), Math.min(model.domain[1], last + pad)];
-        state.zoom = { key: [state.topic, 'timeline', model.domain[0], model.domain[1]].join('|'), domain };
+        ps.zoom = { key: ['timeline', model.domain[0], model.domain[1]].join('|'), domain };
         render();
     }
 
-    // Focus the event on (or nearest to) an ISO date, e.g. after loading an example.
-    function focusDate(iso) {
-        const model = buildModel();
-        if (!model) return false;
+    // Focus the event on (or nearest to) an ISO date in one series (default: the first with data).
+    function focusDate(iso, topic) {
+        const key = topic && hasValues(topic) ? topic : firstWithData();
+        const model = key ? buildModel(key) : null;
+        if (!model || !model.points.length) return false;
         const t = isoToTime(iso);
-        const list = eventsOf(model);
         let best = null;
-        for (const ev of list) {
+        for (const ev of eventsOf(model)) {
             const d = Math.abs(isoToTime(ev.peak_date || ev.date) - t);
             if (d <= 7 * DAY_MS && (!best || d < best.d)) best = { ev, d };
         }
         if (best) {
-            focusEvent(best.ev.n);
+            focusEvent(key, best.ev.n);
         } else {
-            state.activeEvent = null;
+            const ps = model.ps;
+            ps.activeEvent = null;
+            ps.collapsed = false;
             state.view = 'timeline';
-            state.zoom = { key: [state.topic, 'timeline', model.domain[0], model.domain[1]].join('|'), domain: [Math.max(model.domain[0], t - 45 * DAY_MS), Math.min(model.domain[1], t + 46 * DAY_MS)] };
+            ps.zoom = { key: ['timeline', model.domain[0], model.domain[1]].join('|'), domain: [Math.max(model.domain[0], t - 45 * DAY_MS), Math.min(model.domain[1], t + 46 * DAY_MS)] };
             render();
         }
+        scrollToTopic(key);
         return true;
     }
 
-    // Choose the topic whose events include `iso` (e.g. TMAX for a heat example) and focus it.
+    // Choose the series whose events include `iso` (e.g. TMAX for a heat example) and focus it.
+    // `topic` is a series key or a topic key such as "temperature" (then one of its series).
     function focusExample(iso, preferCodes, topic) {
-        const topics = state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
-        if (topic && topics.includes(topic)) {
-            state.topic = topic;
-            state.hiddenYears.clear();
-            return focusDate(iso);
+        const keys = topicKeys();
+        if (topic && keys.includes(topic) && hasValues(topic)) {
+            topicState(topic).hiddenYears.clear();
+            return focusDate(iso, topic);
+        }
+        let candidates = keys.filter(hasValues);
+        if (!candidates.length) candidates = keys;
+        if (topic) {
+            const own = candidates.filter((k) => k === topic || k.startsWith(`${topic} · `));
+            if (own.length) candidates = own;
         }
         const t = isoToTime(iso);
         const score = (key) => {
@@ -1940,19 +2149,18 @@
             const preferred = (preferCodes || []).indexOf(code);
             return [hit < 0 ? 99 : hit, preferred < 0 ? 9 : preferred];
         };
-        const ranked = topics.slice().sort((a, b) => { const p = score(a); const q = score(b); return p[0] - q[0] || p[1] - q[1]; });
-        if (ranked.length) state.topic = ranked[0];
-        state.hiddenYears.clear();
-        return focusDate(iso);
+        const ranked = candidates.slice().sort((a, b) => { const p = score(a); const q = score(b); return p[0] - q[0] || p[1] - q[1]; });
+        if (!ranked.length) return false;
+        topicState(ranked[0]).hiddenYears.clear();
+        return focusDate(iso, ranked[0]);
     }
 
     // ------------------------------------------------------------ summary
 
-    // One or two sentences about the whole series, worded like the results line of a paper.
-    function renderSummary(model, wins) {
-        const r = state.refs;
+    // One or two short lines about the whole series: trend, change point, most notable event.
+    function renderSummary(model, wins, refs) {
         const win = wins.find((w) => !w.period && w.results);
-        if (!win || !model.points.length) { r.summary.innerHTML = ''; return; }
+        if (!win || !model.points.length) { refs.summary.innerHTML = ''; return; }
         const res = win.results;
         const unit = model.unit;
         const lr = res['Linear Regression'];
@@ -1960,31 +2168,29 @@
         const mk = res['Mann-Kendall'];
         const cp = res['Change Point'];
         const trend = lr && lr.available ? lr : sen && sen.available ? sen : null;
-        const years = model.years.length ? `${model.years[0]}–${model.years[model.years.length - 1]}` : '';
+        const years = yearsText(model);
         const parts = [];
         const spanYears = (model.points[model.points.length - 1].t - model.points[0].t) / (365.2425 * DAY_MS);
         if (trend && spanYears < 2 && model.stepDays < 200) {
-            parts.push('<span class="tp-summary-label">Note</span>The time range covers less than two years, so a fitted slope mainly reflects the seasonal cycle, not a long-term change. Several years (ideally 30) are needed to estimate a trend.');
+            parts.push('<span class="tp-summary-label">Note</span>Less than two years: a fitted slope mainly reflects the seasonal cycle, not a long-term change.');
         } else if (trend) {
             const perDecade = trend.slope * 10;
-            const sig = trend.significant;
             const method = trend === lr ? 'Linear trend' : "Sen's slope";
             const what = state.fn.anomaly ? ' of the anomaly' : '';
-            const evidence = isNum(trend.p_value) ? pLabel(trend.p_value) : '95 % CI of the slope excludes 0';
+            const evidence = isNum(trend.p_value) ? pLabel(trend.p_value) : '95 % CI excludes 0';
             let text = `<span class="tp-summary-label">Trend</span>${method}${what}, ${esc(years)}: <strong>${esc(withUnit(fmtSigned(perDecade), unit))} per decade</strong>`;
-            if (sig) text += ` (${evidence}, significant at the 5 % level${mk && mk.available ? `; Mann-Kendall: ${esc(mk.trend)}` : ''}).`;
-            else text += ` (${isNum(trend.p_value) ? `${evidence}, ` : ''}not significant at the 5 % level; internal variability alone could produce such a slope${model.years.length < 20 ? `; ${model.years.length} years is short for a climate trend, 30 are customary` : ''}).`;
-            if (trend.deseasonalised) text += ' <span class="tp-muted">Tested after removing the seasonal cycle.</span>';
+            if (trend.significant) text += ` (${evidence}, significant${mk && mk.available ? `; Mann-Kendall: ${esc(mk.trend)}` : ''}).`;
+            else text += ` (${isNum(trend.p_value) ? `${evidence}, ` : ''}not significant${model.years.length < 20 ? `; ${model.years.length} years is short for a climate trend` : ''}).`;
+            if (trend.deseasonalised) text += ' <span class="tp-muted">Seasonal cycle removed for the test.</span>';
             parts.push(text);
         }
         if (cp && cp.available && cp.significant) {
             const row = win.rows.find((rw) => rw.year === cp.x_after);
-            parts.push(`<span class="tp-summary-label">Change point</span>Level shift of <strong>${esc(withUnit(fmtSigned(cp.shift), unit))}</strong> around ${esc(row ? row.label : String(Math.floor(cp.x_after)))} (Pettitt test, ${pLabel(cp.p_value)}).`);
+            parts.push(`<span class="tp-summary-label">Change point</span>Level shift of <strong>${esc(withUnit(fmtSigned(cp.shift), unit))}</strong> around ${esc(row ? row.label : String(Math.floor(cp.x_after)))} (Pettitt, ${pLabel(cp.p_value)}).`);
         }
-        const evs = eventsOf(model);
-        const top = evs[0];
-        if (top) parts.push(`<span class="tp-summary-label">Extreme</span>Most notable event: <button type="button" class="tp-inline-link" data-event="${top.n}">${esc(top.label.toLowerCase())}, ${esc(fmtIsoDate(top.peak_date || top.date))}</button> (${esc(withUnit(fmt(top.value), unit))}${isNum(top.z) ? `, z = ${esc(signed1(top.z))}` : ''}).`);
-        r.summary.innerHTML = parts.length ? parts.map((t) => `<p>${t}</p>`).join('') : '';
+        const top = eventsOf(model)[0];
+        if (top) parts.push(`<span class="tp-summary-label">Extreme</span><button type="button" class="tp-inline-link" data-event="${top.n}">${esc(top.label)}, ${esc(fmtIsoDate(top.peak_date || top.date))}</button> (${esc(withUnit(fmt(top.value), unit))}${isNum(top.z) ? `, z = ${esc(signed1(top.z))}` : ''}).`);
+        refs.summary.innerHTML = parts.length ? parts.map((t) => `<p>${t}</p>`).join('') : '';
     }
 
     // A z-score always with one decimal and its sign: "+9.0", "−2.4".
@@ -1992,46 +2198,61 @@
         return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(1);
     }
 
-    // "Fig. 1 — Topic [unit], site, years. What the view shows." below the main plot.
-    function figureCaption(model, period) {
-        const info = model.info;
-        const st = info.station;
-        let site = '';
-        if (st && (st.name || st.id)) site = `station ${st.name || st.id}${st.source ? ` (${st.source})` : ''}`;
-        else if (info.region && info.region.name) site = `area mean of ${isNum(info.station_count) ? `${info.station_count} stations` : 'the stations'} in ${info.region.name}`;
-        else if (Array.isArray(info.coordinates)) site = `${fmt(Number(info.coordinates[0]), 2)}°, ${fmt(Number(info.coordinates[1]), 2)}°`;
-        const years = model.years.length ? `${model.years[0]}–${model.years[model.years.length - 1]}` : '';
+    // Short bold title of the main chart and one sentence of what the data shows.
+    function figureHead(model, view, periodWins) {
+        const label = topicLabel(model.key);
+        const site = siteText(model);
+        const years = yearsText(model);
+        const unit = model.unit;
         const anomaly = state.fn.anomaly && model.anomalyOk;
-        const periodText = period && !period.invalid ? period.label : '';
-        const views = {
-            timeline: `Time series of ${({ '1 Day': 'daily', '1 Month': 'monthly', '1 Year': 'annual' })[model.ivText] || `${model.ivText.toLowerCase()} mean`} values${periodText ? `; ${periodText} shaded in every year` : ''}.`,
-            overlay: `Each year drawn as a separate line on a common January–December axis${periodText ? `; ${periodText} highlighted` : ''}.`,
-            period: 'One value per year: the mean of each analysis time frame.',
-            stripes: `Each stripe is one year, coloured by the departure of its ${periodText && periodText !== 'Whole year' ? periodText : 'annual'} mean from the mean of all years.`,
-        };
-        const extras = [];
-        if (anomaly) extras.push('values shown as anomalies from the multi-year mean of the same time of year');
-        if (state.fn.ma) extras.push(`${state.fn.maWindow}-interval centred moving average`);
-        if (state.fn.clim) extras.push('band: multi-year mean ± 1 σ');
-        const head = [esc(state.topic) + (model.unit ? ` [${esc(model.unit)}]` : ''), esc(site), esc(years)].filter(Boolean).join(', ');
-        return `<span class="tp-caption-num">Fig. 1</span> — ${head}. ${esc(views[state.view] || '')}${extras.length ? ` ${esc(extras.join('; ').replace(/^./, (c) => c.toUpperCase()))}.` : ''}`;
+        const at = site ? ` at ${site}` : '';
+        let title;
+        let text = '';
+        if (view === 'period') {
+            title = `${label}${at}: ${periodWins.map((w) => w.label).join(', ')} mean per year, ${years}`;
+            const win = periodWins[0];
+            const rows = win.allRows.filter((row) => row.complete && isNum(row.mean));
+            if (rows.length >= 2) {
+                const hi = rows.reduce((a, b) => (b.mean > a.mean ? b : a));
+                const lo = rows.reduce((a, b) => (b.mean < a.mean ? b : a));
+                text = `${win.label}: highest ${hi.label} (${withUnit(fmt(hi.mean), unit)}), lowest ${lo.label} (${withUnit(fmt(lo.mean), unit)}).`;
+            }
+        } else {
+            title = `${label}${anomaly ? ' anomaly' : ''}${at}, ${years}${view === 'overlay' ? ', years overlaid' : ''}`;
+            let lo = null;
+            let hi = null;
+            const vals = [];
+            for (const p of model.points) {
+                const v = transformed(model, p);
+                if (!isNum(v)) continue;
+                vals.push(v);
+                if (!lo || v < lo.v) lo = { v, t: p.t };
+                if (!hi || v > hi.v) hi = { v, t: p.t };
+            }
+            if (lo && hi) {
+                text = anomaly
+                    ? `Largest departures from normal: ${withUnit(fmtSigned(hi.v), unit)} (${timeLabel(model, hi.t)}) and ${withUnit(fmtSigned(lo.v), unit)} (${timeLabel(model, lo.t)}).`
+                    : `Mean ${withUnit(fmt(mean(vals)), unit)}; lowest ${withUnit(fmt(lo.v), unit)} (${timeLabel(model, lo.t)}), highest ${withUnit(fmt(hi.v), unit)} (${timeLabel(model, hi.t)}).`;
+            }
+        }
+        return `<div class="tp-fig-title">${esc(title)}</div>${text ? `<div class="tp-fig-text">${esc(text)}</div>` : ''}`;
     }
 
-    function setControlStates(model, period) {
+    function setControlStates(models) {
         const r = state.refs;
-        const canCompare = Boolean(model && model.canCompare && model.years.length >= 2);
+        const any = models.some((m) => m.points.length);
+        const canCompare = models.some((m) => m.points.length && m.canCompare && m.years.length >= 2);
+        if (any && !canCompare) state.view = 'timeline';
         r.views.querySelectorAll('button').forEach((b) => {
             b.setAttribute('aria-pressed', String(b.dataset.view === state.view));
-            const stripesOk = Boolean(model && model.years.length >= 2);
-            b.disabled = !model || (b.dataset.view !== 'timeline' && !canCompare && !(b.dataset.view === 'stripes' && stripesOk));
+            b.disabled = !any || (b.dataset.view !== 'timeline' && !canCompare);
         });
-        r.period.disabled = !model || !model.canCompare;
         r.functions.querySelectorAll('button[data-fn]').forEach((b) => {
             const fn = b.dataset.fn;
             b.setAttribute('aria-pressed', String(Boolean(state.fn[fn])));
-            let disabled = !model;
+            let disabled = !any;
             if ((fn === 'anomaly' || fn === 'clim') && !canCompare) disabled = true;
-            if (fn === 'zoom') disabled = !model || state.view !== 'overlay' || !period || period.invalid;
+            if (fn === 'zoom') disabled = !any || state.view !== 'overlay' || !hasPeriodWindow();
             b.disabled = disabled;
         });
     }
@@ -2043,6 +2264,7 @@
             else if (it.style === 'hollow') swatch = `<span class="tp-swatch tp-swatch-dot" style="background:#fff;box-shadow:inset 0 0 0 1.5px ${it.color}"></span>`;
             else if (it.style === 'band') swatch = `<span class="tp-swatch tp-swatch-band" style="background:${COLOR.referenceBand};box-shadow:inset 0 -2px 0 ${it.color}"></span>`;
             else if (it.style === 'band-accent') swatch = `<span class="tp-swatch tp-swatch-band" style="background:${COLOR.accentWash};box-shadow:inset 0 0 0 1px ${it.color}"></span>`;
+            else if (it.style === 'band-color') swatch = `<span class="tp-swatch tp-swatch-band" style="background:${wash(it.color, 0.18)};box-shadow:inset 0 0 0 1px ${wash(it.color, 0.6)}"></span>`;
             else if (it.style === 'dash') swatch = `<span class="tp-swatch tp-swatch-dash" style="color:${it.color}"></span>`;
             else swatch = `<span class="tp-swatch" style="background:${it.color}"></span>`;
             if (it.toggleYear !== undefined) {
@@ -2056,17 +2278,18 @@
         return isNum(v) ? fmt(v, 3) : v === null || v === undefined ? '' : String(v);
     }
 
-    function renderTable(table) {
-        const r = state.refs;
-        r.tableBtn.textContent = state.showTable ? 'Hide table' : 'Show table';
-        r.table.hidden = !state.showTable;
-        if (!state.showTable || !table) return;
-        r.table.innerHTML = `<table class="tp-table"><thead><tr>${table.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>`
+    function renderTable(refs, ps, table) {
+        refs.tableBtn.textContent = ps.showTable ? 'Hide table' : 'Show table';
+        refs.tableBtn.setAttribute('aria-expanded', String(ps.showTable));
+        refs.table.hidden = !ps.showTable;
+        if (!ps.showTable || !table) return;
+        refs.table.innerHTML = `<table class="tp-table"><thead><tr>${table.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>`
             + `<tbody>${table.rows.map((row) => `<tr>${row.map((v) => `<td>${esc(cell(v))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     }
 
-    function downloadCsv() {
-        const table = state.lastTable;
+    function downloadCsv(key) {
+        const ps = topicState(key);
+        const table = ps.lastTable;
         if (!table) return;
         const q = (v) => {
             const s = isNum(v) ? String(v) : v === null || v === undefined ? '' : String(v);
@@ -2075,7 +2298,7 @@
         const csv = [table.columns, ...table.rows].map((row) => row.map(q).join(',')).join('\n');
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-        a.download = `${(state.topic || 'data').replace(/[^\w-]+/g, '_')}_${state.view}.csv`;
+        a.download = `${(topicLabel(key) || 'data').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '')}_${ps.lastView}.csv`;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
@@ -2097,7 +2320,7 @@
                 state.analysisCache.set(key, body);
             })
             .catch((err) => state.analysisCache.set(key, { error: String(err.message || err) }))
-            .finally(render);
+            .finally(scheduleRender);
     }
 
     function statCard(name, value, detail, flag) {
@@ -2257,26 +2480,24 @@
     }
 
     // One block per analysis time frame: what the tools ran on and their results.
-    function renderAnalysis(model, wins) {
-        const r = state.refs;
+    function renderAnalysis(model, wins, host) {
         const unit = model.unit;
         const slopeSpec = slopeChartSpec(wins, unit);
         let html = '';
         if (slopeSpec) {
-            html += `<div class="tp-analysis-block"><div class="tp-analysis-title">Linear regression inside each period, year by year</div>
-                <div class="tp-analysis-note">Each point is the slope of the regression over the values inside one year's period (e.g. 1–31 January ${esc(String(model.years[0] || ''))}), not a regression between years.</div>
+            html += `<div class="tp-analysis-block"><div class="tp-analysis-title">Slope inside each period, year by year${help(`Each point is the slope of the regression over the values inside one year's period (e.g. 1–31 January ${model.years[0] || ''}), not a regression between years.`)}</div>
                 <div class="tp-chart tp-slope-chart" data-ref-slope></div><div class="tp-legend">${legendHtml(slopeSpec.legend)}</div></div>`;
         }
         html += wins.map((win) => {
-            const head = `<div class="tp-analysis-title"><span class="tp-window-dot" style="background:${win.color}"></span>${esc(win.label)}${win.period ? ` in ${win.years.length} year${win.years.length === 1 ? '' : 's'}` : `: ${win.rows.length} intervals`}${state.fn.anomaly ? ' (anomalies)' : ''}</div>`;
             let note;
             if (win.period) {
                 const skipped = win.years.filter((yr) => !yr.complete).length;
-                note = `The tools run inside every year's ${esc(win.label)} on its own (x = day within the period), so each year gets its own result.${win.period.wraps ? ' A period across New Year counts towards the year it ends in.' : ''}${skipped > 0 ? ` ${skipped} incomplete year${skipped === 1 ? ' is' : 's are'} not analysed.` : ''}`;
+                note = `The tools run inside every year's ${win.label} on its own (x = day within the period), so each year gets its own result.${win.period.wraps ? ' A period across New Year counts towards the year it ends in.' : ''}${skipped > 0 ? ` ${skipped} incomplete year${skipped === 1 ? ' is' : 's are'} not analysed.` : ''}`;
             } else {
                 const deseason = win.results && Object.values(win.results).some((res) => res && res.deseasonalised);
-                note = `The tools run on every interval of the whole series; slopes are per year.${deseason ? ' The seasonal cycle was removed before testing (the trend is the same, but the seasons no longer count as noise), so the t-test means are levels without the seasons.' : ''}`;
+                note = `The tools run on every interval of the whole series; slopes are per year.${deseason ? ' The seasonal cycle was removed before testing (same trend, but the seasons no longer count as noise), so the t-test means are levels without the seasons.' : ''}`;
             }
+            const head = `<div class="tp-analysis-title"><span class="tp-window-dot" style="background:${win.color}"></span>${esc(win.label)}${win.period ? ` · ${win.years.length} year${win.years.length === 1 ? '' : 's'}` : ` · ${win.rows.length.toLocaleString('en-US')} intervals`}${state.fn.anomaly ? ' (anomalies)' : ''}${help(note)}</div>`;
             const cards = [];
             if (win.rows.length) {
                 const vals = win.rows.map((row) => row.mean);
@@ -2291,24 +2512,24 @@
                 const acrossCards = acrossRes
                     ? win.tools.filter((name) => acrossRes[name]).map((name) => toolCard(name, acrossRes[name], win.rows, unit))
                     : [mutedCard('Across years', win.rows.length < 3 ? 'Needs at least three complete years.' : win.across && win.across.error ? `Not available: ${win.across.error}` : 'Running…')];
-                extra = `<div class="tp-analysis-sub">Change across the years: one mean of ${esc(win.label)} per year, slopes per year</div>`
+                extra = `<div class="tp-analysis-sub">Change across the years${help(`One mean of ${win.label} per year; slopes are per year.`)}</div>`
                     + `<div class="tp-stats">${acrossCards.join('')}</div>`
-                    + `<div class="tp-analysis-sub">Inside each year's ${esc(win.label)} (x = day within the period). These slopes mostly show the seasonal shape, e.g. spring warming; turn on <em>Anomaly</em> to see departures from normal instead.</div>`
+                    + `<div class="tp-analysis-sub">Inside each year's ${esc(win.label)}${help('x = day within the period. These slopes mostly show the seasonal shape, e.g. spring warming; turn on Anomaly to see departures from normal instead.')}</div>`
                     + `<div class="tp-stats">${yearSummaryCards(win, unit).join('')}</div>`
                     + yearTable(win, unit);
             } else for (const name of win.tools) if (win.results[name]) cards.push(toolCard(name, win.results[name], win.rows, unit));
-            return `<div class="tp-analysis-block" style="--tp-win:${win.color}">${head}<div class="tp-analysis-note">${note}</div><div class="tp-stats">${cards.join('')}</div>${extra}</div>`;
+            return `<div class="tp-analysis-block" style="--tp-win:${win.color}">${head}<div class="tp-stats">${cards.join('')}</div>${extra}</div>`;
         }).join('');
-        r.analysis.innerHTML = (html ? '<div class="tp-section-label">Statistical analysis</div>' : '') + (html || '<div class="tp-analysis-note">Add a time frame under “Analyses” to run the tools.</div>');
-        const slopeHost = r.analysis.querySelector('[data-ref-slope]');
+        host.innerHTML = html || '<div class="tp-analysis-note">Add a time frame under “Analyses” to run the tools.</div>';
+        const slopeHost = host.querySelector('[data-ref-slope]');
         if (slopeHost && slopeSpec) renderChart(slopeHost, slopeSpec);
     }
 
     // ------------------------------------------------------- change over time
     //
-    // The "Change over time" section (static/plots/evolution.js, window.TrendEvolution)
+    // The "Change over time" block (static/plots/evolution.js, window.TrendEvolution)
     // gets one frame per analysis time frame: one value per year plus, for a period,
-    // the regression slope inside every year's period.
+    // the regression slope inside every year's period. One host per series.
 
     function annualRows(model) {
         if (model.stepDays >= 300) {
@@ -2342,14 +2563,13 @@
         }).filter((f) => f.rows.length);
         const st = model.info.station;
         return {
-            topic: state.topic, unit: model.unit, anomaly: !!(state.fn.anomaly && model.anomalyOk),
+            topic: topicLabel(model.key), topicKey: model.key, unit: model.unit, anomaly: !!(state.fn.anomaly && model.anomalyOk),
             intervalText: model.ivText, stepDays: model.stepDays, station: st && st.name ? st.name : null,
             years: model.years.slice(), frames,
         };
     }
 
-    function renderEvolution(model, wins) {
-        const host = state.refs.evolution;
+    function renderEvolution(model, wins, host) {
         if (!host) return;
         if (!window.TrendEvolution) { host.innerHTML = ''; return; }
         try {
@@ -2359,8 +2579,7 @@
         }
     }
 
-    function clearEvolution() {
-        const host = state.refs.evolution;
+    function clearEvolution(host) {
         if (!host) return;
         if (window.TrendEvolution && window.TrendEvolution.clear) window.TrendEvolution.clear(host);
         else host.innerHTML = '';
@@ -2369,16 +2588,17 @@
     // ------------------------------------------------------ compare variables
     //
     // The "Compare variables" section (static/plots/compare.js, window.TrendCompare) gets
-    // every topic of the request with its values and anomalies. The context object is
-    // rebuilt only when new data arrives, so compare.js can skip redraws by identity.
+    // every series of the request with its values and anomalies. The context object is
+    // rebuilt only when new data or labels arrive, so compare.js can skip redraws by identity.
 
-    let compareCache = { viz: null, request: null, loading: null, ctx: null };
+    let compareCache = { viz: null, request: null, loading: null, labels: -1, ctx: null };
 
     function compareContext() {
-        if (compareCache.ctx && compareCache.viz === state.viz && compareCache.request === state.request && compareCache.loading === state.loading) {
+        if (compareCache.ctx && compareCache.viz === state.viz && compareCache.request === state.request
+            && compareCache.loading === state.loading && compareCache.labels === state.labelsVersion) {
             return compareCache.ctx;
         }
-        const names = state.viz && state.viz.topics ? Object.keys(state.viz.topics) : [];
+        const names = topicKeys();
         const topics = [];
         let stepDays = null;
         let domain = null;
@@ -2395,7 +2615,7 @@
             if (st && (st.name || st.id)) site = `station ${st.name || st.id}`;
             else if (info.region && info.region.name) site = `area mean, ${info.region.name}`;
             topics.push({
-                name, unit: model.unit, site, error: info.error || null,
+                name, label: topicLabel(name), unit: model.unit, site, error: info.error || null,
                 anomalyOk: model.anomalyOk,
                 points: model.points.map((p) => {
                     const c = model.anomalyOk ? model.clim.get(model.bucketOf(p)) : null;
@@ -2408,7 +2628,7 @@
             topics, stepDays: stepDays || 1, domain, loading: state.loading,
             monthly: (stepDays || 1) >= 20, yearly: (stepDays || 1) >= 300,
         };
-        compareCache = { viz: state.viz, request: state.request, loading: state.loading, ctx };
+        compareCache = { viz: state.viz, request: state.request, loading: state.loading, labels: state.labelsVersion, ctx };
         return ctx;
     }
 
@@ -2425,7 +2645,7 @@
 
     window.TrendPlots = {
         mount, setData, setLoading, focusDate, focusExample,
-        // Drawing helpers shared with evolution.js, so every chart looks the same.
-        kit: { renderChart, legendHtml, esc, fmt, fmtSigned, withUnit, pLabel, mean, stdDev, isNum, COLOR, timeTicks, niceStep, tickDecimals },
+        // Drawing helpers shared with evolution.js and compare.js, so every chart looks the same.
+        kit: { renderChart, legendHtml, esc, fmt, fmtSigned, withUnit, pLabel, mean, stdDev, isNum, COLOR, timeTicks, niceStep, tickDecimals, help, topicLabel },
     };
 })();

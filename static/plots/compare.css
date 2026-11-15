@@ -53,6 +53,7 @@
 .tc-chart svg text { font-variant-numeric: tabular-nums; }
 .tc-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tc-row + .tc-row { margin-top: 2px; }
+.tc-figs .te-fig figcaption { display: flex; flex-direction: column; gap: 2px; }
 .tc-row-head {
     display: flex;
     align-items: center;
@@ -100,6 +101,8 @@
     text-align: left;
 }
 .tc-matrix th .te-dot { margin-right: 5px; vertical-align: middle; }
+/* Human labels are long: let the column heads wrap. */
+.tc-matrix thead th { white-space: normal; max-width: 9rem; vertical-align: bottom; line-height: 1.25; }
 .tc-cell { padding: 0; border: 1px solid #fff; min-width: 4.2rem; text-align: center; }
 .tc-cell button {
     font: inherit;

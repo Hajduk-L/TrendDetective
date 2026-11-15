@@ -1,19 +1,22 @@
 /*
- * "Compare variables" section of the plot panel (between Fig. 1 and "Change over time").
+ * "Compare variables" section of the plot panel (between the main plot and "Change over time").
  *
  * plots.js calls window.TrendCompare.render(host, ctx) on every re-render of the
  * panel with every topic of the request (values and anomalies per interval). The
  * user picks the variables to compare; this file draws
  *
- *   Fig. 2a   the chosen variables together in one plot (standardised or in original units)
- *   Fig. 2b   one plot per variable, stacked on a shared time axis (zoom is shared)
- *   Matrix    Pearson r of every pair (three or more variables), click a cell to pick a pair
- *   Fig. 2c   scatter plot of a pair, at the lag picked in Fig. 2d
- *   Fig. 2d   lagged correlation: r of A(t) with B(t + k) for k = −L … L
+ *   combined   the chosen variables together in one plot (standardised or in original units)
+ *   stacked    one plot per variable, stacked on a shared time axis (zoom is shared)
+ *   matrix     Pearson r of every pair (three or more variables), click a cell to pick a pair
+ *   scatter    a pair against each other, at the lag picked in the lag chart
+ *   lags       lagged correlation: r of A(t) with B(t + k) for k = -L ... L
  *
  * Correlations come from POST /api/correlate (correlation.py). Any variables can be
  * combined, also ones where a correlation means little (e.g. wind direction): the
  * user decides what is worth comparing.
+ *
+ * Topics are identified by `name` (selection, pair, request); what the user reads is
+ * `label` (falls back to `name`). Explanations sit behind the kit's "?" help icon.
  *
  * Rendering is idempotent: a signature of everything shown is compared with the
  * last one, so plots.js may call render() as often as it likes.
@@ -33,7 +36,6 @@
     const MIN_PAIRS_WARN = 10;
     const SCATTER_MAX_DRAWN = 6000;
     const CACHE_MAX = 40;
-    const FIG = 'Fig. 2';
 
     const cache = new Map(); // request body (JSON) -> { pending } | { data, v } | { error, v }
     let version = 0;
@@ -56,6 +58,31 @@
 
     function rText(r) {
         return num(r) === null ? '–' : (r < 0 ? '−' : '') + Math.abs(r).toFixed(2);
+    }
+
+    // What the user reads for a topic (name stays the identity key).
+    function lab(t) {
+        return (t && (t.label || t.name)) || '';
+    }
+
+    function labelOf(ctx, name) {
+        return lab(ctx.topics.find((t) => t.name === name)) || name;
+    }
+
+    function strengthOf(r) {
+        const a = Math.abs(r);
+        return a >= 0.7 ? 'strong' : a >= 0.4 ? 'moderate' : a >= 0.2 ? 'weak' : 'very weak';
+    }
+
+    function lagWord(ctx, k) {
+        if (k === 0) return 'no lag';
+        return `${k > 0 ? '+' : '−'}${Math.abs(k)} ${intervalWord(ctx, Math.abs(k) !== 1)}`;
+    }
+
+    // Cut a label to about `px` pixels of SVG text (≈ 6.3 px per character).
+    function fitText(text, px) {
+        const max = Math.max(4, Math.floor(px / 6.3));
+        return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
     }
 
     function colorOf(ctx, name) {
@@ -152,7 +179,7 @@
         // Topics stream in one by one: fill the default selection until the user changes it.
         if (!st.touched) for (const n of names) if (st.selected.length < DEFAULT_SELECTED && !st.selected.includes(n)) st.selected.push(n);
         const chosen = st.selected.map((n) => withData.find((t) => t.name === n));
-        if (!st.mode) st.mode = 'anomaly';
+        if (!st.mode) st.mode = 'value';
         const anomalyAny = chosen.some((t) => t.anomalyOk);
 
         // Correlation request for every chosen variable (all pairs at once).
@@ -228,11 +255,18 @@
         };
     }
 
+    // Figure caption: a bold title of what is shown, an optional "?" and one short line of what the data says.
+    function caption(K, title, helpText, text) {
+        const help = (t) => (K.help ? K.help(t) : '');
+        return `<figcaption><div class="tp-fig-title">${title}${helpText ? ` ${help(helpText)}` : ''}</div>${text ? `<p class="tp-fig-text">${text}</p>` : ''}</figcaption>`;
+    }
+
     function sectionHtml(K, ctx, st, withData, chosen, anomalyAny, entry) {
         const { esc } = K;
+        const help = (t) => (K.help ? K.help(t) : '');
         let html = '<section class="tc-root" aria-label="Compare variables">';
-        html += '<header class="te-head"><h4 class="te-title">Compare variables</h4>'
-            + '<p class="te-lede">Pick the variables to see them together, stacked on one time axis and correlated with each other, also with a time lag (does one lead the other?). Any variables can be combined; whether a comparison is meaningful (e.g. wind direction in degrees) is up to you.</p></header>';
+        html += `<header class="te-head"><h4 class="te-title">Compare variables ${help('See the chosen variables together, stacked on one time axis and correlated with each other, also with a time lag (does one lead the other?). Any variables can be combined; whether a comparison is meaningful (e.g. wind direction in degrees) is up to you.')}</h4>`
+            + '<p class="te-lede">Pick variables to see how they move together.</p></header>';
 
         if (withData.length < 2) {
             html += `<div class="te-state">${ctx.loading ? 'Waiting for more topics…' : 'At least two topics with data are needed to compare variables.'}</div>`;
@@ -243,37 +277,45 @@
         const chips = withData.map((t) => {
             const on = st.selected.includes(t.name);
             const full = !on && st.selected.length >= MAX_SELECTED;
-            return `<button type="button" class="tc-var" data-tc-var="${esc(t.name)}" data-tc-focus="var-${esc(t.name)}" aria-pressed="${on}"${full ? ` disabled title="At most ${MAX_SELECTED} variables"` : ''} style="--tc-c:${colorOf(ctx, t.name)}"><span class="te-dot"></span>${esc(t.name)}${t.unit ? ` <span class="tc-unit">${esc(t.unit)}</span>` : ''}</button>`;
+            return `<button type="button" class="tc-var" data-tc-var="${esc(t.name)}" data-tc-focus="var-${esc(t.name)}" aria-pressed="${on}"${full ? ` disabled title="At most ${MAX_SELECTED} variables"` : ''} style="--tc-c:${colorOf(ctx, t.name)}"><span class="te-dot"></span>${esc(lab(t))}${t.unit ? ` <span class="tc-unit">${esc(t.unit)}</span>` : ''}</button>`;
         }).join('');
         html += `<div class="te-field"><span class="te-field-label" id="tc-var-label">Variables</span><div class="tc-vars" role="group" aria-labelledby="tc-var-label">${chips}</div></div>`;
 
         const seg = (attr, value, label, pressed, disabled, title) => `<button type="button" data-tc-${attr}="${value}" data-tc-focus="${attr}-${value}" aria-pressed="${pressed}"${disabled ? ' disabled' : ''}${title ? ` title="${esc(title)}"` : ''}>${label}</button>`;
+        const anomalyHelp = 'Values: as measured, seasonal cycle included. Anomalies: departure from the multi-year mean of the same time of year, so the seasonal cycle is removed and a correlation is not just "both follow the seasons". Anomalies need ≥ 2 years and intervals of up to 2 months.';
+        const axisHelp = 'Standardised: each variable minus its mean, divided by its standard deviation (unit σ), so variables with different units share one axis. Original units: all variables on one axis in their own units.';
         html += '<div class="te-controls">'
-            + `<div class="te-field"><span class="te-field-label" id="tc-mode-label">Series</span><div class="te-seg" role="group" aria-labelledby="tc-mode-label">${
-                seg('mode', 'anomaly', 'Anomalies', st.mode === 'anomaly', !anomalyAny, 'Departure from the multi-year mean of the same time of year: the seasonal cycle is removed, so a correlation is not just "both follow the seasons". Needs ≥ 2 years and intervals of up to 2 months.')
-                + seg('mode', 'value', 'Values', st.mode === 'value' || !anomalyAny, false, 'The values as measured, seasonal cycle included')}</div></div>`
-            + `<div class="te-field"><span class="te-field-label" id="tc-axis-label">Combined plot</span><div class="te-seg" role="group" aria-labelledby="tc-axis-label">${
-                seg('axis', 'z', 'Standardised (σ)', st.axis === 'z', false, 'Each variable minus its mean, divided by its standard deviation: variables with different units share one axis')
+            + `<div class="te-field"><span class="te-field-label" id="tc-mode-label">Series ${help(anomalyHelp)}</span><div class="te-seg" role="group" aria-labelledby="tc-mode-label">${
+                seg('mode', 'value', 'Values', st.mode === 'value' || !anomalyAny, false, 'As measured, seasonal cycle included')
+                + seg('mode', 'anomaly', 'Anomalies', st.mode === 'anomaly' && anomalyAny, !anomalyAny, 'Departure from the multi-year mean of the same time of year')}</div></div>`
+            + `<div class="te-field"><span class="te-field-label" id="tc-axis-label">Combined plot ${help(axisHelp)}</span><div class="te-seg" role="group" aria-labelledby="tc-axis-label">${
+                seg('axis', 'z', 'Standardised (σ)', st.axis === 'z', false, 'Each variable minus its mean, divided by its standard deviation')
                 + seg('axis', 'raw', 'Original units', st.axis === 'raw', false, 'All variables on one axis in their own units')}</div></div>`
             + '</div>';
 
         const noAnomaly = st.mode === 'anomaly' ? chosen.filter((t) => !t.anomalyOk) : [];
-        if (noAnomaly.length) html += `<p class="te-note">No anomaly for ${esc(noAnomaly.map((t) => t.name).join(', '))} (needs ≥ 2 years and intervals of up to 2 months): ${noAnomaly.length === 1 ? 'its' : 'their'} values are used.</p>`;
+        if (noAnomaly.length) html += `<p class="te-note">No anomaly for ${esc(noAnomaly.map(lab).join(', '))}: values used.</p>`;
 
         if (!chosen.length) {
             html += '<div class="te-state">Pick at least one variable above.</div>';
             return `${html}</section>`;
         }
 
-        const what = st.mode === 'anomaly' && anomalyAny ? 'Anomalies' : 'Values';
+        const anomalyShown = st.mode === 'anomaly' && anomalyAny;
+        const what = anomalyShown ? 'anomalies' : 'values';
         const units = [...new Set(chosen.map((t) => t.unit || ''))];
         const mixed = st.axis === 'raw' && units.length > 1;
+        const n = chosen.length;
+        const combinedTitle = `${n === 1 ? esc(lab(chosen[0])) : n === 2 ? `${esc(lab(chosen[0]))} and ${esc(lab(chosen[1]))}` : `All ${n} selected variables`}, ${st.axis === 'z' ? 'standardised' : 'original units'}`;
+        const combinedText = mixed ? 'Mixed units on one axis: compare the shapes, not the levels.'
+            : st.axis === 'z' ? `0 = each variable’s mean; ±1 = one standard deviation. Curves rising and falling together point to a positive link.` : '';
         html += '<div class="tc-figs">';
-        html += `<figure class="te-fig"><figcaption><span class="te-fig-no">${FIG}a</span> ${esc(what)} of ${esc(chosen.map((t) => t.name).join(', '))} in one plot${st.axis === 'z' ? ', each standardised (minus its mean, divided by its standard deviation; unit σ)' : mixed ? ' in their own units on one shared axis (mixed units: compare the shapes, not the levels)' : ''}.</figcaption>`
+        html += `<figure class="te-fig">${caption(K, combinedTitle, `${anomalyShown ? 'Anomalies' : 'Values'} of the chosen variables in one plot. ${axisHelp}`, esc(combinedText))}`
             + '<div class="tp-chart tc-chart" data-tc-chart="combined"></div><div class="tp-legend te-legend" data-tc-legend="combined"></div></figure>';
 
-        html += `<figure class="te-fig"><figcaption><span class="te-fig-no">${FIG}b</span> ${esc(what)} of each variable in its own unit, stacked on the same time axis. Drag across any plot to zoom all of them; double-click to reset.</figcaption>`
-            + chosen.map((t) => `<div class="tc-row"><div class="tc-row-head" style="--tc-c:${colorOf(ctx, t.name)}"><span class="te-dot"></span>${esc(t.name)}${t.unit ? ` <span class="tc-unit">[${esc(t.unit)}]</span>` : ''}${t.site ? ` <span class="tc-site">${esc(t.site)}</span>` : ''}</div><div class="tp-chart tc-chart tc-chart-row" data-tc-chart="row" data-tc-topic="${esc(t.name)}"></div></div>`).join('')
+        const sites = new Set(chosen.map((t) => t.site || ''));
+        html += `<figure class="te-fig">${caption(K, 'Each variable in its own unit', `${anomalyShown ? 'Anomalies' : 'Values'} of each variable, stacked on the same time axis.`, 'Drag across any plot to zoom all of them; double-click to reset.')}`
+            + chosen.map((t) => `<div class="tc-row">${sites.size > 1 && t.site ? `<div class="tc-row-head" style="--tc-c:${colorOf(ctx, t.name)}"><span class="te-dot"></span>${esc(lab(t))} <span class="tc-site">${esc(t.site)}</span></div>` : ''}<div class="tp-chart tc-chart tc-chart-row" data-tc-chart="row" data-tc-topic="${esc(t.name)}"></div></div>`).join('')
             + '</figure>';
         html += '</div>';
 
@@ -283,13 +325,15 @@
 
     function correlationHtml(K, ctx, st, chosen, entry, what) {
         const { esc } = K;
-        let html = '<div class="tc-corr"><h5 class="tc-sub">Correlation</h5>';
+        const help = (t) => (K.help ? K.help(t) : '');
+        const methods = `Pearson r and Spearman ρ over the ${intervalWord(ctx, true)} where both variables have a value${st.mode === 'anomaly' ? ' (anomalies: departures from the multi-year mean of the same time of year)' : ''}. The p-values account for autocorrelation: two smooth series share fewer independent values than intervals, n_eff = n (1 − r1A·r1B) / (1 + r1A·r1B) with the lag-1 autocorrelations r1 (Bretherton et al. 1999). A correlation does not show cause and effect.`;
+        let html = `<div class="tc-corr"><h5 class="tc-sub">Correlation ${help(methods)}</h5>`;
         if (chosen.length < 2) return `${html}<div class="te-state">Pick a second variable to correlate.</div></div>`;
         if (!entry || entry.pending) return `${html}<div class="te-state" role="status">Computing correlations…</div></div>`;
         if (entry.error) return `${html}<div class="te-state te-error" role="alert">The correlations could not be computed: ${esc(entry.error)}</div></div>`;
 
         const [a, b] = st.pair;
-        const opts = (sel, other, which) => chosen.map((t) => `<option value="${esc(t.name)}"${t.name === sel ? ' selected' : ''}${t.name === other ? ' disabled' : ''}>${esc(t.name)}</option>`).join('');
+        const opts = (sel, other) => chosen.map((t) => `<option value="${esc(t.name)}"${t.name === sel ? ' selected' : ''}${t.name === other ? ' disabled' : ''}>${esc(lab(t))}</option>`).join('');
         html += '<div class="te-controls">'
             + `<label class="te-field"><span class="te-field-label">Variable A</span><select data-tc-pair="0" data-tc-focus="pair-0">${opts(a, b)}</select></label>`
             + '<button type="button" class="tp-link-btn tc-swap" data-tc-swap data-tc-focus="swap" title="Swap A and B">⇄ Swap</button>'
@@ -306,40 +350,51 @@
         }
         const ta = chosen.find((t) => t.name === a);
         const tb = chosen.find((t) => t.name === b);
-        html += `<p class="te-headline">${headline(K, ctx, res)}</p>`;
+        const la = lab(ta);
+        const lb = lab(tb);
+        html += `<p class="te-headline">${headline(K, ctx, res, la, lb)}</p>`;
         html += factsHtml(K, ctx, res);
         const notes = [];
-        if (res.n < MIN_PAIRS_WARN) notes.push(`Only ${res.n} ${intervalWord(ctx, true)} have values of both variables: treat the correlation as a rough indication.`);
-        if (ta.site && tb.site && ta.site !== tb.site) notes.push(`${a} comes from ${ta.site}, ${b} from ${tb.site}.`);
-        if (st.mode !== 'anomaly' || !(ta.anomalyOk && tb.anomalyOk)) notes.push('Values include the seasonal cycle: variables that both follow the seasons correlate strongly even without any other link. Switch to “Anomalies” to remove it.');
+        if (res.n < MIN_PAIRS_WARN) notes.push(`Only ${res.n} ${intervalWord(ctx, true)} with both values: a rough indication only.`);
+        if (ta.site && tb.site && ta.site !== tb.site) notes.push(`${la}: ${ta.site}; ${lb}: ${tb.site}.`);
+        const seasonal = st.mode !== 'anomaly' || !(ta.anomalyOk && tb.anomalyOk);
+        const canSwitch = st.mode !== 'anomaly' && (ta.anomalyOk || tb.anomalyOk);
+        if (seasonal) notes.push(canSwitch ? 'Includes the seasonal cycle – switch to Anomalies to remove it.' : 'Includes the seasonal cycle.');
         if (notes.length) html += `<p class="te-note">${esc(notes.join(' '))}</p>`;
 
+        // Scatter: what is plotted and the r at the chosen lag.
         const lagRow = (res.lags || []).find((l) => l.lag === st.lag);
-        const lagText = st.lag === 0 ? 'same interval' : `${b} ${Math.abs(st.lag)} ${intervalWord(ctx, Math.abs(st.lag) !== 1)} ${st.lag > 0 ? 'later' : 'earlier'}`;
+        const lagText = st.lag === 0 ? 'same ' + intervalWord(ctx, false) : `${lb} ${Math.abs(st.lag)} ${intervalWord(ctx, Math.abs(st.lag) !== 1)} ${st.lag > 0 ? 'later' : 'earlier'}`;
+        const scatterText = lagRow && num(lagRow.r) !== null
+            ? `${lagText[0].toUpperCase()}${lagText.slice(1)}: r = ${rText(lagRow.r)} (${strengthOf(lagRow.r)}), n = ${lagRow.n}.`
+            : `${lagText[0].toUpperCase()}${lagText.slice(1)}.`;
+        // Lags: where the link is strongest and whether it stands out from noise.
+        const band = num(res.lag_band);
+        const best = res.best_lag;
+        let lagSentence = '';
+        if (best && num(best.r) !== null) {
+            const noise = band !== null && Math.abs(best.r) <= band;
+            lagSentence = `Strongest link ${best.lag === 0 ? 'with no lag' : `at ${lagWord(ctx, best.lag)}`} (r = ${rText(best.r)}) — ${noise ? 'within the noise range' : strengthOf(best.r)}.`;
+            if (best.lag !== 0 && !noise) lagSentence += ` ${best.lag > 0 ? la : lb} leads.`;
+        }
         html += '<div class="tc-figs tc-figs-2">';
-        html += `<figure class="te-fig"><figcaption><span class="te-fig-no">${FIG}c</span> ${esc(what)} of ${esc(a)} (x) against ${esc(b)} (y), ${esc(lagText)}${lagRow && num(lagRow.r) !== null ? ` (r = ${esc(rText(lagRow.r))}, n = ${lagRow.n})` : ''}, with the least-squares line. Pick another lag in ${FIG}d.</figcaption>`
+        html += `<figure class="te-fig">${caption(K, `${esc(la)} vs. ${esc(lb)}`, `Each dot is one ${intervalWord(ctx, false)}: ${what} of ${la} (x) against ${lb} (y)${st.lag ? `, ${lb} shifted by ${lagWord(ctx, st.lag)}` : ''}. Dashed: least-squares line. Click a bar in the lag chart to pick another lag.`, esc(scatterText))}`
             + '<div class="tp-chart tc-chart" data-tc-chart="scatter"></div></figure>';
-        html += `<figure class="te-fig"><figcaption><span class="te-fig-no">${FIG}d</span> Lagged correlation: Pearson r of ${esc(a)} at interval t with ${esc(b)} at t + k. A peak at k &gt; 0 means ${esc(a)} leads ${esc(b)} by k ${esc(intervalWord(ctx, true))}. Dashed: rough 95 % range of r without any relation (±1.96/√n<sub>eff</sub>). Click a bar to show that lag in ${FIG}c.</figcaption>`
+        html += `<figure class="te-fig">${caption(K, 'Correlation at different time lags', `Pearson r of ${la} at interval t with ${lb} at t + k. A peak at k > 0 means ${la} leads ${lb} by k ${intervalWord(ctx, true)}. Dashed lines: rough 95 % range of r without any relation (±1.96/√n_eff); faded bars lie inside it. Click a bar to show that lag in the scatter plot.`, esc(lagSentence))}`
             + '<div class="tp-chart tc-chart" data-tc-chart="lags"></div></figure>';
         html += '</div>';
-        html += `<p class="te-methods"><span class="te-methods-head">Methods.</span> Pearson r and Spearman ρ over the ${esc(intervalWord(ctx, true))} where both variables have a value${st.mode === 'anomaly' ? ' (anomalies: departures from the multi-year mean of the same time of year)' : ''}. The p-values account for autocorrelation: two smooth series share fewer independent values than intervals, n<sub>eff</sub> = n (1 − r1<sub>A</sub> r1<sub>B</sub>) / (1 + r1<sub>A</sub> r1<sub>B</sub>) with the lag-1 autocorrelations r1 (Bretherton et al. 1999). A correlation does not show cause and effect.</p>`;
         return `${html}</div>`;
     }
 
-    function headline(K, ctx, res) {
+    function headline(K, ctx, res, la, lb) {
         const { esc } = K;
         const r = res.pearson;
-        const strength = Math.abs(r) >= 0.7 ? 'strong' : Math.abs(r) >= 0.4 ? 'moderate' : Math.abs(r) >= 0.2 ? 'weak' : 'very weak';
         const sign = r > 0 ? 'positive' : 'negative';
-        let text = `<span class="tp-summary-label">Correlation</span>${esc(res.a)} and ${esc(res.b)}: ${strength} ${sign} correlation, <strong>r = ${esc(rText(r))}</strong> (${esc(pText(res.p_value))}${res.significant ? ', significant at the 5 % level' : ', not significant at the 5 % level'}).`;
+        let text = `<span class="tp-summary-label">Correlation</span>${esc(la)} and ${esc(lb)}: ${strengthOf(r)} ${sign}, <strong>r = ${esc(rText(r))}</strong> (${esc(pText(res.p_value))}, ${res.significant ? 'significant' : 'not significant'}).`;
         const best = res.best_lag;
         if (best && best.lag !== 0 && num(best.r) !== null && Math.abs(best.r) > Math.abs(r) + 0.02) {
-            const k = Math.abs(best.lag);
-            const lead = best.lag > 0 ? `${esc(res.a)} leads ${esc(res.b)}` : `${esc(res.b)} leads ${esc(res.a)}`;
             const outside = num(res.lag_band) !== null && Math.abs(best.r) > res.lag_band;
-            text += ` Strongest at lag ${best.lag > 0 ? '+' : '−'}${k}: ${lead} by ${k} ${esc(intervalWord(ctx, k !== 1))} (r = ${esc(rText(best.r))}${outside ? '' : ', within the range expected without any relation'}).`;
-        } else if (best && best.lag === 0) {
-            text += ' Strongest without a lag.';
+            text += ` Stronger at ${esc(lagWord(ctx, best.lag))} (r = ${esc(rText(best.r))})${outside ? `: ${esc(best.lag > 0 ? la : lb)} leads` : ', but within the noise range'}.`;
         }
         return text;
     }
@@ -348,11 +403,11 @@
         const { esc } = K;
         const fact = (name, value, sub) => `<div class="te-fact"><dt>${name}</dt><dd><span class="te-fact-value">${value}</span>${sub ? `<span class="te-fact-sub">${sub}</span>` : ''}</dd></div>`;
         return '<dl class="te-facts">'
-            + fact('Pearson r', esc(rText(res.pearson)), esc(`${pText(res.p_value)} (unadjusted ${pText(res.p_value_unadjusted)})`))
-            + fact('Spearman <span class="tc-nocase">ρ</span>',esc(rText(res.spearman)), esc(`${pText(res.spearman_p_value)}; rank-based, robust to outliers`))
-            + fact('R²', esc(K.fmt(res.r_squared, 2)), esc(`${Math.round(res.r_squared * 100)} % of the variance shared`))
-            + fact('Intervals', esc(String(res.n)), esc(`effective n ≈ ${K.fmt(res.effective_n, 0)} (lag-1 autocorr. ${(res.autocorrelation || []).map((v) => K.fmt(v, 2)).join(' / ')})`))
-            + (res.best_lag ? fact('Strongest lag', esc(`${res.best_lag.lag > 0 ? '+' : res.best_lag.lag < 0 ? '−' : ''}${Math.abs(res.best_lag.lag)}`), esc(`r = ${rText(res.best_lag.r)} · ${intervalWord(ctx, true)}`)) : '')
+            + fact('Pearson r', esc(rText(res.pearson)), esc(pText(res.p_value)))
+            + fact('Spearman <span class="tc-nocase">ρ</span>', esc(rText(res.spearman)), esc(`${pText(res.spearman_p_value)} · rank-based`))
+            + fact('R²', esc(K.fmt(res.r_squared, 2)), esc(`${Math.round(res.r_squared * 100)} % shared variance`))
+            + fact(esc(intervalWord(ctx, true).replace(/^./, (c) => c.toUpperCase())), esc(String(res.n)), esc(`≈ ${K.fmt(res.effective_n, 0)} independent`))
+            + (res.best_lag ? fact('Strongest lag', esc(`${res.best_lag.lag > 0 ? '+' : res.best_lag.lag < 0 ? '−' : ''}${Math.abs(res.best_lag.lag)}`), esc(`r = ${rText(res.best_lag.r)}`)) : '')
             + '</dl>';
     }
 
@@ -372,12 +427,13 @@
             const res = pairResult(entry, [ta.name, tb.name]);
             const r = res && res.available ? res.pearson : null;
             const on = st.pair[0] === ta.name && st.pair[1] === tb.name;
-            const title = res && res.available ? `${ta.name} vs ${tb.name}: r = ${rText(r)}, ${pText(res.p_value)}, n = ${res.n}` : (res && res.error) || '';
+            const title = res && res.available ? `${lab(ta)} vs ${lab(tb)}: r = ${rText(r)}, ${pText(res.p_value)}, n = ${res.n}` : (res && res.error) || '';
             return `<td class="tc-cell${on ? ' is-on' : ''}" style="background:${rFill(r)};color:${num(r) !== null && Math.abs(r) > 0.6 ? '#fff' : 'inherit'}"><button type="button" data-tc-cell="${esc(JSON.stringify([ta.name, tb.name]))}" title="${esc(title)}">${esc(rText(r))}${res && res.significant ? '*' : ''}</button></td>`;
         };
-        return `<div class="tc-matrix-wrap"><table class="tc-matrix"><caption>Pearson r of every pair (* p &lt; 0.05, autocorrelation-corrected). Click a cell to inspect the pair.</caption>`
-            + `<thead><tr><th></th>${chosen.map((t) => `<th scope="col"><span class="te-dot" style="background:${colorOf(ctx, t.name)}"></span>${esc(t.name)}</th>`).join('')}</tr></thead>`
-            + `<tbody>${chosen.map((ta) => `<tr><th scope="row"><span class="te-dot" style="background:${colorOf(ctx, ta.name)}"></span>${esc(ta.name)}</th>${chosen.map((tb) => cell(ta, tb)).join('')}</tr>`).join('')}</tbody></table></div>`;
+        const help = (t) => (K.help ? K.help(t) : '');
+        return `<div class="tc-matrix-wrap"><table class="tc-matrix"><caption>Pearson r of every pair; * significant. Click a cell to inspect it. ${help('Red: positive, blue: negative correlation. * marks p < 0.05, with the p-value corrected for autocorrelation.')}</caption>`
+            + `<thead><tr><th></th>${chosen.map((t) => `<th scope="col"><span class="te-dot" style="background:${colorOf(ctx, t.name)}"></span>${esc(lab(t))}</th>`).join('')}</tr></thead>`
+            + `<tbody>${chosen.map((ta) => `<tr><th scope="row"><span class="te-dot" style="background:${colorOf(ctx, ta.name)}"></span>${esc(lab(ta))}</th>${chosen.map((tb) => cell(ta, tb)).join('')}</tr>`).join('')}</tbody></table></div>`;
     }
 
     // ------------------------------------------------------------------ figures
@@ -419,9 +475,11 @@
             host.querySelector('[data-tc-legend="combined"]').innerHTML = K.legendHtml(spec0.legend);
             prepTime(combined, () => combinedSpec(K, ctx, st, chosen));
         }
-        host.querySelectorAll('[data-tc-chart="row"]').forEach((el) => {
+        const rows = [...host.querySelectorAll('[data-tc-chart="row"]')];
+        rows.forEach((el, i) => {
             const topic = chosen.find((t) => t.name === el.getAttribute('data-tc-topic'));
-            if (topic && ctx.domain) prepTime(el, () => rowSpec(K, ctx, st, topic));
+            const last = i === rows.length - 1;
+            if (topic && ctx.domain) prepTime(el, () => rowSpec(K, ctx, st, topic, last));
         });
 
         const res = pairResult(entry, st.pair);
@@ -478,7 +536,7 @@
         const series = chosen.map((t) => {
             const pts = timeSeriesPoints(ctx, st, t, z);
             return {
-                id: `v-${t.name}`, kind: 'line', name: z || shared ? t.name : `${t.name}${t.unit ? ` [${t.unit}]` : ''}`,
+                id: `v-${t.name}`, kind: 'line', name: z || shared ? lab(t) : `${lab(t)}${t.unit ? ` [${t.unit}]` : ''}`,
                 color: colorOf(ctx, t.name), width: 1.6, points: pts, gap, markers: pts.length <= 120 ? 2.6 : 0,
             };
         });
@@ -486,27 +544,31 @@
             ...baseTimeSpec(ctx),
             height: 300,
             series,
-            legend: chosen.map((t) => ({ name: `${t.name}${t.unit && !z ? ` [${t.unit}]` : ''}${anomaly && t.anomalyOk ? ' anomaly' : ''}`, color: colorOf(ctx, t.name), style: 'line' })),
+            legend: chosen.map((t) => ({ name: `${lab(t)}${t.unit && !z ? ` [${t.unit}]` : ''}${anomaly && t.anomalyOk ? ' – anomaly' : ''}`, color: colorOf(ctx, t.name), style: 'line' })),
             unit: z ? 'σ' : shared,
+            yLabel: z ? `Standardised ${anomaly ? 'anomaly' : 'value'} [σ]` : shared ? `${anomaly ? 'Anomaly' : 'Value'} [${shared}]` : `${anomaly ? 'Anomaly' : 'Value'} (mixed units)`,
+            xLabel: 'Date',
             yInclude: z || anomaly ? [0] : [],
-            ariaLabel: `Compared variables: ${chosen.map((t) => t.name).join(', ')}`,
+            ariaLabel: `Compared variables: ${chosen.map(lab).join(', ')}`,
         };
     }
 
-    function rowSpec(K, ctx, st, topic) {
+    function rowSpec(K, ctx, st, topic, last) {
         const pts = timeSeriesPoints(ctx, st, topic, false);
         const anomaly = st.mode === 'anomaly' && topic.anomalyOk;
         return {
             ...baseTimeSpec(ctx),
             height: 150,
             series: [{
-                id: `row-${topic.name}`, kind: 'line', name: anomaly ? `${topic.name} anomaly` : topic.name,
+                id: `row-${topic.name}`, kind: 'line', name: anomaly ? `${lab(topic)} – anomaly` : lab(topic),
                 color: colorOf(ctx, topic.name), width: 1.5, points: pts, gap: ctx.stepDays * DAY_MS * 1.6, markers: pts.length <= 120 ? 2.4 : 0,
             }],
             legend: [],
             unit: topic.unit || '',
+            yLabel: `${lab(topic)}${anomaly ? ' – anomaly' : ''}${topic.unit ? ` [${topic.unit}]` : ''}`,
+            xLabel: last ? 'Date' : undefined,
             yInclude: anomaly ? [0] : [],
-            ariaLabel: `${topic.name} over time`,
+            ariaLabel: `${lab(topic)} over time`,
         };
     }
 
@@ -567,9 +629,15 @@
             out += `<text x="${f(x)}" y="${top + plotH + 16}" text-anchor="middle">${label}</text>`;
         });
         out += `<line x1="${left}" x2="${left + plotW}" y1="${top + plotH}" y2="${top + plotH}" stroke="${COLOR.axis}" />`;
-        const anomaly = (t) => (st.mode === 'anomaly' && t.anomalyOk ? ' anomaly' : '');
-        out += `<text class="tp-axis-title" x="${left + plotW / 2}" y="${height - 6}" text-anchor="middle">${esc(`${ta.name}${anomaly(ta)}${ta.unit ? ` [${ta.unit}]` : ''}`)}</text>`;
-        out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start">${esc(`${tb.name}${anomaly(tb)}${tb.unit ? ` [${tb.unit}]` : ''}${st.lag ? ` (${st.lag > 0 ? '+' : '−'}${Math.abs(st.lag)})` : ''}`)}</text>`;
+        const anomaly = (t) => (st.mode === 'anomaly' && t.anomalyOk ? ' – anomaly' : '');
+        const unitOf = (t) => (t.unit ? ` [${t.unit}]` : '');
+        // Long labels are cut to fit; the unit and lag always stay visible, the full text is in <title>.
+        const xTail = `${anomaly(ta)}${unitOf(ta)}`;
+        const yTail = `${anomaly(tb)}${unitOf(tb)}${st.lag ? ` (${lagWord(ctx, st.lag)})` : ''}`;
+        const xTitle = fitText(lab(ta), plotW - xTail.length * 6.3) + xTail;
+        const yTitle = fitText(lab(tb), width - 8 - yTail.length * 6.3) + yTail;
+        out += `<text class="tp-axis-title" x="${left + plotW / 2}" y="${height - 6}" text-anchor="middle"><title>${esc(lab(ta) + xTail)}</title>${esc(xTitle)}</text>`;
+        out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start"><title>${esc(lab(tb) + yTail)}</title>${esc(yTitle)}</text>`;
 
         const stride = Math.max(1, Math.ceil(pts.length / SCATTER_MAX_DRAWN));
         const color = colorOf(ctx, tb.name);
@@ -578,7 +646,7 @@
         let dots = '';
         for (let i = 0; i < pts.length; i += stride) {
             const p = pts[i];
-            const title = titled ? `<title>${esc(`${p.a.label}${st.lag ? ` / ${p.b.label}` : ''}: ${ta.name} ${K.fmt(p.x)}, ${tb.name} ${K.fmt(p.y)}`)}</title>` : '';
+            const title = titled ? `<title>${esc(`${p.a.label}${st.lag ? ` / ${p.b.label}` : ''}: ${lab(ta)} ${K.fmt(p.x)}, ${lab(tb)} ${K.fmt(p.y)}`)}</title>` : '';
             dots += `<circle cx="${f(sx(p.x))}" cy="${f(sy(p.y))}" r="${r}" fill="${color}" fill-opacity="0.45" stroke="${color}" stroke-opacity="0.7" stroke-width="0.6">${title}</circle>`;
         }
         // Least-squares line over the shown pairs.
@@ -595,7 +663,7 @@
         const clipId = `tc-clip-${Math.random().toString(36).slice(2, 8)}`;
         out += `<clipPath id="${clipId}"><rect x="${left}" y="${top - 2}" width="${plotW}" height="${plotH + 4}" /></clipPath><g clip-path="url(#${clipId})">${dots}${fit}</g>`;
         const note = stride > 1 ? `<div class="te-note">Every ${stride}th of ${pts.length} pairs drawn.</div>` : '';
-        return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Scatter plot of ${ta.name} against ${tb.name}`)}">${out}</svg>${note}`;
+        return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Scatter plot of ${lab(ta)} against ${lab(tb)}`)}">${out}</svg>${note}`;
     }
 
     function lagSvg(K, ctx, st, res, width) {
@@ -626,7 +694,7 @@
             out += `<line x1="${left}" x2="${left + plotW}" y1="${y}" y2="${y}" stroke="${COLOR.grid}" />`;
             out += `<text x="${left - 7}" y="${y}" text-anchor="end" dominant-baseline="middle">${yLabels[k]}</text>`;
         });
-        out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start">r</text>`;
+        out += `<text class="tp-axis-title" x="4" y="${top - 9}" text-anchor="start">Correlation r</text>`;
         if (band !== null) {
             for (const v of [band, -band]) out += `<line x1="${left}" x2="${left + plotW}" y1="${f(sy(v))}" y2="${f(sy(v))}" stroke="${COLOR.reference}" stroke-dasharray="4,3" />`;
         }
@@ -636,7 +704,17 @@
             if (k % every !== 0) continue;
             out += `<text x="${f(sx(k))}" y="${top + plotH + 15}" text-anchor="middle">${k > 0 ? `+${k}` : k < 0 ? `−${-k}` : '0'}</text>`;
         }
-        out += `<text class="tp-axis-title" x="${left + plotW / 2}" y="${height - 3}" text-anchor="middle">${esc(`← ${res.b} leads · lag k in ${intervalWord(ctx, true)} · ${res.a} leads →`)}</text>`;
+        // x title: "lag [days]" in the middle, who leads at either end (labels cut to fit).
+        const la = labelOf(ctx, res.a);
+        const lb = labelOf(ctx, res.b);
+        const mid = `lag [${intervalWord(ctx, true)}]`;
+        const side = (plotW - mid.length * 6.3) / 2 - 12;
+        const ty2 = height - 3;
+        out += `<text class="tp-axis-title" x="${f(left + plotW / 2)}" y="${ty2}" text-anchor="middle">${esc(mid)}</text>`;
+        if (side > 60) {
+            out += `<text class="tp-axis-title" x="${left}" y="${ty2}" text-anchor="start"><title>${esc(`${lb} leads`)}</title>${esc(`← ${fitText(lb, side - 60)} leads`)}</text>`;
+            out += `<text class="tp-axis-title" x="${left + plotW}" y="${ty2}" text-anchor="end"><title>${esc(`${la} leads`)}</title>${esc(`${fitText(la, side - 60)} leads →`)}</text>`;
+        }
         const zy = sy(0);
         const best = res.best_lag ? res.best_lag.lag : null;
         for (const l of lags) {
@@ -647,11 +725,11 @@
             const isSel = l.lag === st.lag;
             const fill = isBest ? COLOR.accent : l.r >= 0 ? '#cb181d' : '#2171b5';
             const outside = band === null || Math.abs(l.r) > band;
-            out += `<rect class="tc-bar${isSel ? ' is-on' : ''}" data-tc-lag="${l.lag}" x="${f(x)}" y="${f(y)}" width="${f(bw)}" height="${f(h)}" fill="${fill}" fill-opacity="${outside ? 0.9 : 0.4}"${isSel ? ` stroke="${COLOR.reference}" stroke-width="1.5"` : ''}><title>${esc(`lag ${l.lag > 0 ? '+' : ''}${l.lag}: r = ${rText(l.r)} (n = ${l.n})${isBest ? ' · strongest' : ''}`)}</title></rect>`;
+            out += `<rect class="tc-bar${isSel ? ' is-on' : ''}" data-tc-lag="${l.lag}" x="${f(x)}" y="${f(y)}" width="${f(bw)}" height="${f(h)}" fill="${fill}" fill-opacity="${outside ? 0.9 : 0.4}"${isSel ? ` stroke="${COLOR.reference}" stroke-width="1.5"` : ''}><title>${esc(`${lagWord(ctx, l.lag)}: r = ${rText(l.r)} (n = ${l.n})${isBest ? ' · strongest' : ''}`)}</title></rect>`;
         }
         out += `<line x1="${left}" x2="${left + plotW}" y1="${f(zy)}" y2="${f(zy)}" stroke="${COLOR.axis}" />`;
         out += `<line x1="${f(sx(0))}" x2="${f(sx(0))}" y1="${top}" y2="${top + plotH}" stroke="${COLOR.axis}" stroke-dasharray="2,3" />`;
-        return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Lagged correlation of ${res.a} and ${res.b}`)}">${out}</svg>`;
+        return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Lagged correlation of ${la} and ${lb}`)}">${out}</svg>`;
     }
 
     // ---------------------------------------------------------------- controls

@@ -246,6 +246,28 @@
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 1rem;
         }
+        .avail-list {
+            grid-column: 1 / -1;
+            list-style: none;
+            margin: 0 0 0.25rem;
+            padding: 0.5rem 0.7rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem 1.1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+            font-size: 0.82rem;
+        }
+        .avail-list li { display: flex; align-items: baseline; gap: 0.35rem; }
+        .avail-mark { font-weight: 700; }
+        .avail-ok .avail-mark { color: #15803d; }
+        .avail-bad { color: #9f1d1d; }
+        .avail-bad .avail-mark { color: #b91c1c; }
+        .avail-wait { color: #64748b; }
+        .avail-sub { color: #64748b; font-size: 0.76rem; }
+        .avail-bad .avail-sub { color: #b45454; }
+        .topic-viz-card.is-failed { border-left: 3px solid #dc2626; }
         .topic-viz-card {
             min-width: 0;
             border: 1px solid #e2e8f0;
@@ -1190,6 +1212,29 @@
             return d && d.label ? d.label : topic;
         }
 
+        // A result key is a topic key or "<topic key> · <series>" (e.g. "temperature · maximum (TMAX)").
+        function seriesLabel(key) {
+            const [base, ...rest] = String(key).split(' · ');
+            return [topicLabel(base), ...rest].join(' · ');
+        }
+
+        // One line per requested series above the result cards: what has data, what failed and why.
+        function availabilityHtml(entries, opts) {
+            const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+            const items = entries.map(([key, info]) => {
+                const n = (Array.isArray(info.values) ? info.values : []).filter(isNumber).length;
+                if (n) return `<li class="avail-ok"><span class="avail-mark" aria-hidden="true">✓</span>${escapeText(seriesLabel(key))} <span class="avail-sub">${n} values</span></li>`;
+                const why = String(info.error || 'No values in the selected time range.').split(/(?<=\.)\s/)[0];
+                return `<li class="avail-bad" title="${escapeText(info.error || '')}"><span class="avail-mark" aria-hidden="true">✗</span>${escapeText(seriesLabel(key))} <span class="avail-sub">${escapeText(why)}</span></li>`;
+            });
+            for (const key of opts.pending || []) {
+                items.push(opts.failed
+                    ? `<li class="avail-bad"><span class="avail-mark" aria-hidden="true">✗</span>${escapeText(seriesLabel(key))} <span class="avail-sub">${escapeText(opts.failed)}</span></li>`
+                    : `<li class="avail-wait"><span class="avail-mark" aria-hidden="true">…</span>${escapeText(seriesLabel(key))} <span class="avail-sub">loading</span></li>`);
+            }
+            return `<ul class="avail-list" aria-label="Data availability">${items.join('')}</ul>`;
+        }
+
         // Open / closed state of the topic categories the user toggled (group -> open).
         const openTopicGroups = new Map();
 
@@ -1585,11 +1630,13 @@
             }
 
             if (chartResizeObserver) chartResizeObserver.disconnect();
-            container.innerHTML = '';
+            container.innerHTML = availabilityHtml(entries, opts);
             const chartHosts = [];
             for (const [topic, info] of entries) {
                 const card = document.createElement('div');
                 card.className = 'topic-viz-card';
+                const hasAnyValue = (Array.isArray(info.values) ? info.values : []).some((v) => typeof v === 'number' && Number.isFinite(v));
+                if (!hasAnyValue) card.classList.add('is-failed');
 
                 const tools = info.tools || {};
                 const lr = tools['Linear Regression'];
@@ -1660,7 +1707,7 @@
                 const coords = Array.isArray(info.coordinates) ? info.coordinates : null;
                 card.innerHTML = `
                     <div class="topic-viz-header">
-                        <span>${escapeText(topic)}</span>
+                        <span>${escapeText(seriesLabel(topic))}</span>
                         ${coords ? `<span style="font-size:0.78rem;color:#64748b;white-space:nowrap;">[${coords[0]}, ${coords[1]}]</span>` : ''}
                     </div>
                     ${stationHtml}
@@ -1684,7 +1731,7 @@
             for (const topic of opts.pending || []) {
                 const card = document.createElement('div');
                 card.className = 'topic-viz-card';
-                card.innerHTML = `<div class="topic-viz-header"><span>${escapeText(topic)}</span></div>`
+                card.innerHTML = `<div class="topic-viz-header"><span>${escapeText(seriesLabel(topic))}</span></div>`
                     + (opts.failed
                         ? `<div class="topic-error">Not loaded: ${escapeText(opts.failed)}</div>`
                         : '<div class="empty-message">Still loading…</div>');

@@ -1,5 +1,6 @@
 /* "Change over time" section of the plot panel (static/plots/evolution.js).
-   Sober, journal-figure style: thin rules, small captions, tabular numbers. */
+   Sober, journal-figure style: thin rules, short titles, tabular numbers.
+   Figure titles and sentences use .tp-fig-title / .tp-fig-text from plots.css. */
 
 .tp-evolution:empty { display: none; }
 
@@ -182,16 +183,14 @@
     gap: 5px;
 }
 .te-fig figcaption {
-    font-size: 0.76rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.78rem;
     line-height: 1.4;
     color: var(--tp-ink-2, #52514e);
 }
-.te-fig-no {
-    font-weight: 700;
-    color: var(--tp-ink, #0b0b0b);
-    margin-right: 0.15rem;
-}
-.te-fig-no::after { content: " \2014"; font-weight: 400; color: var(--tp-ink-2, #52514e); }
+.te-fig figcaption .tp-fig-text { margin: 0; font-variant-numeric: tabular-nums; }
 .te-fig-controls { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .te-chart { border-radius: 4px; }
 .te-chart svg text { font-variant-numeric: tabular-nums; }
@@ -207,6 +206,12 @@
 }
 .te-table-wrap:focus-visible { outline: 2px solid var(--tp-series, #2a78d6); outline-offset: 1px; }
 .te-table { width: 100%; }
+/* Short headers may wrap instead of being cut off; numbers stay on one line. */
+.te-table thead th {
+    white-space: normal;
+    vertical-align: bottom;
+    line-height: 1.25;
+}
 .te-table tbody th {
     text-align: left;
     font-weight: 600;
@@ -224,15 +229,16 @@
     white-space: nowrap;
 }
 
-.te-methods {
-    margin: 0;
-    font-size: 0.72rem;
-    line-height: 1.45;
-    color: var(--tp-muted, #898781);
-}
-.te-methods-head { font-weight: 600; color: var(--tp-ink-2, #52514e); }
 
 @media (max-width: 520px) {
     .te-figs { grid-template-columns: minmax(0, 1fr); }
     .te-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Inside a topic section the collapsible block already says "Change over time":
+   keep only the "?" of the heading and drop the separating rule. */
+.tp-sub-body > .te-root { border-top: 0; padding-top: 0.25rem; }
+.tp-sub-body > .te-root .te-title-text { display: none; }
+/* …and put its "?" at the end of the one-line intro instead of on a line of its own. */
+.tp-sub-body > .te-root .te-head { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tp-sub-body > .te-root .te-head .te-title { order: 2; }
