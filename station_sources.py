@@ -238,12 +238,17 @@ _DOWNLOAD_LOCKS_GUARD = threading.Lock()
 
 
 _GHCND_WMO: dict[str, str] | None = None
+_GHCND_WMO_LOCK = threading.Lock()
 
 
 def _ghcnd_wmo_numbers() -> dict[str, str]:
     """GHCN-Daily id → WMO number, from the cached GHCN station list."""
     global _GHCND_WMO
-    if _GHCND_WMO is None:
+    if _GHCND_WMO is not None:
+        return _GHCND_WMO
+    with _GHCND_WMO_LOCK:  # threads asking at the same time parse the list once
+        if _GHCND_WMO is not None:
+            return _GHCND_WMO
         path = cached_download(
             GHCND_STATIONS_URL,
             CACHE_DIR / "ghcnd-stations.txt",

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrendDetective · Global Explorer</title>
+  <meta name="description" content="Globale Klimaveränderung erkunden: Zeitreise über den Globus, Trends, Regionen vergleichen.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232166ac'/%3E%3Cpath d='M4 18c6-6 10 4 16-2s8-2 8-2v4c-4 6-10 10-16 9-5-1-8-5-8-9z' fill='%23d6604d'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="explorer.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>TrendDetective <span>Global</span></h1>
+    </div>
+    <div class="seg ds-seg" id="ds-seg" role="radiogroup" aria-label="Datensatz">
+      <button type="button" role="radio" data-ds="gistemp" title="NASA GISTEMP v4 – Oberflächentemperatur seit 1880">Temperatur</button>
+      <button type="button" role="radio" data-ds="gpcp" title="GPCP v2.3 – Niederschlag seit 1979">Niederschlag</button>
+    </div>
+    <nav class="topnav">
+      <button class="ghost" id="btn-about" type="button">Methodik</button>
+      <a class="ghost" href="/" title="Die stationsbasierte Analyse">Stationen →</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="map-area" aria-label="Weltkarte">
+      <div id="map"></div>
+      <svg id="chip-lines" aria-hidden="true"></svg>
+      <div id="chip-layer"></div>
+
+      <!-- What the map shows right now -->
+      <div class="headline" id="headline" aria-live="polite">
+        <div class="hl-time" id="hl-time"></div>
+        <div class="hl-sub" id="hl-sub"></div>
+      </div>
+
+      <!-- Left: view controls -->
+      <aside class="panel view-card" id="controls">
+        <div class="seg mode-seg" id="mode-seg" role="radiogroup" aria-label="Ansicht">
+          <button type="button" role="radio" data-mode="year" title="Abweichung Jahr für Jahr – mit ▶ als Zeitraffer">Zeitreise</button>
+          <button type="button" role="radio" data-mode="trend" title="Wie schnell ändert es sich? Linearer Trend im gewählten Zeitraum">Trend</button>
+          <div class="more">
+            <button type="button" role="radio" data-mode="more" id="btn-more" aria-haspopup="menu" aria-expanded="false">Mehr <span aria-hidden="true">▾</span></button>
+            <div class="menu" id="more-menu" role="menu" hidden></div>
+          </div>
+        </div>
+        <p class="hint" id="layer-hint"></p>
+
+        <div class="ctx" id="ctx-year">
+          <div class="seg small-seg" id="res-seg" role="radiogroup" aria-label="Zeitschritt">
+            <button type="button" role="radio" data-res="annual">Jahre</button>
+            <button type="button" role="radio" data-res="monthly">Monate</button>
+          </div>
+        </div>
+        <label class="field inline baseline-field" id="baseline-field" title="Die Nulllinie: Abweichungen beziehen sich auf das Mittel dieser Jahre. Mit 1991–2020 sieht man, was selbst im Vergleich zum heutigen Klima auffällt.">
+          <span>Vergleich mit</span>
+          <select id="baseline"></select>
+        </label>
+        <div class="ctx" id="ctx-period">
+          <div class="range-row">
+            <input type="number" id="start-year" inputmode="numeric" aria-label="Startjahr">
+            <span class="dash">–</span>
+            <input type="number" id="end-year" inputmode="numeric" aria-label="Endjahr">
+          </div>
+          <div class="chips small" id="period-presets"></div>
+        </div>
+
+        <details class="advanced" id="settings">
+          <summary>Einstellungen</summary>
+          <label class="field" id="season-field">
+            <span>Jahreszeit</span>
+            <select id="season"></select>
+          </label>
+          <label class="toggle"><input type="checkbox" id="opt-sig" checked> Nicht signifikante Trends punktieren</label>
+          <label class="toggle"><input type="checkbox" id="opt-smooth" checked> Zwischen Gitterpunkten interpolieren</label>
+          <label class="toggle"><input type="checkbox" id="opt-globe" checked> Globus</label>
+          <label class="toggle"><input type="checkbox" id="opt-mapcharts" checked> Mini-Diagramme der Regionen</label>
+          <label class="field inline"><span>Deckkraft</span><input type="range" id="opacity" min="0.2" max="1" step="0.05" value="0.85"></label>
+          <label class="field inline"><span>Farbskala ±</span><input type="number" id="scale-max" step="0.1" min="0.05" placeholder="auto"></label>
+        </details>
+        <button class="collapse-btn" id="btn-collapse-controls" type="button" aria-label="Ansicht einklappen" title="Einklappen">‹</button>
+      </aside>
+
+      <!-- Right: regions -->
+      <aside class="panel region-card" id="regions-panel" aria-label="Regionen">
+        <div class="rc-head">
+          <h2>Regionen <span class="count" id="region-count"></span></h2>
+          <button class="icon-btn" id="btn-collapse-regions" type="button" aria-label="Regionen einklappen" title="Einklappen">–</button>
+        </div>
+        <div class="rc-body">
+          <div class="search-row">
+            <div class="search">
+              <input type="search" id="search" placeholder="Ort, Land, Meer …" autocomplete="off" aria-label="Region suchen">
+              <ul class="search-results" id="search-results" hidden></ul>
+            </div>
+            <button class="tool" id="btn-draw" type="button" title="Region als Rechteck auf der Karte aufziehen">▭ Zeichnen</button>
+          </div>
+          <ul class="selected" id="selected"></ul>
+          <p class="hint" id="selected-hint">Klicke auf die Karte, zieh ein Rechteck oder suche einen Ort – die Analyse öffnet sich unten.</p>
+          <details class="suggest" id="suggest">
+            <summary>Vorschläge</summary>
+            <div id="preset-groups"></div>
+          </details>
+        </div>
+      </aside>
+
+      <!-- Bottom: time bar -->
+      <div class="timebar" id="timebar">
+        <button class="play" id="btn-play" type="button" aria-label="Zeitraffer abspielen" title="Zeitraffer abspielen (Leertaste)">▶</button>
+        <button class="speed" id="btn-speed" type="button" title="Abspielgeschwindigkeit">1×</button>
+        <div class="tb-track" id="tb-track" tabindex="0" role="slider" aria-label="Zeit"></div>
+        <div class="tb-readout" id="tb-readout" title="Flächenmittel des gerade sichtbaren Kartenausschnitts">
+          <span class="tb-label">Sichtbarer Ausschnitt</span>
+          <b id="tb-value">–</b>
+        </div>
+        <button class="icon-btn" id="btn-view-region" type="button" title="Sichtbaren Ausschnitt als Region übernehmen" aria-label="Ausschnitt als Region übernehmen">⊕</button>
+      </div>
+
+      <!-- Legend -->
+      <div class="legend" id="legend" aria-live="polite">
+        <div class="legend-title" id="legend-title"></div>
+        <canvas id="legend-bar" width="240" height="10"></canvas>
+        <div class="legend-ticks" id="legend-ticks"></div>
+        <div class="legend-ends" id="legend-ends"></div>
+      </div>
+
+      <div class="hover-card" id="hover-card" hidden></div>
+      <div class="loading" id="loading" hidden><span class="spinner"></span><span id="loading-text">Berechne …</span></div>
+      <div class="toast" id="toast" hidden></div>
+    </section>
+
+    <!-- Bottom: analysis -->
+    <section class="analysis" id="analysis">
+      <div class="resize-handle" id="resize-handle" title="Höhe ziehen" aria-hidden="true"></div>
+      <div class="analysis-head">
+        <div class="tabs" role="tablist" id="tabs">
+          <button role="tab" data-tab="series" aria-selected="true">Zeitreihe</button>
+          <button role="tab" data-tab="tempo">Erwärmungstempo</button>
+          <button role="tab" data-tab="stripes">Wärmestreifen</button>
+          <button role="tab" data-tab="seasons">Jahreszeiten</button>
+          <button role="tab" data-tab="dist">Extreme</button>
+          <button role="tab" data-tab="stats">Statistik</button>
+          <button role="tab" data-tab="ranking">Ranking</button>
+          <button role="tab" data-tab="zonal">Breitengrade</button>
+        </div>
+        <div class="analysis-meta" id="analysis-meta"></div>
+        <button class="ghost small" id="btn-csv" type="button" title="Zeitreihen der Regionen als CSV herunterladen">CSV</button>
+        <button class="ghost small" id="btn-link" type="button" title="Link mit allen Einstellungen kopieren">Link</button>
+        <button class="icon-btn" id="btn-toggle-analysis" type="button" aria-label="Analyse ein-/ausklappen" title="Ein-/ausklappen">▴</button>
+      </div>
+      <div class="analysis-body" id="analysis-body"></div>
+    </section>
+  </main>
+
+  <dialog id="about">
+    <form method="dialog">
+      <h2>Datengrundlage &amp; Methodik</h2>
+      <div id="about-body"></div>
+      <button class="primary" value="close">Schließen</button>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

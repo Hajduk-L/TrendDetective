@@ -49,6 +49,5 @@ html[data-mode="scientific"] .simple-card { display: none; }
 /* Sidebar: the interval length stays at its default (1 day) in simple mode. */
 html[data-mode="simple"] .field-group-advanced { display: none; }
 
-/* Data sources under each variable and case study: scientific mode only. */
-html[data-mode="simple"] .topic-item .topic-meta,
-html[data-mode="simple"] .example-source { display: none; }
+/* Data sources under each variable: scientific mode only. */
+html[data-mode="simple"] .topic-item .topic-meta { display: none; }

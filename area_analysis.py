@@ -1,8 +1,11 @@
-"""Evaluate one of the predefined regions instead of a single point.
+"""Evaluate one of the predefined regions, or a box drawn on the map, instead of a single point.
 
 A point request uses the one station nearest to the point. For an area that
-would be misleading, so areas are limited to a fixed list of regions
-(:data:`REGIONS`) in which NOAA has many stations with long records. Every
+would be misleading, so areas are either a fixed list of regions
+(:data:`REGIONS`) in which NOAA has many stations with long records, or a box
+the user draws (:func:`box_region`, at most :data:`MAX_BOX_KM2`). Before a box
+is evaluated, :func:`stations_in_box` lists its stations with data in the
+selected time frame, including those that only cover part of it. Every
 station in the region is fetched, binned like a point request and analysed
 on its own (one coloured dot per station on the map); the region's series is
 the mean of all stations (see :func:`_area_series`).
@@ -66,6 +69,15 @@ Hourly data is 24 times larger and marine platforms move, so those topics
 stay point-only.
 """
 
+MAX_BOX_KM2: float = 1_000_000.0
+"""Largest box drawn on the map that is evaluated (about 1000 km × 1000 km)."""
+
+BOX_REGION_ID: str = "box"
+"""``Region.id`` of a box drawn on the map."""
+
+MAX_LISTED_STATIONS: int = 400
+"""Most stations :func:`stations_in_box` returns per topic (the longest records first)."""
+
 NOAA_PRIORITY: int = 1
 """NOAA re-publishes national stations; the national original (priority 0) wins a tie."""
 
@@ -91,6 +103,8 @@ class Region:
 
     def to_dict(self) -> dict[str, Any]:
         """JSON form for ``GET /api/regions`` and the map widget."""
+        if self.id == BOX_REGION_ID:
+            return {"id": self.id, "name": self.name, "bbox": list(self.bbox)}
         return {
             "id": self.id,
             "name": self.name,
@@ -266,13 +280,87 @@ def list_regions(topics: list[str] | None = None) -> list[dict[str, Any]]:
 
 
 def region_for_area(area: Any) -> Region | None:
-    """Return the region a map selection refers to, or ``None`` for a point."""
+    """Return the region a map selection refers to (a predefined region or a drawn box), or ``None`` for a point."""
     if not isinstance(area, dict):
         return None
     properties = area.get("properties")
-    if not isinstance(properties, dict) or properties.get("shape") != "region":
+    if not isinstance(properties, dict):
+        return None
+    if properties.get("shape") == "box":
+        return box_region(area)
+    if properties.get("shape") != "region":
         return None
     return _REGIONS_BY_ID.get(str(properties.get("regionId")))
+
+
+def box_area_km2(bbox: tuple[float, float, float, float]) -> float:
+    """Area of a longitude/latitude box on the sphere in km²."""
+    west, south, east, north = bbox
+    radius = 6371.0088
+    return abs(
+        math.radians(east - west) * (math.sin(math.radians(north)) - math.sin(math.radians(south)))
+    ) * radius * radius
+
+
+def _box_bbox(area: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    """``(west, south, east, north)`` of a drawn box: its ``bbox``, else the extent of its ring."""
+    bbox = area.get("bbox")
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        try:
+            values = tuple(float(v) for v in bbox)
+        except (TypeError, ValueError):
+            values = None
+        if values and all(math.isfinite(v) for v in values):
+            return values  # type: ignore[return-value]
+    geometry = area.get("geometry") or {}
+    try:
+        ring = geometry["coordinates"][0]
+        lons = [float(p[0]) for p in ring]
+        lats = [float(p[1]) for p in ring]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    if not lons:
+        return None
+    return (min(lons), min(lats), max(lons), max(lats))
+
+
+def box_region(area: Any) -> Region | None:
+    """The :class:`Region` of a box drawn on the map, or ``None`` if it has no usable extent.
+
+    Boxes that cross the antimeridian or exceed :data:`MAX_BOX_KM2` are still
+    returned; :func:`box_problem` names what is wrong with them.
+    """
+    if not isinstance(area, dict):
+        return None
+    bbox = _box_bbox(area)
+    if bbox is None:
+        return None
+    west, south, east, north = bbox
+    return Region(
+        BOX_REGION_ID,
+        "the drawn box",
+        (round(west, 4), round(max(south, -90.0), 4), round(east, 4), round(min(north, 90.0), 4)),
+        0,
+        0,
+    )
+
+
+def box_problem(region: Region) -> str | None:
+    """Why a drawn box cannot be evaluated, or ``None`` when it can."""
+    if region.id != BOX_REGION_ID:
+        return None
+    west, south, east, north = region.bbox
+    if west > east:
+        return "The box crosses the 180° meridian; draw it on one side of it."
+    if east - west <= 0 or north - south <= 0:
+        return "The box has no size; drag across the map to draw it."
+    size = box_area_km2(region.bbox)
+    if size > MAX_BOX_KM2:
+        return (
+            f"The box covers about {size:,.0f} km²; draw one of at most "
+            f"{MAX_BOX_KM2:,.0f} km² (about 1000 km × 1000 km)."
+        )
+    return None
 
 
 def _parse_day(text: Any) -> date | None:
@@ -288,8 +376,9 @@ def _find_stations(
     topic: noaa_api.NOAATopic,
     start_date: date,
     end_date: date,
+    min_coverage: float = MIN_COVERAGE,
 ) -> list[Station]:
-    """NOAA stations in the region whose record covers most of the requested range.
+    """NOAA stations in the region whose record covers at least ``min_coverage`` of the requested range.
 
     Every code is searched on its own and the results are merged: the
     Search Service only returns stations reporting *all* listed codes, and
@@ -322,7 +411,7 @@ def _find_stations(
                 continue
             overlap = (min(last, end_date) - max(first, start_date)).days + 1
             coverage = max(0.0, overlap / requested_days)
-            if coverage < MIN_COVERAGE:
+            if coverage <= 0 or coverage < min_coverage:
                 continue
             points = result.get("boundingPoints") or [{}]
             coordinates = points[0].get("coordinates") or []
@@ -357,9 +446,9 @@ def _with_ghcnd_identities(stations: list[Station]) -> list[Station]:
 
 
 def _other_source_stations(
-    region: Region, topic_key: str, start_date: date, end_date: date
+    region: Region, topic_key: str, start_date: date, end_date: date, min_coverage: float = MIN_COVERAGE
 ) -> tuple[list[Station], dict[str, Any], list[str]]:
-    """Stations of all non-NOAA databases offering the topic in the region.
+    """Stations of all non-NOAA databases offering the topic in the region, covering at least ``min_coverage``.
 
     :return: ``(stations, {source name: client}, [error messages])``.
     """
@@ -379,7 +468,7 @@ def _other_source_stations(
         except (RuntimeError, ValueError, OSError) as error:
             errors.append(f"{client.SOURCE}: {error}")
             continue
-        found = [s for s in found if s.coverage >= MIN_COVERAGE]
+        found = [s for s in found if s.coverage > 0 and s.coverage >= min_coverage]
         if found:
             clients[client.SOURCE] = client
             stations.extend(found)
@@ -837,6 +926,105 @@ def _area_events(
         return []
 
 
+_box_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+_BOX_CACHE_SIZE = 64
+
+
+def stations_in_box(
+    bbox: tuple[float, float, float, float], topic_key: str, start_date: date, end_date: date
+) -> dict[str, Any]:
+    """Stations in a drawn box with any data for ``topic_key`` between the two dates.
+
+    Unlike an evaluation, stations that only cover part of the time frame are
+    listed too, with the part they cover (``from``/``to``) and whether they
+    cover enough (:data:`MIN_COVERAGE`) to be used in the area mean (``used``).
+    Copies of the same station in several databases are listed once.
+
+    :return: ``{"topic", "stations": [...], "total", "complete", "partial",
+        "usable", "needed", "errors", "point_only"}``; ``stations`` holds at
+        most :data:`MAX_LISTED_STATIONS`, the longest records first.
+    """
+    key = (tuple(round(v, 3) for v in bbox), topic_key.lower(), start_date, end_date)
+    cached = _box_cache.get(key)
+    if cached is not None:
+        return cached
+
+    region = Region(BOX_REGION_ID, "the drawn box", bbox, 0, 0)
+    result: dict[str, Any] = {
+        "topic": topic_key,
+        "stations": [],
+        "total": 0,
+        "complete": 0,
+        "partial": 0,
+        "usable": 0,
+        "needed": MIN_STATIONS,
+        "min_coverage": MIN_COVERAGE,
+        "errors": [],
+        "point_only": False,
+    }
+    problem = box_problem(region)
+    if problem:
+        result["errors"].append(problem)
+        return result
+    if not _area_capable(region, topic_key):
+        result["point_only"] = True
+        return result
+
+    noaa_topic = noaa_api.TOPICS.get(topic_key.lower())
+    noaa_stations: list[Station] = []
+    errors: list[str] = []
+    if noaa_topic is not None and noaa_topic.dataset in AREA_DATASETS:
+        try:
+            noaa_stations = _find_stations(
+                noaa_api.NOAAClient(), region, noaa_topic, start_date, end_date, min_coverage=0.0
+            )
+        except (RuntimeError, ValueError) as error:
+            errors.append(f"NOAA: {error}")
+    others, _clients, other_errors = _other_source_stations(
+        region, topic_key, start_date, end_date, min_coverage=0.0
+    )
+    errors += other_errors
+    if others and noaa_stations:
+        noaa_stations = _with_ghcnd_identities(noaa_stations)
+    kept, _dropped = station_sources.deduplicate([*noaa_stations, *others])
+
+    ranked = sorted(kept, key=lambda s: (-s.coverage, s.priority, s.name))
+    listed = []
+    for station in ranked[:MAX_LISTED_STATIONS]:
+        first = station.first_date or start_date
+        last = station.last_date or end_date
+        listed.append(
+            {
+                "source": station.source,
+                "id": station.id,
+                "name": station.name,
+                "latitude": round(station.latitude, 4),
+                "longitude": round(station.longitude, 4),
+                "first": first.isoformat(),
+                "last": last.isoformat(),
+                "from": max(first, start_date).isoformat(),
+                "to": min(last, end_date).isoformat(),
+                "coverage": round(station.coverage, 3),
+                "used": station.coverage >= MIN_COVERAGE,
+            }
+        )
+    result.update(
+        {
+            "stations": listed,
+            "total": len(kept),
+            "complete": sum(1 for s in kept if s.coverage >= 0.999),
+            "partial": sum(1 for s in kept if s.coverage < 0.999),
+            "usable": sum(1 for s in kept if s.coverage >= MIN_COVERAGE),
+            "errors": errors,
+        }
+    )
+    if not errors:
+        if len(_box_cache) >= _BOX_CACHE_SIZE:
+            _box_cache.pop(next(iter(_box_cache)))
+        _box_cache[key] = result
+    return result
+
+
 def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
     """Evaluate every selected topic in ``region``; same output shape as a point request.
 
@@ -852,6 +1040,9 @@ def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
     topics = [topic for topic, checked in user_request.topics.items() if checked]
     tools = [tool for tool, checked in user_request.tools.items() if checked]
     start_date, end_date = user_request.timeintervall
+    problem = box_problem(region)
+    if problem:
+        return {"topics": {topic: _error_result(region, problem) for topic in topics}, "map_layers": []}
     client = noaa_api.NOAAClient()
 
     topic_results: dict[str, Any] = {}
@@ -913,7 +1104,10 @@ def process_region_request(user_request: Any, region: Region) -> dict[str, Any]:
 __all__ = [
     "REGIONS",
     "Region",
+    "box_problem",
+    "box_region",
     "list_regions",
     "process_region_request",
     "region_for_area",
+    "stations_in_box",
 ]

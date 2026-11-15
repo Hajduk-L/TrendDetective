@@ -1,0 +1,93 @@
+/* Foldable analysis sidebar (static/sidebar.js sets html[data-sidebar]). */
+
+/* ---- Toggle button: top-right corner of the sidebar ---- */
+/* (Desktop: the sidebar is position: sticky, which already anchors the button.) */
+.sidebar-toggle {
+    position: absolute;
+    top: 1.25rem;
+    right: 0.75rem;
+    z-index: 2;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font: inherit;
+    font-size: 1.05rem;
+    line-height: 1;
+    color: #64748b;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.sidebar-toggle:hover { background: #f8fafc; color: #2563eb; border-color: #cbd5e1; }
+.sidebar-toggle:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.sidebar-toggle-icon { display: inline-block; transform: translateY(-1px); }
+html[data-sidebar="closed"] .sidebar-toggle-icon { transform: translateY(-1px) rotate(180deg); }
+
+/* Room for the button next to the Simple / Scientific switch. */
+.sidebar > .mode-switch { padding-right: 1.9rem; }
+
+/* ---- Desktop: closed = slim rail ---- */
+@media (min-width: 861px) {
+    /* Contents keep their open width while the rail slides, so nothing reflows mid-way. */
+    .sidebar > :not(.sidebar-toggle) { min-width: calc(340px - 2.5rem); }
+
+    html[data-sidebar="closed"] .sidebar {
+        width: 40px;
+        padding-left: 0;
+        padding-right: 0;
+        cursor: pointer;
+    }
+    html[data-sidebar="closed"] .sidebar:hover { background-color: #f8fafc; }
+    html[data-sidebar="closed"] .sidebar > :not(.sidebar-toggle) {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+    html[data-sidebar="closed"] .sidebar-toggle { right: 4px; }
+
+    html.sidebar-animate .sidebar {
+        transition: width 0.22s ease, padding 0.22s ease, background-color 0.15s ease;
+    }
+    html.sidebar-animate .sidebar > :not(.sidebar-toggle) {
+        transition: opacity 0.15s ease 0.07s, visibility 0s linear 0s;
+    }
+    html.sidebar-animate[data-sidebar="closed"] .sidebar > :not(.sidebar-toggle) {
+        transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+    }
+    html.sidebar-animate .sidebar-toggle { transition: right 0.22s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
+}
+
+/* ---- Narrow screens: closed = compact bar with the button ---- */
+@media (max-width: 860px) {
+    html[data-sidebar] .sidebar { position: relative; }
+    .sidebar-toggle { right: 0.75rem; }
+    html[data-sidebar="closed"] .sidebar-toggle { top: 12px; }
+    .sidebar-toggle-icon { transform: translateY(-1px) rotate(90deg); }
+    html[data-sidebar="closed"] .sidebar-toggle-icon { transform: translateY(-1px) rotate(-90deg); }
+    html[data-sidebar="closed"] .sidebar {
+        padding: 0.75rem 1rem;
+        min-height: 54px;
+        justify-content: center;
+        cursor: pointer;
+    }
+    html[data-sidebar="closed"] .sidebar::before {
+        content: "Analysis panel";
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #334155;
+    }
+    html[data-sidebar="closed"] .sidebar > :not(.sidebar-toggle),
+    html[data-sidebar="closed"] .sidebar > #topics-dropdown { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.sidebar-animate .sidebar,
+    html.sidebar-animate .sidebar > *,
+    .sidebar-toggle,
+    .sidebar-toggle-icon { transition: none !important; }
+}

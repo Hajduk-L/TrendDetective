@@ -52,6 +52,21 @@ change point test removes the seasonal cycle first. `p_value_unadjusted` keeps t
 The plot panel adds a plain-language summary of the trend, and a **Stripes** view (one coloured
 stripe per year, the departure of its mean from the mean of all years).
 
+## Global Explorer (globale Trends vergleichen)
+
+Open http://127.0.0.1:8000/explorer/ for a globe-first view built on gridded data – the NASA
+GISTEMP v4 temperature grid (2°, monthly since 1880) and GPCP v2.3 precipitation (2.5°, since
+1979): maps of warming trend, anomaly, acceleration,
+signal-to-noise and spatial gradient, a year-by-year animation, and side-by-side comparison
+of any regions (presets such as Mediterranean, Antarctica, South Pacific, NRW; place search;
+drawn rectangles; single grid cells). Each dataset (~21–26 MB) is downloaded on first use into
+`data/cache/`. Concept, methods and an analysis of the station-based tool:
+[docs/global-explorer.md](docs/global-explorer.md).
+
+```bash
+python -m unittest tests.test_global_analysis
+```
+
 ## Map widget
 
 The world map is the widget in [`map-widget/`](map-widget/), built into [`static/map-widget/`](static/map-widget/).
@@ -162,6 +177,17 @@ Provider clients implement the `PointDataProvider` protocol in
 select it with the `provider` keyword while NOAA remains the default. Station
 databases can subclass `station_sources.StationSource`, which implements the
 point request and is used by the region evaluation.
+
+## Run the checks
+
+```bash
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+.venv/bin/python -m unittest src.test_task
+cd map-widget && npm run lint && npx tsc -b
+```
+
+The Python tests run offline. The map widget has no automated tests; see
+`map-widget/DEVELOPMENT.md` §12 for the manual checklist.
 
 ## Build the API reference
 

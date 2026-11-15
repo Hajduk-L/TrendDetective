@@ -2,7 +2,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./MapWidget.css";
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import type { Feature, Point } from "geojson";
+import type { Feature, Point, Polygon } from "geojson";
 import type { StyleSpecification } from "maplibre-gl";
 import { BASEMAPS, resolveBasemap } from "./basemaps";
 import { DataRenderer, DATA_LAYER_PREFIX } from "./DataRenderer";
@@ -33,6 +33,12 @@ const TOOLS: { id: DrawTool; label: string; hint: string; icon: string }[] = [
     hint: "Click to pick a single location.",
     icon: "M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z",
   },
+  {
+    id: "box",
+    label: "Box",
+    hint: "Drag (or click two corners) to draw an area; its measuring stations are listed below the map.",
+    icon: "M3 3h4v2H5v2H3zm14 0h4v4h-2V5h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 3h6v2H9zm0 16h6v2H9zM3 9h2v6H3zm16 0h2v6h-2z",
+  },
 ];
 
 const AREAS_ICON = "M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm8-2h8v8h-8z";
@@ -40,14 +46,14 @@ const AREAS_HINT = "Click a highlighted region to evaluate all measuring station
 const TRASH_ICON = "M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7z";
 const EDIT_ICON =
   "M3 17.25V21h3.75L17.8 9.94l-3.75-3.75zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z";
-const EDIT_HINT = "Editing: drag the point to move it. Esc or Edit again to lock it.";
+const EDIT_HINT = "Editing: drag the point or box to move it, a corner to resize. Esc or Edit again to lock it.";
 
 function isBasemapId(b: unknown): b is BasemapId {
   return typeof b === "string" && b in BASEMAPS;
 }
 
 /**
- * Interactive map widget: pick a point or one of the predefined regions (exported as GeoJSON
+ * Interactive map widget: pick a point, draw a box or pick one of the predefined regions (exported as GeoJSON
  * via `onAreaSelected`) and show Data Loader results (`resultData`) as map layers.
  */
 export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }) {
@@ -218,8 +224,9 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
       setTool: (t) => selectionRef.current?.setTool(t),
       setArea: (feature) => {
         const selection = selectionRef.current;
-        if (!selection || feature.geometry?.type !== "Point") return false;
-        if (!selection.setArea(feature as Feature<Point>)) return false;
+        const type = feature.geometry?.type;
+        if (!selection || (type !== "Point" && type !== "Polygon")) return false;
+        if (!selection.setArea(feature as Feature<Point | Polygon>)) return false;
         regionRef.current = null;
         regionLayerRef.current?.setSelected(null);
         setShowRegions(false);
@@ -245,6 +252,7 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
 
   const hint = showRegions ? AREAS_HINT : tool === "edit" ? EDIT_HINT : TOOLS.find((t) => t.id === tool)?.hint;
   const isRegion = area?.properties.shape === "region";
+  const isBox = area?.properties.shape === "box";
 
   const toggleRegions = () => {
     if (!showRegions) selectionRef.current?.setTool("select");
@@ -310,8 +318,8 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
               type="button"
               className="mw-btn"
               aria-pressed={tool === "edit"}
-              aria-label="Edit point"
-              title={tool === "edit" ? "Lock the point (Esc)" : "Edit: move the point"}
+              aria-label={isBox ? "Edit box" : "Edit point"}
+              title={tool === "edit" ? "Lock the selection (Esc)" : isBox ? "Edit: move or resize the box" : "Edit: move the point"}
               disabled={!area || isRegion}
               onClick={() => selectionRef.current?.setTool(tool === "edit" ? "select" : "edit")}
             >
@@ -364,6 +372,10 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
                   <>
                     <strong>Area: {String(area.properties.name)}</strong> · {formatArea(area.properties.areaKm2)}
                   </>
+                ) : isBox ? (
+                  <>
+                    <strong>Box</strong> · {formatArea(area.properties.areaKm2)}
+                  </>
                 ) : (
                   <>
                     <strong>Point</strong> ·{" "}
@@ -375,7 +387,7 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
             ) : (
               <span>
                 {tool === "select" && !showRegions
-                  ? "Pick a point, or press Areas to evaluate one of the regions with many stations."
+                  ? "Pick a point, draw a box, or press Areas for a region with many stations."
                   : hint}
               </span>
             )}

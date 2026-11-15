@@ -89,18 +89,6 @@ Rule: `src/widget/` must never import from `src/demo/` or the website.
   parallel worker requests hang (globe stays blank, no error).
 - The box: `.map-box` (relative, `min-height: 480px`) with `#map-widget` absolutely filling it.
   `.main-content` needs `min-width: 0`, otherwise the map canvas squeezes the sidebar.
-- **Time player** (`index.html`, data panel): `/api/map-data` returns per topic `frames.values`
-  (one value per cell per timestamp, cells in feature order) and `frames.legend` (one scale for
-  the whole window). The page recolours the grid in JS (`frameLayer`, `colorFromStops`) and calls
-  `setResultData` with the same layer id, so the widget swaps data in place. `frameIndex === null`
-  is the mean view. Play steps at 1–16 steps/s and stops at the last timestamp. A small SVG chart
-  (`drawSeries`) shows `series` (area mean, or the point's values) with a cursor at the current
-  frame; clicking or dragging on it seeks.
-- **Point requests**: `map_data` sends one API request for a `Point` selection instead of one per
-  grid cell. Result per topic: `kind: "point"`, one Point feature with `pointRadius: 16` (a ring of
-  colour around the orange selection marker), `cells: 1`, `resolution_deg: null`. Mean view and
-  frames share one colour scale built from the values over time. Area results have `kind: "area"`.
-  Intervals without data are `null` and drawn grey.
 - **Remember**: after changing anything in `src/widget/`, run `npm run build:embed` and commit
   `static/map-widget/`, otherwise the website keeps the old version.
 

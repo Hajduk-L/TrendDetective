@@ -5,8 +5,8 @@ import type { CSSProperties } from "react";
 /** [west, south, east, north] in WGS84 degrees. If west > east the box crosses the antimeridian (RFC 7946 §5.2). */
 export type BBox = [west: number, south: number, east: number, north: number];
 
-/** How the selection was made: a single point, or one of the predefined evaluation regions. */
-export type SelectionShape = "point" | "region";
+/** How the selection was made: a single point, a drawn box, or one of the predefined evaluation regions. */
+export type SelectionShape = "point" | "box" | "region";
 
 /**
  * A predefined evaluation region: a box in which there are enough measuring stations to
@@ -104,10 +104,10 @@ export type BasemapId = "streets" | "light" | "dark" | "satellite";
 
 /**
  * Toolbar tools. "select" is Pan: the selection is locked, clicks and drags only move the map.
- * "edit" unlocks a point so it can be moved (needs a point). Areas are not drawn but picked
- * from the predefined regions (the Areas button).
+ * "edit" unlocks a point or box so it can be moved or resized. "box" draws a rectangle whose
+ * stations are evaluated; the predefined regions are picked with the Areas button.
  */
-export type DrawTool = "select" | "edit" | "point";
+export type DrawTool = "select" | "edit" | "point" | "box";
 
 export interface MapWidgetProps {
   /** Selection shown when the widget mounts (not echoed back via `onAreaSelected`). */
@@ -141,8 +141,8 @@ export interface MapWidgetHandle {
   fitToBounds: (bbox: BBox) => void;
   setTool: (tool: DrawTool) => void;
   /**
-   * Select a point, as if the user had placed it (fires `onAreaSelected`). Returns false for
-   * anything but a Point: areas can only be picked from the predefined regions.
+   * Select a point or box (Polygon), as if the user had drawn it (fires `onAreaSelected`).
+   * Returns false for other geometries.
    */
   setArea: (feature: Feature) => boolean;
   /** Show or hide the predefined regions (same as the Areas button). */

@@ -23,6 +23,7 @@ MAX_RESULTS = 8
 MAX_QUERY_LEN = 120
 
 _lock = threading.Lock()
+_cache_lock = threading.Lock()  # guards _cache; _lock serialises requests to Nominatim
 _last_request = 0.0
 _cache: dict[str, list[dict[str, Any]]] = {}
 
@@ -145,8 +146,10 @@ def search_places(query: str, limit: int = 6) -> list[dict[str, Any]]:
     if coords:
         return [_coordinate_place(*coords)]
     key = f"{query.lower()}|{limit}"
-    if key in _cache:
-        return _cache[key]
+    with _cache_lock:
+        cached = _cache.get(key)
+    if cached is not None:
+        return cached
 
     params = urlencode({"q": query, "format": "jsonv2", "limit": limit, "accept-language": "en"})
     request = Request(f"{NOMINATIM_URL}?{params}", headers={"User-Agent": USER_AGENT})
@@ -163,9 +166,10 @@ def search_places(query: str, limit: int = 6) -> list[dict[str, Any]]:
             _last_request = time.monotonic()
 
     places = [p for p in (_to_place(i) for i in items if isinstance(i, dict)) if p]
-    if len(_cache) > 500:
-        _cache.clear()
-    _cache[key] = places
+    with _cache_lock:
+        if len(_cache) > 500:
+            _cache.clear()
+        _cache[key] = places
     return places
 
 

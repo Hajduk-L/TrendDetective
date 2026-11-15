@@ -3,5 +3,10 @@ __pycache__/
 *$py.class
 .venv/
 data/cache/
-.vercel
-.env*
+
+# Platform junk
+.DS_Store
+
+# Runtime downloads and build output (see README)
+data/noaa/
+docs/_build/

@@ -22,6 +22,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import threading
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -157,41 +158,45 @@ class DWDClient(StationSource):
     _historical_files: dict[str, dict[str, str]] = {}
     _wmo_numbers: dict[str, str] = {}
     _wmo_boxes: list[tuple[float, float, float, float]] = []
+    # Guards the class-level caches above: parallel requests fill each one once.
+    _cache_lock = threading.RLock()
 
     # ------------------------------------------------------------ stations
 
     @classmethod
     def _all_stations(cls, product: Product) -> list[dict[str, Any]]:
-        if product.directory not in cls._station_rows:
-            path = cached_download(
-                product.station_list, CACHE_DIR / "dwd" / f"{product.prefix}_stations.txt",
-                source="DWD", max_age_days=1.0,
-            )
-            cls._station_rows[product.directory] = _parse_station_list(path.read_text(encoding="latin-1"))
-        return cls._station_rows[product.directory]
+        with cls._cache_lock:
+            if product.directory not in cls._station_rows:
+                path = cached_download(
+                    product.station_list, CACHE_DIR / "dwd" / f"{product.prefix}_stations.txt",
+                    source="DWD", max_age_days=1.0,
+                )
+                cls._station_rows[product.directory] = _parse_station_list(path.read_text(encoding="latin-1"))
+            return cls._station_rows[product.directory]
 
     @classmethod
     def _load_wmo_numbers(cls, bbox: tuple[float, float, float, float]) -> None:
         """Fill :attr:`_wmo_numbers` (DWD id → WMO number) around ``bbox`` from Bright Sky."""
-        if any(all(a <= b if i < 2 else a >= b for i, (a, b) in enumerate(zip(box, bbox)))
-               for box in cls._wmo_boxes):
-            return  # already asked for a box containing this one
-        west, south, east, north = bbox
-        latitude, longitude = (south + north) / 2, (west + east) / 2
-        radius_m = min(500_000, int(distance_km(latitude, longitude, north, east) * 1000) + 10_000)
-        try:
-            payload = http_get_json(
-                BRIGHT_SKY_SOURCES_URL,
-                {"lat": latitude, "lon": longitude, "max_dist": radius_m},
-                source="Bright Sky", timeout=20, max_seconds=40,
-            )
-        except SourceError:
-            return  # co-location still finds most duplicates
-        cls._wmo_boxes.append(bbox)
-        for source in payload.get("sources", []) if isinstance(payload, dict) else []:
-            dwd_id, wmo = source.get("dwd_station_id"), source.get("wmo_station_id")
-            if dwd_id and wmo and str(wmo).isdigit():
-                cls._wmo_numbers.setdefault(str(dwd_id), str(wmo))
+        with cls._cache_lock:
+            if any(all(a <= b if i < 2 else a >= b for i, (a, b) in enumerate(zip(box, bbox)))
+                   for box in cls._wmo_boxes):
+                return  # already asked for a box containing this one
+            west, south, east, north = bbox
+            latitude, longitude = (south + north) / 2, (west + east) / 2
+            radius_m = min(500_000, int(distance_km(latitude, longitude, north, east) * 1000) + 10_000)
+            try:
+                payload = http_get_json(
+                    BRIGHT_SKY_SOURCES_URL,
+                    {"lat": latitude, "lon": longitude, "max_dist": radius_m},
+                    source="Bright Sky", timeout=20, max_seconds=40,
+                )
+            except SourceError:
+                return  # co-location still finds most duplicates
+            cls._wmo_boxes.append(bbox)
+            for source in payload.get("sources", []) if isinstance(payload, dict) else []:
+                dwd_id, wmo = source.get("dwd_station_id"), source.get("wmo_station_id")
+                if dwd_id and wmo and str(wmo).isdigit():
+                    cls._wmo_numbers.setdefault(str(dwd_id), str(wmo))
 
     def stations(
         self, bbox: tuple[float, float, float, float], topic: str, start_date: date, end_date: date
@@ -232,15 +237,16 @@ class DWDClient(StationSource):
     @classmethod
     def _historical_file_names(cls, product: Product) -> dict[str, str]:
         """DWD id → file name in ``historical/`` (the name holds the record's dates)."""
-        if product.directory not in cls._historical_files:
-            listing = http_get(product.url + "historical/", source="DWD").decode("latin-1")
-            cls._historical_files[product.directory] = {
-                match.group(1): match.group(0)
-                for match in re.finditer(
-                    rf"tageswerte_{product.prefix}_(\d{{5}})_\d{{8}}_\d{{8}}_hist\.zip", listing
-                )
-            }
-        return cls._historical_files[product.directory]
+        with cls._cache_lock:
+            if product.directory not in cls._historical_files:
+                listing = http_get(product.url + "historical/", source="DWD").decode("latin-1")
+                cls._historical_files[product.directory] = {
+                    match.group(1): match.group(0)
+                    for match in re.finditer(
+                        rf"tageswerte_{product.prefix}_(\d{{5}})_\d{{8}}_\d{{8}}_hist\.zip", listing
+                    )
+                }
+            return cls._historical_files[product.directory]
 
     @staticmethod
     def _zip_rows(url: str, path: Path, max_age_days: float) -> list[dict[str, str]]:

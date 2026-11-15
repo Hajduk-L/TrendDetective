@@ -16,8 +16,11 @@
  *       Extremes      highest / lowest values and the most notable events
  *   - How the variables relate (two or more variables): the strongest links
  *
- * Every widget has a "How this was worked out" fold-out with the numbers, so
- * details do not need Scientific mode. No sentences repeat what a chart shows;
+ * Every widget is a tile: the front shows one large number with a short line
+ * beneath; a click flips the tile over and widens it to the full row, and the
+ * back shows the chart and a "How this was worked out" fold-out with the
+ * numbers, so details do not need Scientific mode. Charts are drawn only on an
+ * open tile, at its full width. No sentences repeat what a chart shows;
  * explanations sit in title attributes.
  *
  * Statistics come from the server, the same as in the scientific view:
@@ -56,7 +59,13 @@
     const ACCENT = '#eb6834';
     const REF = '#52514e';
 
-    const state = { host: null, viz: null, request: null, loading: false, raf: 0, html: '' };
+    // Tile animation: the first half turn in place, then the second half while growing.
+    const TURN_MS = 170;
+    const GROW_MS = 400;
+    const EASE = 'cubic-bezier(0.2, 0.75, 0.25, 1)';
+
+    // open: tile group (variable) -> id of its open tile; kept across renders.
+    const state = { host: null, viz: null, request: null, loading: false, raf: 0, html: '', open: new Map() };
     const cache = new Map(); // request key -> { pending } | { data } | { error }
     const prepared = new WeakMap(); // info -> { stepDays, s }
     let observer = null;
@@ -105,11 +114,17 @@
         return Number(v.toFixed(dg));
     }
 
-    function show(v, unit, signed) {
+    // Number and unit apart, so a tile can set the unit smaller.
+    function split(v, unit, signed) {
         const r = round(v);
         const s = Math.abs(r).toLocaleString('en-US', { maximumFractionDigits: 3 });
         const sign = r < 0 ? '−' : signed && r > 0 ? '+' : '';
-        return `${sign}${s}${unit ? (unit.startsWith('%') ? unit : ` ${unit}`) : ''}`;
+        return { value: `${sign}${s}`, unit: unit || '' };
+    }
+
+    function show(v, unit, signed) {
+        const p = split(v, unit, signed);
+        return `${p.value}${p.unit ? (p.unit.startsWith('%') ? p.unit : ` ${p.unit}`) : ''}`;
     }
 
     // Chance as a percentage, two significant digits without exponent notation (1 → "100 %").
@@ -398,8 +413,8 @@
                 target: 'trend',
             });
         }
-        out.widgets.push({ id: 'trend', wide: true, fixed: 0, score: 99, html: (ctx, w) => trendWidget(s, evo, pal, ctx, w) });
-        out.widgets.push({ id: 'record', wide: true, fixed: 1, score: 98, html: (ctx, w) => recordWidget(s, ctx, w) });
+        out.widgets.push({ id: 'trend', fixed: 0, score: 99, html: (ctx, w) => trendWidget(s, evo, pal, ctx, w) });
+        out.widgets.push({ id: 'record', fixed: 1, score: 98, html: (ctx, w) => recordWidget(s, ctx, w) });
 
         // Seasons: which part of the year changes most.
         if (s.seasons.length && s.years.length >= TREND_YEARS) {
@@ -458,7 +473,7 @@
                     target: 'typical',
                 });
             }
-            out.widgets.push({ id: 'typical', wide: true, score, html: (ctx, w) => typicalWidget(s, diffs, topMonth, pal, ctx, w) });
+            out.widgets.push({ id: 'typical', score, html: (ctx, w) => typicalWidget(s, diffs, topMonth, pal, ctx, w) });
         }
 
         // Decades.
@@ -492,15 +507,48 @@
     // ------------------------------------------------------------------ widgets
 
     function widget(s, w, parts) {
-        return `<article class="sw-w${w.wide ? ' sw-w-wide' : ''}" id="sw-${slug(s.key)}-${w.id}">`
-            + `<header class="sw-w-head"><h5 class="sw-w-title"${parts.tip ? ` title="${esc(parts.tip)}"` : ''}>${esc(parts.title)}</h5>`
+        return tile(`sw-${slug(s.key)}-${w.id}`, slug(s.key), s.key, w, parts);
+    }
+
+    // Front of a tile: t = { label, value, unit, pre, arrow, color, desc, chip: [word, class], empty }.
+    function front(id, t, w) {
+        const big = t.value == null
+            ? `<span class="sw-tile-num">${esc(t.empty || '–')}</span>`
+            : (t.arrow ? `<span class="sw-tile-arrow" aria-hidden="true">${t.arrow}</span>` : '')
+                + (t.pre ? `<small class="sw-tile-pre">${esc(t.pre)}</small>` : '')
+                + `<span class="sw-tile-num">${esc(t.value)}</span>`
+                + (t.unit ? `<small class="sw-tile-unit${t.unit.startsWith('%') ? ' is-tight' : ''}">${esc(t.unit)}</small>` : '');
+        const chip = w.strongest
+            ? '<span class="sw-badge is-top" title="The tile with the strongest signal for this variable">Strongest</span>'
+            : t.chip ? `<span class="sw-badge ${t.chip[1]}">${esc(t.chip[0])}</span>` : '';
+        return `<button type="button" class="sw-face sw-front${w.strongest ? ' is-top' : ''}${t.value == null ? ' is-empty' : ''}" aria-expanded="false" aria-controls="${id}-back" title="Show the chart and details">`
+            + `<span class="sw-tile-label">${esc(t.label || '')}</span>`
+            + `<span class="sw-tile-big"${t.color ? ` style="color:${t.color}"` : ''}>${big}</span>`
+            + `<span class="sw-tile-desc">${esc(t.desc || '')}</span>`
+            + `<span class="sw-tile-foot">${chip}<span class="sw-tile-hint" aria-hidden="true">`
+            + '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            + '</span></span></button>';
+    }
+
+    // A tile: the summary on the front, the widget (chart, numbers) on the back.
+    function tile(id, group, key, w, parts) {
+        return `<div class="sw-tile" id="${id}" data-sw-group="${esc(group)}"><div class="sw-tile-card">`
+            + front(id, parts.tile || { label: parts.title }, w)
+            + `<div class="sw-face sw-back" id="${id}-back" role="region" aria-label="${esc(parts.title)}">`
+            + `<header class="sw-w-head sw-back-head"><h5 class="sw-w-title"${parts.tip ? ` title="${esc(parts.tip)}"` : ''}>${esc(parts.title)}</h5>`
             + (parts.badge || '')
-            + (w.strongest ? '<span class="sw-badge is-top" title="The widget with the strongest signal for this variable">Strongest signal</span>' : '')
+            + (w.strongest ? '<span class="sw-badge is-top" title="The tile with the strongest signal for this variable">Strongest signal</span>' : '')
+            + `<button type="button" class="sw-tile-close" aria-label="Close ${esc(parts.title)}" title="Close (Esc)">✕</button>`
             + '</header>'
             + (parts.lead ? `<p class="sw-w-lead">${esc(parts.lead)}</p>` : '')
             + (parts.body || '')
-            + (parts.how ? `<details class="sw-how"><summary>How this was worked out</summary>${parts.how}</details>` : '')
-            + '</article>';
+            + ((parts.how || key)
+                ? '<div class="sw-back-foot">'
+                    + (parts.how ? `<details class="sw-how"><summary>How this was worked out</summary>${parts.how}</details>` : '')
+                    + (key ? `<a class="sw-sci" href="#" data-sw-sci="${esc(key)}" title="Open this series in Scientific mode">Scientific view →</a>` : '')
+                    + '</div>'
+                : '')
+            + '</div></div></div>';
     }
 
     function chartSlot(ctx, spec, legend, tip) {
@@ -535,24 +583,32 @@
 
     function trendWidget(s, entry, pal, ctx, w) {
         const title = s.totals ? 'Trend of the yearly total' : 'Trend';
-        if (!entry) return widget(s, w, { title, lead: `${s.years.length} full year${s.years.length === 1 ? '' : 's'}: too few for a trend.` });
-        if (entry.pending) return widget(s, w, { title, body: '<p class="sw-note" role="status">Working out…</p>' });
-        if (entry.error) return widget(s, w, { title, lead: `Not available: ${entry.error}` });
+        const name = 'Trend';
+        if (!entry) return widget(s, w, { title, lead: `${s.years.length} full year${s.years.length === 1 ? '' : 's'}: too few for a trend.`, tile: { label: name, desc: 'too few years for a trend' } });
+        if (entry.pending) return widget(s, w, { title, body: '<p class="sw-note" role="status">Working out…</p>', tile: { label: name, empty: '…', desc: 'working out…' } });
+        if (entry.error) return widget(s, w, { title, lead: `Not available: ${entry.error}`, tile: { label: name, desc: 'not available' } });
         const d = entry.data;
         const t = d.trend || {};
         const series = (d.series || []).filter((p) => num(p.value) !== null);
         const dec = num(t.slope_per_decade);
         let head = '';
         let badge = '';
+        let face = { label: name, desc: 'no trend available' };
         if (t.available !== false && dec !== null) {
             const p = num(t.p_value);
             const both = num(t.mk_p_value) !== null && t.mk_p_value < 0.05;
-            if (series.length < TREND_YEARS) badge = verdictBadge('is-weak', 'Too few years', `${series.length} years are too few to tell a trend from chance.`);
-            else if (p !== null && p < 0.01) badge = verdictBadge('is-clear', 'Clear trend', `Very unlikely to be chance${both ? '; an outlier-proof test agrees' : ''}.`);
-            else if (p !== null && p < 0.05) badge = verdictBadge('is-likely', 'Likely trend', `Probably real, but not certain${both ? '; an outlier-proof test agrees' : ''}.`);
-            else if (p !== null) badge = verdictBadge('is-weak', 'Could be chance', 'The years vary too much to be sure of this change.');
+            let chip = null;
+            if (series.length < TREND_YEARS) { badge = verdictBadge('is-weak', 'Too few years', `${series.length} years are too few to tell a trend from chance.`); chip = ['Too few years', 'is-weak']; }
+            else if (p !== null && p < 0.01) { badge = verdictBadge('is-clear', 'Clear trend', `Very unlikely to be chance${both ? '; an outlier-proof test agrees' : ''}.`); chip = ['Clear', 'is-clear']; }
+            else if (p !== null && p < 0.05) { badge = verdictBadge('is-likely', 'Likely trend', `Probably real, but not certain${both ? '; an outlier-proof test agrees' : ''}.`); chip = ['Likely', 'is-likely']; }
+            else if (p !== null) { badge = verdictBadge('is-weak', 'Could be chance', 'The years vary too much to be sure of this change.'); chip = ['Could be chance', 'is-weak']; }
             const flat = round(dec) === 0;
             const color = flat ? REF : dec > 0 ? pal.up : pal.down;
+            face = {
+                label: name, ...split(dec, s.yearUnit, true), color, chip,
+                arrow: flat ? '→' : dec > 0 ? '↑' : '↓',
+                desc: `per 10 years${flat ? '' : ` · ${dec > 0 ? pal.upW : pal.downW}`}`,
+            };
             head = '<div class="sw-trend">'
                 + `<div class="sw-big" style="color:${color}"><span class="sw-arrow" aria-hidden="true">${flat ? '→' : dec > 0 ? '↑' : '↓'}</span>${esc(show(dec, s.yearUnit, true))}</div>`
                 + `<div class="sw-big-sub">per 10 years${flat ? '' : ` · ${esc(dec > 0 ? pal.upW : pal.downW)}`}</div>`
@@ -592,12 +648,20 @@
             num(t.mk_p_value) !== null ? ['Mann-Kendall test', t.mk_significant ? `${t.mk_direction}, ${pct(t.mk_p_value)}` : `no clear direction (${pct(t.mk_p_value)})`] : null,
             num(c.years_compared) ? ['Years above reference', `${c.years_above_baseline} of ${c.years_compared}`] : null,
         ]);
-        return widget(s, w, { title, badge, body: head + chart, how });
+        return widget(s, w, { title, badge, body: head + chart, how, tile: face });
     }
 
     function recordWidget(s, ctx, w) {
         const title = 'Whole record';
-        if (s.pts.length < 2) return widget(s, w, { title, lead: 'Too few values.' });
+        const y0 = s.pts.length ? s.pts[0].dt.y : null;
+        const y1 = s.pts.length ? s.pts[s.pts.length - 1].dt.y : null;
+        const avg = s.totals ? mean(s.years.map((r) => r.value)) : s.mean;
+        const face = {
+            label: s.totals ? 'Average year' : 'Average',
+            ...(avg !== null ? split(avg, s.totals ? 'mm' : s.unit) : {}),
+            desc: `${s.n.toLocaleString('en-US')} value${s.n === 1 ? '' : 's'}${y0 !== null ? `, ${y0 === y1 ? y0 : `${y0}–${y1}`}` : ''}`,
+        };
+        if (s.pts.length < 2) return widget(s, w, { title, lead: 'Too few values.', tile: face });
         const pts = s.pts.map((p) => ({ x: p.t, y: p.v }));
         // Centred one-year running mean, so the seasons do not hide the long-term movement.
         const win = s.stepDays >= 300 ? 1 : Math.max(1, Math.round(365.2425 / s.stepDays));
@@ -639,7 +703,7 @@
             ['Measured at', siteOf(s.info)],
             win > 1 ? ['Smoothing', `running mean of ${win} values (one year)`] : null,
         ]);
-        return widget(s, w, { title, body: chartSlot(ctx, spec, legend, 'Drag across the chart to zoom in, double-click to zoom out'), how });
+        return widget(s, w, { title, body: chartSlot(ctx, spec, legend, 'Drag across the chart to zoom in, double-click to zoom out'), how, tile: face });
     }
 
     // Horizontal bars from the centre: rows = [{ name, v, sub, weak }].
@@ -662,6 +726,15 @@
             weak: r.p === null || r.p >= 0.05,
         }));
         const hi = top ? list.find((x) => x.ref === top) : null;
+        // The season changing most; without a clear one, the largest change (could be chance).
+        const lead = top || rows.filter((r) => r.dec !== null).sort((a, b) => Math.abs(b.dec) - Math.abs(a.dec))[0];
+        const short = seasonName(lead.season, s.lat).split(' ')[0];
+        const face = {
+            label: 'Seasons', ...split(lead.dec, s.yearUnit, true),
+            color: round(lead.dec) === 0 ? REF : lead.dec > 0 ? pal.up : pal.down,
+            desc: top ? `${short} changes most, per 10 years` : `${short}, per 10 years`,
+            chip: top ? (top.p < 0.01 ? ['Clear', 'is-clear'] : ['Likely', 'is-likely']) : ['Could be chance', 'is-weak'],
+        };
         const how = howList([
             ['Method', 'One value per season and year (winter counts to the year of its January), then the same trend test as the whole year'],
             ...rows.map((r) => [seasonName(r.season, s.lat), r.trend ? `${r.years.length} years, ${show(r.dec, s.yearUnit, true)} per 10 years, ${pWords(r.p)}` : `${r.years.length} years: too few`]),
@@ -669,7 +742,7 @@
         return widget(s, w, {
             title: 'Seasons', tip: 'Change per 10 years in each season; faded bars could be chance',
             badge: top ? verdictBadge(top.p < 0.01 ? 'is-clear' : 'is-likely', `${seasonName(top.season, s.lat).split(' ')[0]} changes most`, 'The season with the largest clear change') : '',
-            body: `${bars(list, s.yearUnit, pal, hi)}<p class="sw-unit">per 10 years${s.totals ? ' (season total)' : ''}</p>`, how,
+            body: `${bars(list, s.yearUnit, pal, hi)}<p class="sw-unit">per 10 years${s.totals ? ' (season total)' : ''}</p>`, how, tile: face,
         });
     }
 
@@ -685,7 +758,13 @@
             ['Chance by luck', `${pct(cp.p_value)} (${pWords(cp.p_value)})`],
             ['Note', 'A steady trend can also appear as a step'],
         ]);
-        return widget(s, w, { title: 'Sudden shift', badge: verdictBadge(cp.p_value < 0.01 ? 'is-clear' : 'is-likely', cp.p_value < 0.01 ? 'Clear' : 'Likely', pWords(cp.p_value)), body, how });
+        const face = {
+            label: 'Sudden shift', ...split(cp.shift, s.yearUnit, true),
+            color: cp.shift > 0 ? pal.up : pal.down,
+            desc: `step around ${when}, ${cp.shift > 0 ? pal.upW : pal.downW}`,
+            chip: cp.p_value < 0.01 ? ['Clear', 'is-clear'] : ['Likely', 'is-likely'],
+        };
+        return widget(s, w, { title: 'Sudden shift', badge: verdictBadge(cp.p_value < 0.01 ? 'is-clear' : 'is-likely', cp.p_value < 0.01 ? 'Clear' : 'Likely', pWords(cp.p_value)), body, how, tile: face });
     }
 
     function typicalWidget(s, diffs, topMonth, pal, ctx, w) {
@@ -715,12 +794,21 @@
             ['Method', `Mean of each calendar month over the first ${ty.k} and the last ${ty.k} full years`],
             ...diffs.map((d, i) => (d === null ? null : [MONTH_NAMES[i], show(d, unit, true)])),
         ]);
-        return widget(s, w, { title: 'Typical year: then and now', badge, body: chartSlot(ctx, spec, legend), how });
+        const face = topMonth >= 0
+            ? {
+                label: 'Typical year', ...split(diffs[topMonth], unit, true),
+                color: diffs[topMonth] > 0 ? pal.up : pal.down,
+                desc: `${MONTH_NAMES[topMonth]}, last ${ty.k} vs. first ${ty.k} years`,
+                chip: ['Pattern', 'is-pattern'],
+            }
+            : { label: 'Typical year', desc: 'then and now' };
+        return widget(s, w, { title: 'Typical year: then and now', badge, body: chartSlot(ctx, spec, legend), how, tile: face });
     }
 
     function decadesWidget(s, decades, pal, w) {
         const first = decades[0];
         const rows = decades.map((d, i) => ({ name: d.label, v: i === 0 ? 0 : d.mean - first.mean, sub: show(d.mean, s.yearUnit) }));
+        const last = rows[rows.length - 1];
         const how = howList([
             ['Method', 'Mean of every calendar decade (2010s = 2010–2019) with at least five years'],
             ...decades.map((d) => [d.label, `${show(d.mean, s.yearUnit)} from ${d.n} years`]),
@@ -728,6 +816,11 @@
         return widget(s, w, {
             title: 'Decades', tip: `Difference of each decade to the ${first.label}; the decade mean is on the right`,
             body: `${bars(rows, s.yearUnit, pal, rows[rows.length - 1])}<p class="sw-unit">vs. the ${esc(first.label)}</p>`, how,
+            tile: {
+                label: 'Decades', ...split(last.v, s.yearUnit, true),
+                color: round(last.v) === 0 ? REF : last.v > 0 ? pal.up : pal.down,
+                desc: `${decades[decades.length - 1].label} vs. ${first.label}`,
+            },
         });
     }
 
@@ -753,19 +846,29 @@
             ['Highest / lowest', 'single values as measured'],
             evs.length ? ['Notable events', 'records and values far from the normal of that calendar day (or month), most remarkable first'] : null,
         ]);
-        return widget(s, w, { title: 'Extremes', body: facts(list) + evHtml, how });
+        const face = s.hi
+            ? {
+                label: s.kind === 'neutral' ? `Highest ${per}` : `${cap(pal.hiW)} ${per}`,
+                ...split(s.hi.v, u), color: pal.up, desc: dateText(s.hi.dt, s.stepDays),
+                chip: events.length ? [`${events.length} event${events.length === 1 ? '' : 's'}`, 'is-event'] : null,
+            }
+            : { label: 'Extremes', desc: 'no values' };
+        return widget(s, w, { title: 'Extremes', body: facts(list) + evHtml, how, tile: face });
     }
 
     function relationSection(corr) {
         if (!corr) return '';
         const { entry, yearly } = corr;
-        const open = '<section class="sw-section" id="sw-relation"><article class="sw-w sw-w-wide"><header class="sw-w-head"><h5 class="sw-w-title" title="Correlation r: −1 always opposite, 0 no link, +1 always together">How the variables relate</h5></header>';
-        const close = '</article></section>';
-        if (entry.pending) return `${open}<p class="sw-note" role="status">Working out…</p>${close}`;
-        if (entry.error || !entry.data) return `${open}<p class="sw-note">Not available${entry.error ? `: ${esc(entry.error)}` : ''}</p>${close}`;
+        const title = 'How the variables relate';
+        const tip = 'Correlation r: −1 always opposite, 0 no link, +1 always together';
+        const name = 'Strongest link';
+        const wrap = (parts) => `<section class="sw-section" aria-label="${title}"><header class="sw-section-head"><h4 class="sw-name">${title}</h4></header>`
+            + `<div class="sw-tiles">${tile('sw-relation', 'relation', null, { id: 'relation' }, { title, tip, ...parts })}</div></section>`;
+        if (entry.pending) return wrap({ body: '<p class="sw-note" role="status">Working out…</p>', tile: { label: name, empty: '…', desc: 'working out…' } });
+        if (entry.error || !entry.data) return wrap({ lead: `Not available${entry.error ? `: ${entry.error}` : ''}`, tile: { label: name, desc: 'not available' } });
         const pairs = (entry.data.pairs || []).filter((p) => p.available && num(p.pearson) !== null)
             .sort((a, b) => Math.abs(b.pearson) - Math.abs(a.pearson));
-        if (!pairs.length) return `${open}<p class="sw-note">Too few overlapping values.</p>${close}`;
+        if (!pairs.length) return wrap({ lead: 'Too few overlapping values.', tile: { label: name, desc: 'too few overlapping values' } });
         const rows = pairs.slice(0, 6).map((p) => {
             const f = Math.abs(p.pearson) * 50;
             const left = p.pearson < 0 ? 50 - f : 50;
@@ -777,7 +880,201 @@
             ['Compared', yearly ? 'yearly values' : 'monthly departures from each month’s normal, so the seasons alone create no link'],
             ...pairs.map((p) => [`${label(p.a)} & ${label(p.b)}`, `r = ${p.pearson.toFixed(2)} from ${p.n} ${yearly ? 'years' : 'months'}, ${pWords(num(p.p_value))}`]),
         ]);
-        return `${open}<ul class="sw-bars sw-bars-r">${rows}</ul><details class="sw-how"><summary>How this was worked out</summary>${how}</details>${close}`;
+        const best = pairs[0];
+        const face = {
+            label: name, pre: 'r', value: `${best.pearson < 0 ? '−' : ''}${Math.abs(best.pearson).toFixed(2)}`,
+            color: best.pearson >= 0 ? LINE : ACCENT,
+            desc: `${label(best.a)} & ${label(best.b)}`,
+            chip: best.significant ? [best.pearson >= 0 ? 'Together' : 'Opposite', 'is-link'] : ['Could be chance', 'is-weak'],
+        };
+        return wrap({ body: `<ul class="sw-bars sw-bars-r">${rows}</ul>`, how, tile: face });
+    }
+
+    // ------------------------------------------------------------------- tiles
+
+    function reducedMotion() {
+        return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+
+    function tilesOf(grid) {
+        return [...grid.children].filter((el) => el.classList.contains('sw-tile'));
+    }
+
+    // A tile animation in a grid blocks the next one (a stale flag expires).
+    function busy(grid) {
+        return Boolean(grid._swBusy) && Date.now() - grid._swBusy < 2000;
+    }
+
+    // Charts sit on the back: drawn when the tile opens, at its full width, never into a hidden host.
+    function drawCharts(tile) {
+        const K0 = K();
+        if (!K0) return;
+        tile.querySelectorAll('[data-sw-chart]').forEach((el) => {
+            const width = Math.floor(el.clientWidth);
+            if (!el._swSpec || !width) return;
+            el._swW = width;
+            K0.renderChart(el, el._swSpec);
+            if (observer) observer.observe(el);
+        });
+    }
+
+    function releaseCharts(tile) {
+        if (!observer) return;
+        tile.querySelectorAll('[data-sw-chart]').forEach((el) => observer.unobserve(el));
+    }
+
+    function setOpen(tile, open) {
+        tile.classList.toggle('is-open', open);
+        const btn = tile.querySelector('.sw-front');
+        if (btn) btn.setAttribute('aria-expanded', String(open));
+        if (open) drawCharts(tile);
+        else releaseCharts(tile);
+    }
+
+    // The tiles of a grid and the sections below it: everything a tile pushes around.
+    function moversOf(grid) {
+        const out = tilesOf(grid);
+        const sec = grid.closest('.sw-section');
+        for (let n = sec && sec.nextElementSibling; n; n = n.nextElementSibling) out.push(n);
+        return out;
+    }
+
+    function rectsOf(tiles) {
+        return new Map(tiles.map((t) => [t, t.getBoundingClientRect()]));
+    }
+
+    // FLIP: each element glides from its old place to its new one; `fade` also fades in.
+    function glide(tiles, before, fade) {
+        for (const t of tiles) {
+            const a = before.get(t);
+            const b = t.getBoundingClientRect();
+            const dx = a.left - b.left;
+            const dy = a.top - b.top;
+            if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && t !== fade) continue;
+            const from = { transform: `translate(${dx}px, ${dy}px)` };
+            const to = { transform: 'none' };
+            if (t === fade) { from.opacity = 0; to.opacity = 1; }
+            t.animate([from, to], { duration: GROW_MS, easing: EASE });
+        }
+    }
+
+    function scrollNear(tile) {
+        const r = tile.getBoundingClientRect();
+        if (r.top >= 0 && r.bottom <= window.innerHeight) return;
+        tile.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: r.height > window.innerHeight ? 'start' : 'nearest' });
+    }
+
+    // Open: the front turns to its edge in place, then the tile takes the full row and
+    // grows from its old box (FLIP) while the back turns into view. One open tile per variable.
+    function openTile(tile) {
+        const grid = tile.parentElement;
+        if (!grid || busy(grid) || tile.classList.contains('is-open') || tile.classList.contains('is-static')) return;
+        const other = tilesOf(grid).find((t) => t !== tile && t.classList.contains('is-open'));
+        state.open.set(tile.dataset.swGroup, tile.id);
+        const card = tile.querySelector('.sw-tile-card');
+        const swap = () => {
+            if (other) setOpen(other, false);
+            setOpen(tile, true);
+        };
+        const done = () => {
+            grid._swBusy = 0;
+            const close = tile.querySelector('.sw-tile-close');
+            if (close) close.focus({ preventScroll: true });
+            scrollNear(tile);
+        };
+        if (reducedMotion() || !card || typeof card.animate !== 'function') { swap(); done(); return; }
+        grid._swBusy = Date.now();
+        tile.classList.add('is-turning');
+        const half = card.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(90deg)' }],
+            { duration: TURN_MS, easing: 'cubic-bezier(0.55, 0, 1, 0.45)', fill: 'forwards' });
+        half.onfinish = () => {
+            if (!tile.isConnected) return;
+            const movers = moversOf(grid);
+            const before = rectsOf(movers);
+            swap();
+            const a = before.get(tile);
+            const b = tile.getBoundingClientRect();
+            glide(movers.filter((t) => t !== tile), before, other);
+            tile.animate([
+                { transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${a.height / b.height})` },
+                { transform: 'none' },
+            ], { duration: GROW_MS, easing: EASE });
+            const rest = card.animate([{ transform: 'rotateY(90deg)' }, { transform: 'rotateY(180deg)' }],
+                { duration: GROW_MS, easing: EASE, fill: 'forwards' });
+            half.cancel();
+            rest.onfinish = () => {
+                tile.classList.remove('is-turning');
+                rest.cancel();
+                done();
+            };
+        };
+    }
+
+    // Close: the back shrinks to the tile's closed size while turning to its edge, then
+    // the tile glides to its place in the grid while the front turns into view.
+    function closeTile(tile, focus) {
+        const grid = tile.parentElement;
+        if (!grid || busy(grid) || !tile.classList.contains('is-open')) return;
+        state.open.delete(tile.dataset.swGroup);
+        const card = tile.querySelector('.sw-tile-card');
+        const done = () => {
+            grid._swBusy = 0;
+            const btn = tile.querySelector('.sw-front');
+            if (focus && btn) btn.focus({ preventScroll: true });
+        };
+        if (reducedMotion() || !card || typeof card.animate !== 'function') { setOpen(tile, false); done(); return; }
+        grid._swBusy = Date.now();
+        // The closed size, measured before anything is painted.
+        const big = tile.getBoundingClientRect();
+        tile.classList.remove('is-open');
+        const small = tile.getBoundingClientRect();
+        tile.classList.add('is-open', 'is-turning');
+        const ease = 'cubic-bezier(0.55, 0, 1, 0.45)';
+        const shrink = tile.animate([
+            { transform: 'none' },
+            { transform: `translate(${(big.width - small.width) / 2}px, ${(big.height - small.height) / 2}px) scale(${small.width / big.width}, ${small.height / big.height})` },
+        ], { duration: TURN_MS + 60, easing: ease, fill: 'forwards' });
+        const half = card.animate([{ transform: 'rotateY(180deg)' }, { transform: 'rotateY(90deg)' }],
+            { duration: TURN_MS + 60, easing: ease, fill: 'forwards' });
+        half.onfinish = () => {
+            if (!tile.isConnected) return;
+            const movers = moversOf(grid);
+            const before = rectsOf(movers);
+            shrink.cancel();
+            setOpen(tile, false);
+            glide(movers, before);
+            const rest = card.animate([{ transform: 'rotateY(90deg)' }, { transform: 'rotateY(0deg)' }],
+                { duration: GROW_MS, easing: EASE, fill: 'forwards' });
+            half.cancel();
+            rest.onfinish = () => {
+                tile.classList.remove('is-turning');
+                rest.cancel();
+                done();
+            };
+        };
+    }
+
+    // Key findings: scroll to the tile, then open it.
+    function gotoTile(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const behavior = reducedMotion() ? 'auto' : 'smooth';
+        el.scrollIntoView({ behavior, block: 'center' });
+        if (!el.classList.contains('sw-tile') || el.classList.contains('is-open')) {
+            el.classList.remove('is-flash');
+            void el.offsetWidth;
+            el.classList.add('is-flash');
+            return;
+        }
+        setTimeout(() => {
+            const now = document.getElementById(id);
+            if (now) openTile(now);
+        }, behavior === 'smooth' ? 420 : 0);
+    }
+
+    function openScientific(key) {
+        if (window.TrendMode && typeof window.TrendMode.set === 'function') window.TrendMode.set('scientific');
+        if (window.TrendPlots && typeof window.TrendPlots.showSeries === 'function') window.TrendPlots.showSeries(key);
     }
 
     // ------------------------------------------------------------------ render
@@ -785,15 +1082,23 @@
     function mount(host) {
         state.host = host;
         host.addEventListener('click', (e) => {
-            const a = e.target.closest('a[data-sw-goto]');
-            if (!a) return;
-            e.preventDefault();
-            const el = document.getElementById(a.dataset.swGoto);
-            if (!el) return;
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            el.classList.remove('is-flash');
-            void el.offsetWidth;
-            el.classList.add('is-flash');
+            const t = e.target;
+            if (!(t instanceof Element)) return;
+            const goto = t.closest('a[data-sw-goto]');
+            if (goto) { e.preventDefault(); gotoTile(goto.dataset.swGoto); return; }
+            const sci = t.closest('a[data-sw-sci]');
+            if (sci) { e.preventDefault(); openScientific(sci.dataset.swSci); return; }
+            const tile = t.closest('.sw-tile');
+            if (!tile || tile.classList.contains('is-static')) return;
+            if (t.closest('.sw-front')) { openTile(tile); return; }
+            if (t.closest('.sw-tile-close')) { closeTile(tile, true); return; }
+            // A click on the back's head (not on a control) turns the tile back too.
+            if (t.closest('.sw-back-head') && !t.closest('a, button, summary')) closeTile(tile, false);
+        });
+        host.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || !(e.target instanceof Element)) return;
+            const tile = e.target.closest('.sw-tile.is-open');
+            if (tile) { e.preventDefault(); closeTile(tile, true); }
         });
         if (typeof ResizeObserver === 'function') {
             observer = new ResizeObserver((entries) => {
@@ -816,7 +1121,7 @@
 
     function setLoading(on) {
         state.loading = Boolean(on);
-        if (on) { state.viz = null; state.request = null; }
+        if (on) { state.viz = null; state.request = null; state.open.clear(); }
         scheduleRender();
     }
 
@@ -873,7 +1178,7 @@
         let html = '';
         if (shown.length || pending) {
             html += '<section class="sw-findings" aria-label="Key findings">'
-                + `<h4 class="sw-findings-title" title="Picked automatically from all analyses, strongest first">Key findings${pending ? '<span role="status">working out…</span>' : ''}</h4>`
+                + `<h4 class="sw-findings-title" title="Picked automatically from all analyses, strongest first; a click opens the tile">Key findings${pending ? '<span role="status">working out…</span>' : ''}</h4>`
                 + (shown.length ? `<ol>${shown.map((f) => `<li><span class="sw-badge ${f.badge[1]}">${esc(f.badge[0])}</span><a href="#${f.anchor}" data-sw-goto="${f.anchor}">${esc(f.text)}</a></li>`).join('')}</ol>` : '')
                 + '</section>';
         }
@@ -885,16 +1190,17 @@
             const yearsText = s.years.length ? `${s.years[0].year}–${s.years[s.years.length - 1].year}` : '';
             html += `<section class="sw-section" aria-label="${esc(label(s.key))}"><header class="sw-section-head"><h4 class="sw-name">${esc(label(s.key))}</h4>`
                 + `<span class="sw-meta">${esc([siteOf(s.info), yearsText].filter(Boolean).join(' · '))}</span></header>`
-                + `<div class="sw-grid">${a.widgets.map((w) => w.html(ctx, w)).join('')}</div></section>`;
+                + `<div class="sw-tiles">${a.widgets.map((w) => w.html(ctx, w)).join('')}</div></section>`;
         }
         if (failed.length) {
-            html += `<section class="sw-section"><div class="sw-grid">${failed.map(([key, info]) => `<article class="sw-w sw-card-failed"><header class="sw-w-head"><h5 class="sw-w-title">${esc(label(key))}</h5><span class="sw-x" aria-hidden="true">✕</span></header>`
-                + `<p class="sw-note">No data${info.error ? `: ${esc(info.error)}` : ''}</p></article>`).join('')}</div></section>`;
+            html += `<section class="sw-section" aria-label="Variables without data"><div class="sw-tiles">${failed.map(([key, info]) => '<div class="sw-tile is-static"><div class="sw-face sw-front sw-card-failed">'
+                + `<span class="sw-tile-label">${esc(label(key))}</span><span class="sw-tile-big sw-x" aria-hidden="true">✕</span>`
+                + `<span class="sw-tile-desc"${info.error ? ` title="${esc(info.error)}"` : ''}>No data${info.error ? `: ${esc(info.error)}` : ''}</span></div></div>`).join('')}</div></section>`;
         }
         html += relationSection(corr);
-        if (state.loading) html += '<div class="sw-w sw-card-pending">Loading the next variable…</div>';
+        if (state.loading) html += '<div class="sw-card-pending" role="status">Loading the next variable…</div>';
 
-        // Same content: keep the drawn charts (and their zoom) as they are.
+        // Same content: keep the tiles (open ones, their charts and zoom) as they are.
         if (html === state.html) return;
         state.html = html;
         const scrollY = window.scrollY;
@@ -904,6 +1210,7 @@
         host.querySelectorAll('[data-sw-chart]').forEach((el) => {
             const spec = ctx.specs[Number(el.dataset.swChart)];
             if (!spec) return;
+            el._swSpec = spec;
             if (spec.zoomable) {
                 el._onZoom = (dom) => {
                     const sp = el._spec;
@@ -912,10 +1219,13 @@
                     K0.renderChart(el, sp);
                 };
             }
-            el._swW = Math.floor(el.clientWidth);
-            K0.renderChart(el, spec);
-            if (observer) observer.observe(el);
         });
+        // Tiles that were open stay open (charts are drawn for them only).
+        for (const [group, id] of state.open) {
+            const t = document.getElementById(id);
+            if (t && host.contains(t) && t.dataset.swGroup === group) setOpen(t, true);
+            else state.open.delete(group);
+        }
         window.scrollTo(0, scrollY);
     }
 

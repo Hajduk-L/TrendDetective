@@ -10,7 +10,12 @@
     <link rel="stylesheet" href="/static/plots/compare.css">
     <link rel="stylesheet" href="/static/plots/simple.css">
     <link rel="stylesheet" href="/static/mode.css">
+    <link rel="stylesheet" href="/static/box-stations.css">
     <script src="/static/mode.js"></script>
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <script src="/static/sidebar.js"></script>
+    <link rel="stylesheet" href="/static/help.css">
+    <script src="/static/help.js" defer></script>
     <style>
         * {
             box-sizing: border-box;
@@ -37,13 +42,6 @@
             box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
         }
 
-        /* Top-left Apply button row */
-        .top-bar {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-        }
-
         button.py-button {
             background-color: #2563eb;
             color: #ffffff;
@@ -67,28 +65,6 @@
             opacity: 0.7;
         }
 
-        /* Form field groups (Timeintervall & Interval length) */
-        .field-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.35rem;
-        }
-        .field-label {
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: #475569;
-        }
-        .timeintervall-row,
-        .interval-row {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .timeintervall-separator {
-            font-weight: 600;
-            color: #64748b;
-            user-select: none;
-        }
         .text-input,
         .select-input {
             width: 100%;
@@ -146,31 +122,6 @@
             border-radius: 8px;
             background-color: #ffffff;
             overflow: hidden;
-        }
-        .dropdown-toggle {
-            width: 100%;
-            background-color: #f8fafc;
-            border: none;
-            padding: 0.75rem 1rem;
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: #0f172a;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            cursor: pointer;
-            text-align: left;
-        }
-        .dropdown-toggle:hover {
-            background-color: #f1f5f9;
-        }
-        .dropdown-arrow {
-            font-size: 0.8rem;
-            color: #64748b;
-            transition: transform 0.2s ease;
-        }
-        .dropdown.open .dropdown-arrow {
-            transform: rotate(180deg);
         }
         .dropdown-menu {
             display: none;
@@ -469,7 +420,6 @@
         /* Apply status: what is still missing */
         .apply-status { font-size: 0.78rem; color: #64748b; line-height: 1.35; }
         .apply-status strong { color: #b45309; font-weight: 600; }
-        .top-bar { gap: 0.6rem; flex-wrap: wrap; }
 
         /* Variable without data in the selected region (data/region_variables.json) */
         .topic-item .no-area-data { color: #dc2626; font-weight: 700; margin-left: 0.3rem; }
@@ -493,90 +443,113 @@
         .topic-kind.hourly { background: #f1f5f9; color: #475569; }
         .dropdown-count { margin-left: auto; margin-right: 0.5rem; font-size: 0.75rem; color: #2563eb; font-weight: 600; }
 
-        /* Suggested case studies (GET /api/examples): a compact, table-like list at the top */
-        .examples-card {
-            padding: 0.7rem 1.1rem 0.6rem;
-            container-type: inline-size;
-            --cs-heat: #a4553d;
-            --cs-cold: #3d6a93;
-            --cs-rain: #3e7a70;
-            --cs-snow: #6b7088;
+        /* Suggested case studies (GET /api/examples): one scrolling row of event cards */
+        .examples-strip {
+            --cs-heat: #c2410c;
+            --cs-cold: #2563eb;
+            --cs-rain: #0f766e;
+            --cs-snow: #6366f1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            min-width: 0;
         }
-        .examples-head { display: flex; align-items: baseline; gap: 0.4rem 1rem; flex-wrap: wrap; }
-        .examples-head h3 {
-            margin: 0;
-            font-size: 0.72rem;
-            font-weight: 600;
+        .examples-strip[hidden] { display: none; }
+        .examples-label {
+            flex: none;
+            display: flex;
+            flex-direction: column;
+            font-size: 0.7rem;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: #334155;
-        }
-        .examples-toggle { margin-left: auto; font: inherit; font-size: 0.76rem; background: none; border: none; color: #475569; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
-        .examples-card.collapsed .examples-list { display: none; }
-        .examples-list {
-            margin-top: 0.45rem;
-            border-top: 1.5px solid #334155;
-            border-bottom: 1.5px solid #334155;
-            font-size: 0.78rem;
-            line-height: 1.3;
-        }
-        .examples-cols,
-        .example {
-            display: grid;
-            grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.25fr) minmax(0, 0.95fr);
-            column-gap: 1rem;
-        }
-        .examples-cols {
-            padding: 0.25rem 0.5rem;
-            border-bottom: 1px solid #94a3b8;
-            font-size: 0.68rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
             color: #64748b;
+            line-height: 1.25;
         }
-        .example {
-            width: 100%;
-            text-align: left;
+        .examples-label small { font-size: 0.68rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: #94a3b8; }
+        .examples-viewport { position: relative; flex: 1 1 auto; min-width: 0; }
+        .examples-list {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            scroll-snap-type: x proximity;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            padding: 2px;
+            -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-l, 0px), #000 calc(100% - var(--fade-r, 0px)), transparent 100%);
+            mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-l, 0px), #000 calc(100% - var(--fade-r, 0px)), transparent 100%);
+        }
+        .examples-list::-webkit-scrollbar { display: none; }
+        .examples-viewport.can-left .examples-list { --fade-l: 36px; }
+        .examples-viewport.can-right .examples-list { --fade-r: 36px; }
+        .ex-card {
+            flex: 0 0 auto;
+            width: 228px;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0.7rem 0.5rem 0.55rem;
+            scroll-snap-align: start;
             font: inherit;
+            text-align: left;
             color: inherit;
-            background: none;
-            border: 0;
-            border-left: 2px solid var(--ex-color, #64748b);
-            border-bottom: 1px solid #e2e8f0;
-            padding: 0.3rem 0.5rem 0.3rem 0.6rem;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
             cursor: pointer;
-            align-items: baseline;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
         }
-        .example:last-child { border-bottom: 0; }
-        .example:hover,
-        .example:focus-visible { background: #f5f7fa; outline: none; }
-        .example:focus-visible { box-shadow: inset 0 0 0 1px #64748b; }
-        .example:disabled { opacity: 0.55; cursor: progress; }
-        .example.is-running { background: #f1f5f9; opacity: 1; }
-        .example > span { display: flex; flex-direction: column; min-width: 0; }
-        .example-title { font-weight: 600; color: #0f172a; }
-        .example-tag {
-            font-size: 0.64rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-            color: var(--ex-color, #64748b);
+        .ex-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--ex-color) 45%, #e2e8f0); box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08); }
+        .ex-card:focus-visible { outline: 2px solid var(--ex-color); outline-offset: 1px; }
+        .ex-card:disabled { cursor: progress; opacity: 0.55; transform: none; }
+        .ex-card.is-running { opacity: 1; border-color: var(--ex-color); }
+        .ex-icon {
+            flex: none;
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            color: var(--ex-color);
+            background: color-mix(in srgb, var(--ex-color) 11%, #ffffff);
         }
-        .example-place { color: #1e293b; }
-        .example-source,
-        .example-variable { color: #64748b; font-size: 0.72rem; }
-        .example-value { color: #0f172a; font-variant-numeric: tabular-nums; }
-        .example-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        @container (max-width: 620px) {
-            .examples-cols { display: none; }
-            .example { grid-template-columns: minmax(0, 1fr); row-gap: 1px; padding: 0.35rem 0.5rem 0.35rem 0.6rem; }
-            .example > span { display: block; }
-            .example > span > span { display: inline; }
-            .example-tag { margin-left: 0.4rem; }
-            .example-source::before { content: " · "; }
-            .example-value::before { content: ": "; color: #64748b; }
-            .example-ellipsis { white-space: normal; }
+        .ex-icon svg { width: 19px; height: 19px; }
+        .ex-card.is-running .ex-icon svg { animation: ex-pulse 0.9s ease-in-out infinite alternate; }
+        @keyframes ex-pulse { to { transform: scale(0.75); opacity: 0.5; } }
+        .ex-text { display: flex; flex-direction: column; min-width: 0; gap: 0.05rem; }
+        .ex-value { font-size: 0.92rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .ex-title, .ex-place { font-size: 0.72rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ex-title { color: #334155; font-weight: 600; }
+        .ex-nav {
+            position: absolute;
+            top: 50%;
+            z-index: 1;
+            width: 28px;
+            height: 28px;
+            display: none;
+            place-items: center;
+            padding: 0;
+            transform: translateY(-50%);
+            border: 1px solid #e2e8f0;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #334155;
+            font-size: 1rem;
+            line-height: 1;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+            cursor: pointer;
+        }
+        .ex-nav:hover { color: #2563eb; }
+        .ex-prev { left: -6px; }
+        .ex-next { right: -6px; }
+        .examples-viewport.can-left .ex-prev,
+        .examples-viewport.can-right .ex-next { display: grid; }
+        @media (max-width: 620px) {
+            .examples-strip { flex-direction: column; align-items: stretch; gap: 0.35rem; }
+            .examples-label { flex-direction: row; gap: 0.4rem; align-items: baseline; }
+            .ex-card { width: 200px; }
         }
 
         /* Map legend and satellite bar (inside .map-box) */
@@ -656,14 +629,20 @@
             overflow: hidden;
         }
         .sidebar > * { flex-shrink: 0; }
-        .sidebar > #topics-dropdown {
+        .sidebar > .sb-variables {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .sb-variables > * { flex-shrink: 0; }
+        .sb-variables > #topics-dropdown {
             flex: 1 1 auto;
             min-height: 0;
             display: flex;
             flex-direction: column;
         }
         #topics-dropdown .dropdown-menu { max-height: none; flex: 1 1 auto; min-height: 0; padding: 0; }
-        #topics-dropdown:not(.open) { flex: 0 0 auto; }
 
         /* Topic categories: one collapsible section each */
         .topic-group { border-bottom: 1px solid #eef2f6; }
@@ -709,112 +688,283 @@
         }
         .topics-tools button { font: inherit; background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; }
 
+        /* ---- Sidebar layout: brand + mode, time range, variables, Analyze at the bottom ---- */
+        .sidebar { gap: 1.1rem; padding: 1.1rem 1.1rem 0; }
+        .sb-top { display: flex; flex-direction: column; gap: 0.8rem; }
+        .sb-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.02rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: #0f172a;
+        }
+        .sb-logo {
+            width: 22px;
+            height: 22px;
+            border-radius: 7px;
+            background:
+                linear-gradient(135deg, transparent 52%, rgba(255, 255, 255, 0.9) 52% 60%, transparent 60%),
+                linear-gradient(135deg, #2563eb, #0ea5e9);
+            box-shadow: 0 1px 3px rgba(37, 99, 235, 0.35);
+        }
+        .sb-section { display: flex; flex-direction: column; gap: 0.5rem; }
+        .sb-label {
+            margin: 0;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748b;
+        }
+        .sb-label-row { display: flex; align-items: baseline; gap: 0.5rem; }
+        .sb-label-row .dropdown-count { margin-left: auto; margin-right: 0; }
+
+        /* Time range: one field with both dates */
+        .date-range {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0 0.6rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #ffffff;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .date-range:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+        .date-range:has(.invalid) { border-color: #dc2626; }
+        .date-range-icon { width: 16px; height: 16px; flex: none; color: #94a3b8; }
+        .date-range-arrow { color: #94a3b8; user-select: none; }
+        .date-input {
+            flex: 1 1 0;
+            min-width: 0;
+            padding: 0.55rem 0.15rem;
+            border: 0;
+            outline: none;
+            background: transparent;
+            font: inherit;
+            font-size: 0.88rem;
+            font-variant-numeric: tabular-nums;
+            color: #0f172a;
+            text-align: center;
+        }
+        .date-input::placeholder { color: #94a3b8; }
+        .date-input.invalid { color: #dc2626; }
+        .range-presets { display: flex; gap: 0.25rem; }
+        .range-presets button {
+            flex: 1 1 auto;
+            font: inherit;
+            font-size: 0.74rem;
+            white-space: nowrap;
+            padding: 0.2rem 0.3rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 999px;
+            background: #f8fafc;
+            color: #475569;
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }
+        .range-presets button:hover { border-color: #cbd5e1; color: #0f172a; }
+        .range-presets button[aria-pressed="true"] { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 600; }
+        .range-presets button:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+        .interval-inline { display: flex; align-items: center; gap: 0.45rem; }
+        .interval-label { font-size: 0.8rem; color: #475569; white-space: nowrap; }
+        .interval-inline .interval-value { width: 4.5rem; flex: none; padding: 0.4rem 0.55rem; }
+        .interval-inline .interval-unit { flex: 1 1 auto; padding: 0.4rem 0.55rem; }
+
+        /* Variables: chips of the selection, search, list */
+        .selected-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+        .selected-chips[hidden] { display: none; }
+        .sel-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.15rem;
+            max-width: 100%;
+            padding: 0.15rem 0.2rem 0.15rem 0.6rem;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 0.76rem;
+            font-weight: 600;
+            animation: sel-chip-in 0.18s ease-out;
+        }
+        @keyframes sel-chip-in { from { transform: scale(0.85); opacity: 0; } }
+        .sel-chip button {
+            width: 18px;
+            height: 18px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: #3b82f6;
+            font-size: 0.66rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .sel-chip button:hover { background: #dbeafe; color: #1e3a8a; }
+        .search-wrapper .search-icon {
+            position: absolute;
+            left: 0.65rem;
+            top: 50%;
+            width: 15px;
+            height: 15px;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            pointer-events: none;
+        }
+        .search-wrapper .search-input { padding-left: 2rem; border-radius: 10px; background: #f8fafc; }
+        .search-wrapper .search-input:focus { background: #ffffff; }
+        #topics-dropdown { border-color: #e2e8f0; border-radius: 10px; }
+        .topic-item { border-radius: 6px; margin: 0 0.3rem; }
+        .topic-item:has(input:checked) { background: #f5f9ff; }
+        .topic-item:has(input:checked) .topic-name { font-weight: 600; }
+        .topic-group .topic-item { padding-left: 1.3rem; }
+
+        /* Analyze: full width at the bottom, the missing inputs under it */
+        .sb-footer {
+            position: sticky;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.4rem;
+            margin: auto -1.1rem 0;
+            padding: 0.8rem 1.1rem 1rem;
+            border-top: 1px solid #eef2f6;
+            background: #ffffff;
+        }
+        .sb-footer .py-button {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            border-radius: 10px;
+            font-size: 0.98rem;
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+        }
+        .sb-footer .py-button:not(:disabled) { background: linear-gradient(180deg, #3b82f6, #2563eb); }
+        .sb-footer .py-button:hover:not(:disabled) { background: #1d4ed8; }
+        .sb-footer .apply-status { text-align: center; }
+
         /* Narrow screens: the sidebar goes above the content, nothing scrolls sideways */
         @media (max-width: 860px) {
             body { flex-direction: column; }
             .sidebar { width: auto; border-right: 0; border-bottom: 1px solid #e2e8f0; box-shadow: none; position: static; height: auto; overflow: visible; }
             #topics-dropdown .dropdown-menu { max-height: 60vh; }
+            .sb-footer { position: static; margin: 0; padding: 0; border: 0; }
             .main-content { padding: 1rem; }
             .status-card { padding: 0.8rem 0.9rem; }
             .viz-grid { grid-template-columns: minmax(0, 1fr); }
         }
+        .sb-footer .explorer-link { align-self: center; font-size: 0.78rem; color: #2563eb; text-decoration: none; border: 1px solid #c7d7f5; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+        .sb-footer .explorer-link:hover { background: #eef4ff; }
     </style>
 </head>
 <body>
     <!-- Left Sidebar -->
     <aside class="sidebar">
-        <!-- Simple / Scientific display mode (static/mode.js, static/mode.css) -->
-        <div class="mode-switch">
-            <div class="mode-seg" role="group" aria-label="Display mode">
-                <button type="button" data-mode-set="simple" aria-pressed="true" title="Trend per variable in plain words">Simple</button>
-                <button type="button" data-mode-set="scientific" aria-pressed="false" title="All plots, tests, confidence intervals and correlations">Scientific</button>
+        <div class="sb-top">
+            <div class="sb-brand" aria-label="TrendDetective"><span class="sb-logo" aria-hidden="true"></span>TrendDetective</div>
+            <!-- Simple / Scientific display mode (static/mode.js, static/mode.css) -->
+            <div class="mode-switch">
+                <div class="mode-seg" role="group" aria-label="Display mode">
+                    <button type="button" data-mode-set="simple" aria-pressed="true" title="Trend per variable in plain words">Simple</button>
+                    <button type="button" data-mode-set="scientific" aria-pressed="false" title="All plots, tests, confidence intervals and correlations">Scientific</button>
+                </div>
             </div>
         </div>
 
-        <!-- Top-left Apply button (disabled until >=1 topic, valid DD.MM.YYYY timeintervall, and interval > 0) -->
-        <div class="top-bar">
-            <button id="apply" class="py-button" type="button" disabled>Analyze</button>
-            <span id="apply-status" class="apply-status" aria-live="polite"></span>
-        </div>
-
-        <!-- Timeintervall brackets [DD.MM.YYYY] - [DD.MM.YYYY] above the search bar -->
-        <div class="field-group">
-            <span class="field-label">Timeintervall</span>
-            <div class="timeintervall-row">
+        <!-- Time range [DD.MM.YYYY] - [DD.MM.YYYY], quick presets, interval length (scientific) -->
+        <section class="sb-section" aria-labelledby="sb-time-label">
+            <h2 class="sb-label" id="sb-time-label">Time range</h2>
+            <div class="date-range">
+                <svg class="date-range-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8.5h14M7 3v3M13 3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                 <input
                     id="timeintervall-start"
-                    class="text-input"
+                    class="date-input"
                     type="text"
                     maxlength="10"
                     placeholder="DD.MM.YYYY"
                     aria-label="Start date (DD.MM.YYYY)"
                 >
-                <span class="timeintervall-separator">-</span>
+                <span class="date-range-arrow" aria-hidden="true">→</span>
                 <input
                     id="timeintervall-end"
-                    class="text-input"
+                    class="date-input"
                     type="text"
                     maxlength="10"
                     placeholder="DD.MM.YYYY"
                     aria-label="End date (DD.MM.YYYY)"
                 >
             </div>
+            <div class="range-presets" role="group" aria-label="Quick time ranges">
+                <button type="button" data-years="10" title="The last 10 complete years">10 yrs</button>
+                <button type="button" data-years="30" title="The last 30 complete years (a climate normal period)">30 yrs</button>
+                <button type="button" data-years="50" title="The last 50 complete years">50 yrs</button>
+                <button type="button" data-since="1950">Since 1950</button>
+            </div>
             <span id="timeintervall-hint" class="field-hint">Dates must be valid and written as DD.MM.YYYY (end &ge; start).</span>
-        </div>
 
-        <!-- Two-part Interval length: float (> 0) and unit (Day, Month, Year) -->
-        <div class="field-group field-group-advanced">
-            <label class="field-label" for="interval-value">Interval Length</label>
-            <div class="interval-row">
+            <!-- Two-part interval length: float (> 0) and unit (Day, Month, Year) -->
+            <div class="field-group-advanced interval-inline">
+                <label class="interval-label" for="interval-value">Average per</label>
                 <input
                     id="interval-value"
-                    class="text-input"
+                    class="text-input interval-value"
                     type="number"
                     step="any"
                     min="0"
-                    placeholder="Value (> 0)"
+                    placeholder="> 0"
                     aria-label="Interval length value"
                 >
-                <select id="interval-unit" class="select-input" aria-label="Interval length unit">
+                <select id="interval-unit" class="select-input interval-unit" aria-label="Interval length unit">
                     <option value="Day">Day</option>
                     <option value="Month">Month</option>
                     <option value="Year">Year</option>
                 </select>
             </div>
             <span id="interval-hint" class="field-hint">Value must be a number greater than 0.</span>
-        </div>
+        </section>
 
-        <!-- Upper search bar -->
-        <div class="search-wrapper">
-            <input
-                id="topic-search"
-                class="search-input"
-                type="search"
-                placeholder="Search variables..."
-                aria-label="Search variables"
-            >
-        </div>
-
-        <!-- Topics Dropdown Menu (starts closed) -->
-        <div id="topics-dropdown" class="dropdown open">
-            <button id="dropdown-toggle-btn" class="dropdown-toggle" type="button" aria-expanded="true">
-                <span>Variables</span>
+        <!-- Variables: selected chips, search, grouped list -->
+        <section class="sb-section sb-variables" aria-labelledby="sb-var-label">
+            <div class="sb-label-row">
+                <h2 class="sb-label" id="sb-var-label">Variables</h2>
                 <span id="topics-count" class="dropdown-count"></span>
-                <span class="dropdown-arrow">&#9662;</span>
-            </button>
-            <div id="topics-list" class="dropdown-menu"></div>
-        </div>
+            </div>
+            <div class="selected-chips" id="selected-chips" aria-label="Selected variables"></div>
+            <div class="search-wrapper">
+                <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <input
+                    id="topic-search"
+                    class="search-input"
+                    type="search"
+                    placeholder="Search variables…"
+                    aria-label="Search variables"
+                >
+            </div>
+            <div id="topics-dropdown" class="dropdown open">
+                <div id="topics-list" class="dropdown-menu"></div>
+            </div>
+        </section>
 
+        <!-- Analyze (disabled until >=1 topic, a valid time range, an interval > 0 and an area) -->
+        <div class="sb-footer top-bar">
+            <button id="apply" class="py-button" type="button" disabled>Analyze</button>
+            <span id="apply-status" class="apply-status" aria-live="polite"></span>
+            <a href="/explorer/" class="explorer-link" title="Compare global trends on a globe (gridded data)">🌍 Global Explorer</a>
+        </div>
     </aside>
 
     <!-- Main Content Area -->
     <main class="main-content">
-        <section class="status-card examples-card" id="examples-card" aria-label="Suggested case studies">
-            <div class="examples-head">
-                <h3 title="Documented extremes. Selecting one loads ten years of daily data at the site and zooms the plot to the event.">Suggested case studies</h3>
-                <button type="button" class="examples-toggle" id="examples-toggle" aria-expanded="true">Hide</button>
+        <!-- Famous events to start from (GET /api/examples, examples.py) -->
+        <section class="examples-strip" id="examples-card" aria-label="Famous events to start from" hidden>
+            <div class="examples-label">Try an event<small>loads 10 years around it</small></div>
+            <div class="examples-viewport">
+                <button type="button" class="ex-nav ex-prev" aria-label="Previous events">‹</button>
+                <div class="examples-list" id="examples-list"></div>
+                <button type="button" class="ex-nav ex-next" aria-label="More events">›</button>
             </div>
-            <div class="examples-list" id="examples-list"></div>
         </section>
 
         <div class="map-box" aria-label="TrendDetective World Map">
@@ -834,6 +984,9 @@
                 <ul class="place-results" id="place-results" role="listbox" hidden></ul>
             </div>
         </div>
+
+        <!-- Stations of a box drawn with the map's Box tool (static/box-stations.js) -->
+        <section class="status-card box-stations" id="box-stations" aria-label="Stations in the drawn box" aria-live="polite" hidden></section>
 
         <!-- Simple mode: one widget per variable (static/plots/simple.js) -->
         <section class="status-card simple-card" aria-label="Results at a glance">
@@ -1032,6 +1185,16 @@
     <script>
         const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:8000';
 
+        // Map layers: satellite image (bottom), the last result, the stations of a drawn box (top).
+        window.refreshMapLayers = function () {
+            if (!window.trendMap) return;
+            const layers = [];
+            if (window.satelliteLayer) layers.push(window.satelliteLayer);
+            layers.push(...(window.lastMapLayers || []));
+            if (window.boxStationsLayer && !window.boxPreviewHidden) layers.push(window.boxStationsLayer);
+            window.trendMap.setResultData(layers);
+        };
+
         let allTopics = [];
         let topicDetails = {};
         const selectedTopics = {};
@@ -1087,7 +1250,6 @@
         const intervalHint = document.getElementById('interval-hint');
 
         const topicsDropdown = document.getElementById('topics-dropdown');
-        const topicsToggleBtn = document.getElementById('dropdown-toggle-btn');
 
         function sanitizeDateInput(inputElement) {
             const cleaned = inputElement.value.replace(/[^0-9.]/g, '');
@@ -1141,7 +1303,11 @@
             const startValid = Boolean(startDate);
             const endValid = Boolean(endDate) && datesOrderValid;
             const validInterval = isIntervalValueValid();
-            const hasArea = Boolean(window.getSelectedArea && window.getSelectedArea());
+            const currentArea = window.getSelectedArea ? window.getSelectedArea() : null;
+            // A drawn box is evaluated up to 1,000,000 km² (area_analysis.MAX_BOX_KM2).
+            const boxTooLarge = Boolean(currentArea && currentArea.properties
+                && currentArea.properties.shape === 'box' && currentArea.properties.areaKm2 > 1e6);
+            const hasArea = Boolean(currentArea) && !boxTooLarge;
 
             timeintervallStartInput.classList.toggle('invalid', startRaw.length > 0 && !startValid);
             timeintervallEndInput.classList.toggle('invalid', endRaw.length > 0 && !endValid);
@@ -1163,7 +1329,8 @@
             );
             // Say what is still missing instead of a silently disabled button.
             const missing = [];
-            if (!hasArea) missing.push('pick a point on the map or a region (Areas)');
+            if (boxTooLarge) missing.push('draw a smaller box (at most 1,000,000 km²)');
+            else if (!hasArea) missing.push('pick a point, draw a box or choose a region (Areas) on the map');
             if (!hasSelectedTopic) missing.push('choose a variable');
             if (!startValid || !endValid) missing.push('enter a valid time range');
             if (!validInterval) missing.push('enter an interval length');
@@ -1174,6 +1341,8 @@
                     ? `<strong>To start:</strong> ${missing.map(escapeText).join(', ')}.`
                     : `${count} variable${count === 1 ? '' : 's'} at ${escapeText(describeArea(window.getSelectedArea()))}`;
             }
+            renderSelectedChips();
+            window.dispatchEvent(new Event('trend:inputs'));
             const counter = document.getElementById('topics-count');
             if (counter) {
                 const count = Object.values(selectedTopics).filter(Boolean).length;
@@ -1185,6 +1354,7 @@
             if (!area) return '';
             const p = area.properties || {};
             if (p.shape === 'region') return p.name || 'the region';
+            if (p.shape === 'box') return `the drawn box (${Math.round(p.areaKm2 || 0).toLocaleString('en-US')} km²)`;
             if (p.placeName) return p.placeName;
             const c = area.geometry && area.geometry.coordinates;
             return Array.isArray(c) ? `${Number(c[1]).toFixed(2)}°, ${Number(c[0]).toFixed(2)}°` : 'the point';
@@ -1451,13 +1621,47 @@
             }
         }
 
-        topicsToggleBtn.addEventListener('click', () => {
-            topicsDropdown.classList.toggle('open');
-            topicsToggleBtn.setAttribute('aria-expanded', String(topicsDropdown.classList.contains('open')));
-            if (topicsDropdown.classList.contains('open') && allTopics.length === 0) {
-                loadTopics();
-            }
+        // Selected variables as chips above the list; ✕ deselects.
+        function renderSelectedChips() {
+            const box = document.getElementById('selected-chips');
+            if (!box) return;
+            const chosen = Object.keys(selectedTopics).filter((t) => selectedTopics[t]);
+            box.innerHTML = chosen.map((t) => `<span class="sel-chip">${escapeText(topicLabel(t).replace(/ \((ERA5 model|VIIRS satellite)\)$/, ''))}`
+                + `<button type="button" data-unselect="${escapeText(t)}" aria-label="Remove ${escapeText(topicLabel(t))}">✕</button></span>`).join('');
+            box.hidden = chosen.length === 0;
+        }
+        document.getElementById('selected-chips').addEventListener('click', (event) => {
+            const button = event.target.closest('[data-unselect]');
+            if (!button) return;
+            selectedTopics[button.dataset.unselect] = false;
+            renderTopics(document.getElementById('topic-search').value);
+            updateApplyButtonState();
+            refreshRegions();
         });
+
+        // Quick time ranges: the last n complete years, or from a year to the last complete year.
+        (function () {
+            const presets = document.querySelector('.range-presets');
+            if (!presets) return;
+            const lastYear = new Date().getFullYear() - 1;
+            const rangeOf = (b) => [b.dataset.years ? lastYear - Number(b.dataset.years) + 1 : Number(b.dataset.since), lastYear];
+            presets.addEventListener('click', (event) => {
+                const button = event.target.closest('button');
+                if (!button) return;
+                const [from, to] = rangeOf(button);
+                timeintervallStartInput.value = `01.01.${from}`;
+                timeintervallEndInput.value = `31.12.${to}`;
+                updateApplyButtonState();
+            });
+            // Highlight the preset the dates match.
+            window.addEventListener('trend:inputs', () => {
+                for (const button of presets.querySelectorAll('button')) {
+                    const [from, to] = rangeOf(button);
+                    const match = timeintervallStartInput.value === `01.01.${from}` && timeintervallEndInput.value === `31.12.${to}`;
+                    button.setAttribute('aria-pressed', String(match));
+                }
+            });
+        })();
 
         // Sensible start: the last ten complete years, daily values, temperature selected.
         (function setDefaults() {
@@ -1667,7 +1871,8 @@
 
             if (window.trendMap && Array.isArray(visualization.map_layers)) {
                 window.lastMapLayers = visualization.map_layers;
-                window.trendMap.setResultData(window.satelliteLayer ? [window.satelliteLayer, ...visualization.map_layers] : visualization.map_layers);
+                window.boxPreviewHidden = true; // the result's station dots replace the box preview
+                window.refreshMapLayers();
                 fitMapToSelectionAndStations(visualization.map_layers);
                 if (window.updateMapLegend) window.updateMapLegend(visualization.map_layers);
             }
@@ -2070,44 +2275,55 @@
             });
         });
     </script>
+    <script src="/static/box-stations.js"></script>
     <script>
         // ---- Suggested case studies (GET /api/examples, examples.py) ----
         (function () {
             const COLORS = { heat: 'var(--cs-heat)', cold: 'var(--cs-cold)', rain: 'var(--cs-rain)', snow: 'var(--cs-snow)' };
             const LABELS = { heat: 'Heat', cold: 'Cold', rain: 'Precipitation', snow: 'Snow' };
+            const ICONS = {
+                heat: '<path d="M10 3a2 2 0 0 1 2 2v7.1a3.5 3.5 0 1 1-4 0V5a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="15" r="1.6" fill="currentColor"/><path d="M15 4v4M13 6h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+                cold: '<path d="M10 3a2 2 0 0 1 2 2v7.1a3.5 3.5 0 1 1-4 0V5a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="15" r="1.6" fill="currentColor"/><path d="M13.5 6h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+                rain: '<path d="M10 3c2.6 3.4 4.5 6 4.5 8.3a4.5 4.5 0 0 1-9 0C5.5 9 7.4 6.4 10 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+                snow: '<path d="M10 2.5v15M3.5 6.25l13 7.5M3.5 13.75l13-7.5M8 4l2 1.6L12 4M8 16l2-1.6 2 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+            };
             // Which variable of the topic shows the event best (TMAX for heat, TMIN for cold, …).
             const PREFER = { heat: ['tmax', 'tavg', 'tmin'], cold: ['tmin', 'tavg', 'tmax'], rain: ['prcp'], snow: ['snwd', 'snow'] };
             const card = document.getElementById('examples-card');
             const list = document.getElementById('examples-list');
-            const toggle = document.getElementById('examples-toggle');
             if (!card || !list) return;
+            const viewport = card.querySelector('.examples-viewport');
 
-            let collapsed = false;
-            try { collapsed = localStorage.getItem('td-examples-collapsed') === '1'; } catch (e) { /* storage blocked */ }
-            const setCollapsed = (value) => {
-                collapsed = value;
-                card.classList.toggle('collapsed', value);
-                toggle.textContent = value ? 'Show' : 'Hide';
-                toggle.setAttribute('aria-expanded', String(!value));
-                try { localStorage.setItem('td-examples-collapsed', value ? '1' : '0'); } catch (e) { /* ignore */ }
-            };
-            setCollapsed(collapsed);
-            toggle.addEventListener('click', () => setCollapsed(!collapsed));
+            // Arrows and edge fades only where there is more to scroll to.
+            function updateScroll() {
+                const max = list.scrollWidth - list.clientWidth;
+                viewport.classList.toggle('can-left', list.scrollLeft > 4);
+                viewport.classList.toggle('can-right', list.scrollLeft < max - 4);
+            }
+            list.addEventListener('scroll', updateScroll, { passive: true });
+            window.addEventListener('resize', updateScroll);
+            card.querySelector('.ex-prev').addEventListener('click', () => list.scrollBy({ left: -list.clientWidth * 0.8 }));
+            card.querySelector('.ex-next').addEventListener('click', () => list.scrollBy({ left: list.clientWidth * 0.8 }));
 
             let examples = [];
             fetch(`${API_BASE}/api/examples`)
                 .then((r) => (r.ok ? r.json() : { examples: [] }))
                 .then((data) => {
                     examples = data.examples || [];
-                    const head = '<div class="examples-cols" aria-hidden="true"><span>Case study</span><span>Site · data source</span><span>Variable · verified value</span></div>';
-                    list.innerHTML = head + examples.map((ex, i) => `
-                        <button type="button" class="example" data-i="${i}" style="--ex-color:${COLORS[ex.category] || '#64748b'}"
-                            title="${escapeText(`${ex.summary} Data: ${ex.verified}`)}">
-                            <span><span class="example-title">${escapeText(ex.title)}</span> <span class="example-tag">${escapeText(LABELS[ex.category] || ex.category)}</span></span>
-                            <span><span class="example-place example-ellipsis">${escapeText(ex.place)}</span><span class="example-source example-ellipsis">${escapeText(ex.source || '')}</span></span>
-                            <span><span class="example-variable example-ellipsis">${escapeText(ex.variable || '')}</span><span class="example-value example-ellipsis">${escapeText(ex.value || ex.verified)}</span></span>
-                        </button>`).join('');
-                    if (!examples.length) card.hidden = true;
+                    list.innerHTML = examples.map((ex, i) => {
+                        const value = String(ex.value || ex.verified || '').split(' · ')[0];
+                        const place = String(ex.place || '').split(',')[0];
+                        return `<button type="button" class="ex-card" data-i="${i}" style="--ex-color:${COLORS[ex.category] || '#64748b'}"
+                            title="${escapeText(`${ex.title} (${LABELS[ex.category] || ex.category})\n${ex.summary}\n${ex.variable || ''}: ${ex.value || ''} · ${ex.place}${ex.source ? ` · ${ex.source}` : ''}`)}">
+                            <span class="ex-icon"><svg viewBox="0 0 20 20" aria-hidden="true">${ICONS[ex.category] || ICONS.heat}</svg></span>
+                            <span class="ex-text">
+                                <span class="ex-value">${escapeText(value)} <span class="ex-place">· ${escapeText(place)}</span></span>
+                                <span class="ex-title">${escapeText(ex.title)}</span>
+                            </span>
+                        </button>`;
+                    }).join('');
+                    card.hidden = !examples.length;
+                    requestAnimationFrame(updateScroll);
                 })
                 .catch(() => { card.hidden = true; });
 
@@ -2139,17 +2355,17 @@
             }
 
             list.addEventListener('click', async (event) => {
-                const button = event.target.closest('.example');
+                const button = event.target.closest('.ex-card');
                 if (!button) return;
                 const ex = examples[Number(button.dataset.i)];
                 if (!ex) return;
-                list.querySelectorAll('.example').forEach((b) => { b.disabled = true; });
+                list.querySelectorAll('.ex-card').forEach((b) => { b.disabled = true; });
                 button.classList.add('is-running');
                 try {
                     await runExample(ex);
                 } finally {
                     button.classList.remove('is-running');
-                    list.querySelectorAll('.example').forEach((b) => { b.disabled = false; });
+                    list.querySelectorAll('.ex-card').forEach((b) => { b.disabled = false; });
                 }
             });
         })();
@@ -2176,7 +2392,7 @@
                     opacity: 0.95,
                     attribution: 'Imagery: NASA GIBS / MODIS Terra',
                 };
-                window.trendMap.setResultData([window.satelliteLayer, ...(window.lastMapLayers || [])]);
+                window.refreshMapLayers();
                 const date = new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
                 text.textContent = `Satellite image (MODIS Terra true colour), ${date}, ~10:30 local time`;
                 bar.hidden = false;
@@ -2192,7 +2408,7 @@
                 current = null;
                 window.satelliteLayer = null;
                 bar.hidden = true;
-                if (window.trendMap) window.trendMap.setResultData(window.lastMapLayers || []);
+                window.refreshMapLayers();
             }
 
             document.addEventListener('trendplots:satellite', (event) => show(event.detail.date));

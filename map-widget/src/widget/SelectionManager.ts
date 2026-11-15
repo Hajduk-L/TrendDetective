@@ -1,14 +1,15 @@
-import type { Feature, Point } from "geojson";
+import type { Feature, Point, Polygon } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   TerraDraw,
   TerraDrawPointMode,
+  TerraDrawRectangleMode,
   TerraDrawSelectMode,
   type GeoJSONStoreFeatures,
   type TerraDrawEventListeners,
 } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
-import { normalizePoint } from "./geo";
+import { geodesicAreaKm2, normalizePoint, normalizeRing } from "./geo";
 import type { AreaFeature, DrawTool } from "./types";
 
 /** Prefix of all MapLibre sources/layers created by Terra Draw. */
@@ -27,6 +28,7 @@ type FeatureId = string | number;
 function terraMode(tool: DrawTool): string {
   if (tool === "select") return "static";
   if (tool === "edit") return "select";
+  if (tool === "box") return "rectangle";
   return tool;
 }
 
@@ -60,19 +62,21 @@ export interface SelectionCallbacks {
   onToolChange: (tool: DrawTool) => void;
 }
 
-/** The point placed with the Point tool. */
-const isAreaFeature = (f: GeoJSONStoreFeatures) => f.geometry.type === "Point" && f.properties.mode === "point";
+/** The point placed with the Point tool, or the box drawn with the Box tool. */
+const isAreaFeature = (f: GeoJSONStoreFeatures) =>
+  (f.geometry.type === "Point" && f.properties.mode === "point") ||
+  (f.geometry.type === "Polygon" && f.properties.mode === "rectangle");
 
 /**
- * Wraps Terra Draw for the Point tool: placing and moving one point and its GeoJSON export.
- * Areas are not drawn; they are picked from the predefined regions (see RegionLayer).
+ * Wraps Terra Draw for the Point and Box tools: placing, moving and resizing one point or
+ * box and its GeoJSON export. Predefined regions are picked separately (see RegionLayer).
  * Survives basemap switches via detach() (before the style changes) and attach() (after).
  */
 export class SelectionManager {
   private draw: TerraDraw | null = null;
   private tool: DrawTool = "select";
   private parked: GeoJSONStoreFeatures[] = [];
-  private pendingArea: Feature<Point> | null = null;
+  private pendingArea: Feature<Point | Polygon> | null = null;
   private currentId: FeatureId | null = null;
   private selectionId: string | null = null;
   private counter = 0;
@@ -162,23 +166,39 @@ export class SelectionManager {
         geometry: { type: "Point", coordinates },
       };
     }
+    if (f.geometry.type === "Polygon") {
+      const { ring, bbox, crossesAntimeridian } = normalizeRing(f.geometry.coordinates[0]);
+      return {
+        type: "Feature",
+        bbox,
+        properties: {
+          selectionId: this.selectionId,
+          shape: "box",
+          crossesAntimeridian,
+          areaKm2: Math.round(geodesicAreaKm2(ring)),
+        },
+        geometry: { type: "Polygon", coordinates: [ring] },
+      };
+    }
     return null;
   }
 
-  /** Programmatically sets the point (does not fire onChange). Returns false if it was rejected. */
-  setArea(feature: Feature<Point>): boolean {
+  /** Programmatically sets the point or box (does not fire onChange). Returns false if it was rejected. */
+  setArea(feature: Feature<Point | Polygon>): boolean {
     const draw = this.draw;
     if (!draw) {
       this.pendingArea = feature;
       return true;
     }
     const id = draw.getFeatureId();
-    const coordinates = normalizePoint(feature.geometry.coordinates);
-    const [result] = draw.addFeatures([
-      { id, type: "Feature", geometry: { type: "Point", coordinates }, properties: { mode: "point" } },
-    ]);
+    const geometry: Point | Polygon =
+      feature.geometry.type === "Point"
+        ? { type: "Point", coordinates: normalizePoint(feature.geometry.coordinates) }
+        : { type: "Polygon", coordinates: [normalizeRing(feature.geometry.coordinates[0]).ring] };
+    const mode = geometry.type === "Point" ? "point" : "rectangle";
+    const [result] = draw.addFeatures([{ id, type: "Feature", geometry, properties: { mode } }]);
     if (!result?.valid) {
-      console.warn("[MapWidget] initial point rejected:", result?.reason);
+      console.warn("[MapWidget] selection rejected:", result?.reason);
       return false;
     }
     this.removeAreas((fid) => fid !== id);
@@ -256,7 +276,10 @@ export class SelectionManager {
 function createModes() {
   return [
     new TerraDrawSelectMode({
-      flags: { point: { feature: { draggable: true } } },
+      flags: {
+        point: { feature: { draggable: true } },
+        rectangle: { feature: { draggable: true, coordinates: { resizable: "opposite" } } },
+      },
       styles: {
         selectedPointColor: ACCENT,
         selectedPointWidth: 7,
@@ -266,6 +289,10 @@ function createModes() {
     }),
     new TerraDrawPointMode({
       styles: { pointColor: ACCENT, pointWidth: 6, pointOutlineColor: WHITE, pointOutlineWidth: 2 },
+    }),
+    new TerraDrawRectangleMode({
+      drawInteraction: "click-move-or-drag",
+      styles: { fillColor: ACCENT, fillOpacity: 0.08, outlineColor: ACCENT, outlineWidth: 2 },
     }),
   ];
 }

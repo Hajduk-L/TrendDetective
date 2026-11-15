@@ -30,7 +30,7 @@ interface MapController {
   /** Regions offered by the Areas button (see `/api/regions`). */
   setRegions: (regions: Region[]) => void;
   getArea: () => AreaFeature | null;
-  /** Select a point (fires onAreaSelected); false for anything but a Point. */
+  /** Select a point or box (fires onAreaSelected); false for other geometries. */
   setArea: (feature: AreaInput) => boolean;
   /** Show or hide the regions of the Areas button. */
   showRegions: (visible: boolean) => void;

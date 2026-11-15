@@ -1,8 +1,9 @@
 # Map Widget – Integration Guide
 
-The widget is a React component. The user picks a point, or one of the predefined regions
-(Areas button), on a map; you get it as GeoJSON. There are no free drawing tools: an area is only
-evaluated where there are enough measuring stations, so areas come from a fixed list (`regions`).
+The widget is a React component. The user picks a point, draws a box (Box tool), or picks one of
+the predefined regions (Areas button) on a map; you get it as GeoJSON. The website lists the
+measuring stations of a drawn box with `POST /api/stations` before it is evaluated, so the user
+sees whether there is enough data; the predefined regions (`regions`) are known to have it.
 You send data back; the widget draws it on the same map.
 
 ```
@@ -48,7 +49,7 @@ and ends up in `UserRequest.area`.
 | `setResultData(data)` | Show data (§4); `undefined` clears it. Same layers with new GeoJSON `data` (same `id`) are updated in place, which is smooth enough for animation |
 | `setLoading(bool)` | Show / hide "Loading data…" |
 | `getArea()` | Current point or region (§3) or `null` |
-| `setArea(pointFeature)` | Select a point as if the user placed it (fires `onAreaSelected`); `false` for anything but a Point |
+| `setArea(feature)` | Select a point or box (Polygon) as if the user drew it (fires `onAreaSelected`); `false` for other geometries |
 | `setRegions(regions)` | Regions offered by the Areas button: `[{id, name, bbox, note?}]` |
 | `showRegions(bool)` | Show / hide the regions (same as the Areas button) |
 | `clearArea()` | Remove the area |
@@ -72,7 +73,7 @@ cd map-widget && npm install && npm run build:embed
 
 | Prop | Type | Required | What it is |
 |---|---|---|---|
-| `onAreaSelected` | `(area: AreaFeature) => void` | **yes** (React) | Called when the user places or moves a point, or picks a region. |
+| `onAreaSelected` | `(area: AreaFeature) => void` | **yes** (React) | Called when the user places or moves a point, draws, moves or resizes a box, or picks a region. |
 | `onAreaCleared` | `() => void` | no | Called when the user deletes the selection. |
 | `regions` | `Region[]` | no | Regions offered by the Areas button (bundle: `setRegions`). `{id, name, bbox, note?, outline?}`; `note` is shown on hover; `outline` (GeoJSON Polygon, e.g. the hull of the region's stations) is drawn and selected instead of the `bbox` box. |
 | `resultData` | `MapData` or `MapData[]` | no | React only (bundle: `setResultData`). The data to show (§4). |
@@ -113,13 +114,17 @@ station in the region (`area_analysis.py`) instead of the station nearest to a p
 
 | Field | Meaning |
 |---|---|
-| `geometry` | The region's box (closed polygon, one ring), or a `Point` from the point tool. |
+| `geometry` | The region's or drawn box (closed polygon, one ring), or a `Point` from the point tool. |
 | `bbox` | `[west, south, east, north]`. Easiest input for most APIs. |
 | `selectionId` | Same id while the user moves the point; new id for a new point. The region id for a region. |
-| `shape` | `"point"` or `"region"`. |
+| `shape` | `"point"`, `"box"` or `"region"`. |
 | `regionId`, `name` | Only for a region: its id and name from `regions`. |
 | `areaKm2` | Size of the area (`0` for a point). |
 | `crossesAntimeridian` | `true` if the area spans the ±180° line. Then `bbox` has `west > east`. |
+
+A drawn **box** has `shape: "box"`, the rectangle as `geometry` and its extent as `bbox`
+(no `regionId`/`name`); `interface.py` evaluates its stations like a region's
+(`area_analysis.box_region`, at most 1,000,000 km², not across the ±180° line).
 
 A **point** looks like this (`bbox` has zero size, longitude is wrapped to ±180):
 

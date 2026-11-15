@@ -19,12 +19,31 @@
     {
       "src": "static/**",
       "use": "@vercel/static"
+    },
+    {
+      "src": "explorer/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "/api/index.py"
+    },
+    {
+      "src": "/(explorer|globe)",
+      "status": 301,
+      "headers": {
+        "Location": "/explorer/"
+      }
+    },
+    {
+      "src": "/explorer/",
+      "dest": "/explorer/index.html"
+    },
+    {
+      "src": "/explorer/(.*)",
+      "dest": "/explorer/$1"
     },
     {
       "src": "/static/(.*)",

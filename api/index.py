@@ -18,6 +18,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # the writable temp directory instead. Bundled files are read via absolute paths.
 os.chdir(tempfile.gettempdir())
 
+import global_data  # noqa: E402
+
+# The Global Explorer caches its gridded datasets under an absolute path inside
+# the (read-only) code directory; point those caches at the temp directory too.
+_GRID_CACHE = Path(tempfile.gettempdir()) / "data" / "cache"
+global_data.CACHE_DIR = _GRID_CACHE / "gistemp"
+global_data.GISTEMP_FILE = global_data.CACHE_DIR / global_data.GISTEMP_FILE.name
+global_data.GPCP_CACHE = _GRID_CACHE / "gpcp" / global_data.GPCP_CACHE.name
+
 from app import WebAppHandler  # noqa: E402
 
 
