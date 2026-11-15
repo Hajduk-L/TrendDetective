@@ -68,3 +68,18 @@
     .bx-row .bx-note { justify-self: end; }
     .bx-src { display: none; }
 }
+
+/* A station picked to be analysed alone (click a row or a dot on the map) */
+.bx-hint { font-style: italic; }
+.bx-focus { font-size: 0.78rem; color: #334155; }
+.bx-whole {
+    padding: 0; border: 0; background: none;
+    font: inherit; font-weight: 600; color: #2563eb; text-decoration: underline; cursor: pointer;
+}
+.bx-row[role="button"] { cursor: pointer; border-radius: 6px; }
+.bx-row[role="button"]:hover { background: #f8fafc; }
+.bx-row[role="button"]:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.bx-list.has-focus .bx-row:not(.is-focus) { opacity: 0.45; }
+.bx-row.is-focus { background: #fff7ed; box-shadow: inset 3px 0 0 #ff6b2c; }
+.bx-row.is-focus .bx-name { font-weight: 600; }
+.bx-row.is-focus .bx-dot { box-shadow: 0 0 0 2px #ff6b2c; }

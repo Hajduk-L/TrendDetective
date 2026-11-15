@@ -1827,11 +1827,18 @@
         el.querySelectorAll('[data-r]').forEach((node) => { refs[node.dataset.r] = node; });
         const ps = topicState(key);
 
-        refs.toggle.addEventListener('click', () => { ps.collapsed = !ps.collapsed; render(); });
+        // An opened part scrolls into view (index.html: window.revealOpened).
+        const reveal = (node) => { if (typeof window.revealOpened === 'function') window.revealOpened(node); };
+        refs.toggle.addEventListener('click', () => {
+            ps.collapsed = !ps.collapsed;
+            render();
+            if (!ps.collapsed) reveal(el);
+        });
         for (const sub of SUBS) {
             refs[`${sub.id}Toggle`].addEventListener('click', () => {
                 ps.open[sub.id] = !isSubOpen(key, sub.id);
                 render();
+                if (ps.open[sub.id]) reveal(refs[`${sub.id}Sub`]);
             });
         }
         const onEventClick = (e) => {
@@ -1866,7 +1873,11 @@
             else ps.hiddenYears.add(y);
             render();
         });
-        refs.tableBtn.addEventListener('click', () => { ps.showTable = !ps.showTable; render(); });
+        refs.tableBtn.addEventListener('click', () => {
+            ps.showTable = !ps.showTable;
+            render();
+            if (ps.showTable) reveal(refs.table);
+        });
         refs.csvBtn.addEventListener('click', () => downloadCsv(key));
         if (typeof ResizeObserver === 'function') {
             new ResizeObserver(() => layoutChart(refs.chart)).observe(refs.chart);

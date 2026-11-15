@@ -84,10 +84,7 @@
             <li>Timeline, years overlaid, or one period across the years; anomalies and moving averages.</li>
             <li>Trends with OLS, Sen's slope and the Mann-Kendall test; change points.</li>
             <li>Change over time (per decade, running trend) and comparisons and correlations between variables, including lags.</li>
-        </ul>
-
-        <h3>Global Explorer</h3>
-        <p>The <strong>🌍 Global Explorer</strong> link under Analyze opens a globe built on gridded data (NASA GISTEMP temperature, GPCP precipitation) to compare trends of any regions worldwide.</p>`;
+        </ul>`;
 
     let helpBtn = null;
     let dialog = null;

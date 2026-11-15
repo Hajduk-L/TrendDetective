@@ -100,6 +100,31 @@ export type MapData = GeoJsonMapData | RasterMapData | ImageMapData;
 
 export type ProjectionType = "globe" | "mercator";
 
+/** A result feature the user clicked (see `onFeatureClick`). */
+export interface FeatureClick {
+  /** `id` of the `MapData` layer the feature belongs to (undefined if the layer has none). */
+  layerId: string | undefined;
+  properties: Record<string, unknown>;
+  /** Clicked position [longitude, latitude]. */
+  lngLat: [number, number];
+}
+
+/**
+ * One location inside the selected area that the user picked for a closer look (e.g. one
+ * measuring station of a box). While set, the area is drawn greyed out and the location
+ * is highlighted.
+ */
+export interface FocusPoint {
+  /** [longitude, latitude]. */
+  coordinates: [number, number];
+  /** Shown in the status bar, e.g. the station name. */
+  label?: string;
+  /** Marker colour (CSS). Default: the accent colour. */
+  color?: string;
+  /** Ids (or id prefixes ending in "*") of result layers drawn faded while the focus is set. */
+  dimLayers?: string[];
+}
+
 export type BasemapId = "streets" | "light" | "dark" | "satellite";
 
 /**
@@ -118,6 +143,17 @@ export interface MapWidgetProps {
   onAreaCleared?: () => void;
   /** Data from the Data Loader. A single dataset or several layered ones (first = bottom). */
   resultData?: MapData | MapData[];
+  /**
+   * Called when the user clicks a result feature (Pan tool). Return true to handle the click
+   * yourself; otherwise the feature's attribute popup opens. Features with a string property
+   * `tooltip` also show it in a small box on mouse hover; properties starting with "_" are
+   * not listed in the popup.
+   */
+  onFeatureClick?: (hit: FeatureClick) => boolean | void;
+  /** A location inside the selection picked for a closer look (see `FocusPoint`); null for none. */
+  focus?: FocusPoint | null;
+  /** The user pressed "Whole area" in the status bar to leave the focus. */
+  onFocusCleared?: () => void;
   /** Shows a loading indicator over the map. */
   loading?: boolean;
   /** Basemap preset, a style URL, or a full MapLibre style object. Default: "streets". */

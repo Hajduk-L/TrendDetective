@@ -1069,6 +1069,19 @@ def _station_from_records(
     }
 
 
+def station_tooltip(station: dict[str, Any]) -> str:
+    """Hover text of the station used for a point: name, then distance and source."""
+    name = station.get("name") or station.get("id") or "Measuring station"
+    distance = station.get("distance_km")
+    if not isinstance(distance, (int, float)):
+        where = "used for the analysis"
+    elif distance < 0.05:
+        where = "at the selected point"
+    else:
+        where = f"{distance:g} km from the selected point"
+    return f"Station used: {name}\n{where} · {station.get('source') or 'NOAA'}"
+
+
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two points in kilometres."""
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -1264,6 +1277,8 @@ def process_user_request(user_request: Any) -> dict[str, Any]:
                             "source": station["source"],
                             "topics": [],
                             "color": "#7c3aed",
+                            # Short hover box on the map (the widget shows a string `tooltip`).
+                            "tooltip": station_tooltip(station),
                         },
                     },
                 )

@@ -15,18 +15,32 @@ import type { Region } from "./widget";
 
 type AreaInput = Feature;
 import { createRoot } from "react-dom/client";
-import { MapWidget, type AreaFeature, type BBox, type MapData, type MapWidgetHandle, type MapWidgetProps } from "./widget";
+import {
+  MapWidget,
+  type AreaFeature,
+  type BBox,
+  type FocusPoint,
+  type MapData,
+  type MapWidgetHandle,
+  type MapWidgetProps,
+} from "./widget";
 
 interface MountOptions
   extends Pick<MapWidgetProps, "initialArea" | "basemap" | "projection" | "hideToolbar" | "regions"> {
   onAreaSelected?: (area: AreaFeature) => void;
   onAreaCleared?: () => void;
+  /** A result feature was clicked; return true to suppress its popup. */
+  onFeatureClick?: MapWidgetProps["onFeatureClick"];
+  /** "Whole area" was pressed in the status bar while a focus was set. */
+  onFocusCleared?: () => void;
 }
 
 interface MapController {
   /** Show Data Loader results (undefined clears them). */
   setResultData: (data: MapData | MapData[] | undefined) => void;
   setLoading: (loading: boolean) => void;
+  /** Grey out the area and highlight one location in it (null: back to the whole area). */
+  setFocus: (focus: FocusPoint | null) => void;
   /** Regions offered by the Areas button (see `/api/regions`). */
   setRegions: (regions: Region[]) => void;
   getArea: () => AreaFeature | null;
@@ -45,6 +59,7 @@ interface MapController {
 interface HostHandle {
   setResultData: MapController["setResultData"];
   setLoading: MapController["setLoading"];
+  setFocus: MapController["setFocus"];
   setRegions: MapController["setRegions"];
   widget: MapWidgetHandle | null;
 }
@@ -53,10 +68,11 @@ interface HostHandle {
 function Host({ options, ref }: { options: MountOptions; ref: Ref<HostHandle> }) {
   const [resultData, setResultData] = useState<MapData | MapData[] | undefined>();
   const [loading, setLoading] = useState(false);
+  const [focus, setFocus] = useState<FocusPoint | null>(null);
   const [regions, setRegions] = useState<Region[] | undefined>(options.regions);
   const [widget, setWidget] = useState<MapWidgetHandle | null>(null);
 
-  useImperativeHandle(ref, () => ({ setResultData, setLoading, setRegions, widget }), [widget]);
+  useImperativeHandle(ref, () => ({ setResultData, setLoading, setFocus, setRegions, widget }), [widget]);
 
   return (
     <MapWidget
@@ -69,6 +85,9 @@ function Host({ options, ref }: { options: MountOptions; ref: Ref<HostHandle> })
       onAreaSelected={(a) => options.onAreaSelected?.(a)}
       onAreaCleared={() => options.onAreaCleared?.()}
       resultData={resultData}
+      focus={focus}
+      onFeatureClick={(hit) => options.onFeatureClick?.(hit)}
+      onFocusCleared={() => options.onFocusCleared?.()}
       loading={loading}
     />
   );
@@ -85,6 +104,7 @@ function mount(element: HTMLElement, options: MountOptions = {}): MapController 
   return {
     setResultData: (d) => host?.setResultData(d),
     setLoading: (l) => host?.setLoading(l),
+    setFocus: (f) => host?.setFocus(f),
     setRegions: (r) => host?.setRegions(r),
     getArea: () => host?.widget?.getArea() ?? null,
     setArea: (f) => host?.widget?.setArea(f) ?? false,

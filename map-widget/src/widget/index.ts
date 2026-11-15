@@ -8,6 +8,8 @@ export type {
   BasemapId,
   BBox,
   DrawTool,
+  FeatureClick,
+  FocusPoint,
   GeoJsonMapData,
   ImageMapData,
   MapData,

@@ -48,6 +48,7 @@ and ends up in `UserRequest.area`.
 |---|---|
 | `setResultData(data)` | Show data (§4); `undefined` clears it. Same layers with new GeoJSON `data` (same `id`) are updated in place, which is smooth enough for animation |
 | `setLoading(bool)` | Show / hide "Loading data…" |
+| `setFocus(focus)` | Grey out the area and highlight one location in it: `{coordinates: [lon, lat], label?, color?, dimLayers?}` (`dimLayers`: result layer ids, or prefixes ending in `*`, drawn faded); `null` ends it |
 | `getArea()` | Current point or region (§3) or `null` |
 | `setArea(feature)` | Select a point or box (Polygon) as if the user drew it (fires `onAreaSelected`); `false` for other geometries |
 | `setRegions(regions)` | Regions offered by the Areas button: `[{id, name, bbox, note?}]` |
@@ -75,6 +76,9 @@ cd map-widget && npm install && npm run build:embed
 |---|---|---|---|
 | `onAreaSelected` | `(area: AreaFeature) => void` | **yes** (React) | Called when the user places or moves a point, draws, moves or resizes a box, or picks a region. |
 | `onAreaCleared` | `() => void` | no | Called when the user deletes the selection. |
+| `onFeatureClick` | `({layerId, properties, lngLat}) => boolean` | no | A result feature was clicked (Pan tool); return `true` to handle it yourself instead of the attribute popup. Features with a string property `tooltip` also show it on hover (first line bold); properties starting with `_` are left out of the popup. |
+| `focus` | `FocusPoint` or `null` | no | React only (bundle: `setFocus`). A location inside the area picked for a closer look; the status bar then offers "Whole area". |
+| `onFocusCleared` | `() => void` | no | "Whole area" was pressed in the status bar. |
 | `regions` | `Region[]` | no | Regions offered by the Areas button (bundle: `setRegions`). `{id, name, bbox, note?, outline?}`; `note` is shown on hover; `outline` (GeoJSON Polygon, e.g. the hull of the region's stations) is drawn and selected instead of the `bbox` box. |
 | `resultData` | `MapData` or `MapData[]` | no | React only (bundle: `setResultData`). The data to show (§4). |
 | `loading` | `boolean` | no | React only (bundle: `setLoading`). Shows "Loading data…". |

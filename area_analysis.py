@@ -875,6 +875,12 @@ def _evaluate_variable(
                 },
             }
         )
+        # Short hover box (the map widget shows a string `tooltip`); a click picks the station.
+        station_props = station_features[-1]["properties"]
+        tip = [station_props["Station"]]
+        if station_props.get("Trend"):
+            tip.append(f"Trend: {station_props['Trend']}")
+        station_props["tooltip"] = "\n".join([*tip, "Click: analyse this station alone"])
 
     if len(station_bins) < MIN_STATIONS:
         return _error_result(

@@ -1088,6 +1088,13 @@
             if (goto) { e.preventDefault(); gotoTile(goto.dataset.swGoto); return; }
             const sci = t.closest('a[data-sw-sci]');
             if (sci) { e.preventDefault(); openScientific(sci.dataset.swSci); return; }
+            // "How this was worked out": once it has opened, scroll it into view.
+            const how = t.closest('details.sw-how > summary');
+            if (how) {
+                const det = how.parentElement;
+                setTimeout(() => { if (det.open) scrollNear(det); }, 0);
+                return;
+            }
             const tile = t.closest('.sw-tile');
             if (!tile || tile.classList.contains('is-static')) return;
             if (t.closest('.sw-front')) { openTile(tile); return; }

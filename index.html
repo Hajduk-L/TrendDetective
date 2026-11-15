@@ -855,8 +855,6 @@
             .status-card { padding: 0.8rem 0.9rem; }
             .viz-grid { grid-template-columns: minmax(0, 1fr); }
         }
-        .sb-footer .explorer-link { align-self: center; font-size: 0.78rem; color: #2563eb; text-decoration: none; border: 1px solid #c7d7f5; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
-        .sb-footer .explorer-link:hover { background: #eef4ff; }
     </style>
 </head>
 <body>
@@ -951,7 +949,6 @@
         <div class="sb-footer top-bar">
             <button id="apply" class="py-button" type="button" disabled>Analyze</button>
             <span id="apply-status" class="apply-status" aria-live="polite"></span>
-            <a href="/explorer/" class="explorer-link" title="Compare global trends on a globe (gridded data)">🌍 Global Explorer</a>
         </div>
     </aside>
 
@@ -1172,11 +1169,20 @@
                 },
                 onAreaCleared: () => {
                     selectedArea = null;
+                    // Deleting the selection also removes its results from the map (area outline, station dots).
+                    window.lastMapLayers = [];
+                    window.refreshMapLayers();
+                    if (window.updateMapLegend) window.updateMapLegend([]);
                     window.dispatchEvent(new Event('trend:area'));
                 },
+                // A station dot of a box or area: analyse that station alone (static/box-stations.js).
+                onFeatureClick: (hit) => Boolean(window.onMapFeatureClick && window.onMapFeatureClick(hit)),
+                onFocusCleared: () => window.clearAreaFocus && window.clearAreaFocus(),
             });
         }
-        window.getSelectedArea = () => selectedArea;
+        // The area on the map; getSelectedArea answers the picked station instead while one is picked.
+        window.getDrawnArea = () => selectedArea;
+        window.getSelectedArea = () => (window.areaFocusPoint && window.areaFocusPoint()) || selectedArea;
         // The regions of the map's Areas button are loaded per selected topic (refreshRegions below).
         // Module scripts run after the classic script below, so tell it the map is ready now.
         window.dispatchEvent(new Event('trend:map-ready'));
@@ -1191,7 +1197,9 @@
             const layers = [];
             if (window.satelliteLayer) layers.push(window.satelliteLayer);
             layers.push(...(window.lastMapLayers || []));
-            if (window.boxStationsLayer && !window.boxPreviewHidden) layers.push(window.boxStationsLayer);
+            // While one station of the box is picked, its (faded) box dots stay for context.
+            const stationPicked = Boolean(window.areaFocusPoint && window.areaFocusPoint());
+            if (window.boxStationsLayer && (!window.boxPreviewHidden || stationPicked)) layers.push(window.boxStationsLayer);
             window.trendMap.setResultData(layers);
         };
 
@@ -1862,6 +1870,26 @@
             document.getElementById('plot-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
 
+        // Scrolls an opened card into view once it has its new size; nothing moves if it already fits.
+        // A card taller than the window is only scrolled when its top is not near the top already.
+        window.revealOpened = function (el) {
+            if (!el) return;
+            requestAnimationFrame(() => {
+                if (!el.isConnected || !el.getClientRects().length) return;
+                const r = el.getBoundingClientRect();
+                const vh = window.innerHeight || document.documentElement.clientHeight;
+                if (r.top >= 0 && r.bottom <= vh) return;
+                const tall = r.height > vh;
+                if (tall && r.top >= 0 && r.top < vh * 0.3) return;
+                const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: tall ? 'start' : 'nearest' });
+            });
+        };
+        // The "Raw output" card (the toggle event only comes from the user here; the card starts closed).
+        document.querySelector('details.task-output').addEventListener('toggle', (event) => {
+            if (event.target.open) window.revealOpened(event.target);
+        });
+
         function renderVisualization(visualization, opts = {}) {
             const container = document.getElementById('visualization-container');
             if (!visualization || !visualization.topics) {
@@ -2124,7 +2152,9 @@
                 return;
             }
             const points = [];
-            const area = window.getSelectedArea ? window.getSelectedArea() : null;
+            // The drawn area, also while one of its stations is analysed alone (keeps the box in view).
+            const getArea = window.getDrawnArea || window.getSelectedArea;
+            const area = getArea ? getArea() : null;
             if (area && Array.isArray(area.bbox) && area.bbox.length === 4) {
                 points.push([area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]);
             }
@@ -2265,8 +2295,27 @@
                     }
                     if (window.TrendPlots) window.TrendPlots.setLoading(false);
                     if (window.TrendSimple) window.TrendSimple.setLoading(false);
+                    if (shown && buttonId === 'apply') revealResults();
                 }
             }
+        }
+
+        // After 'Analyze': bring the results into view, so the user notices them below the map
+        // and the box's station list. Waits until the panels have drawn (they render on the next
+        // frames); does nothing when the results are already well in view.
+        function revealResults() {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (applyRun) return; // a newer 'Analyze' is running
+                const card = ['.simple-card', '.plot-card', '.task-output']
+                    .map((sel) => document.querySelector(`.main-content > ${sel}`))
+                    .find((el) => el && el.getClientRects().length > 0);
+                if (!card) return;
+                const r = card.getBoundingClientRect();
+                const vh = window.innerHeight || document.documentElement.clientHeight;
+                if (r.top >= 0 && r.top < vh * 0.6) return;
+                const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+            }));
         }
 
         document.querySelectorAll('button.py-button').forEach((buttonElement) => {
@@ -2440,6 +2489,16 @@
             box.querySelector('details').addEventListener('toggle', (e) => { box.dataset.collapsed = e.target.open ? '0' : '1'; });
             box.hidden = false;
         };
+        // A point selection folds the legend away, so the station used (hover it) stays visible.
+        window.addEventListener('trend:area', () => {
+            const area = window.getSelectedArea ? window.getSelectedArea() : null;
+            if (!area || !area.geometry || area.geometry.type !== 'Point') return;
+            const box = document.getElementById('map-legend');
+            if (!box) return;
+            box.dataset.collapsed = '1';
+            const details = box.querySelector('details');
+            if (details) details.open = false;
+        });
     </script>
 </body>
 </html>

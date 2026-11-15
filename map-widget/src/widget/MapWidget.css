@@ -172,6 +172,26 @@
   z-index: 2;
 }
 
+.mw-root .mw-status .mw-muted {
+  color: var(--mw-muted);
+}
+
+.mw-root .mw-status .mw-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mw-accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Hover description of a result feature (e.g. the station used for a point). */
+.mw-feature-tip .maplibregl-popup-content {
+  max-width: 260px;
+}
+
 /* ---- Loading ---- */
 .mw-root .mw-loading {
   position: absolute;

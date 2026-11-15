@@ -9,8 +9,16 @@
  *   teal   covers enough of it (>= 80 %) to be used in the area mean
  *   amber  covers only a part; shown, but too short for the area mean
  *
- * Uses from index.html: window.getSelectedArea, selectedTopics, topicLabel, API_BASE,
- * escapeText, window.refreshMapLayers, the 'trend:area' and 'trend:inputs' events.
+ * One station of the box (a row or a dot) or of an area result (a dot) can be clicked to
+ * analyse it alone: window.getSelectedArea() then answers a point at that station, so the
+ * normal single-station request runs, while the map greys out the area and highlights the
+ * station (trendMap.setFocus). Clicking it again, "Use whole area" or the map's "Whole area"
+ * goes back to the area.
+ *
+ * Uses from index.html: window.getDrawnArea / getSelectedArea, selectedTopics, topicLabel,
+ * API_BASE, escapeText, window.refreshMapLayers, triggerButton, window.lastMapLayers,
+ * the 'trend:area' and 'trend:inputs' events.
+ * Provides: window.areaFocusPoint, window.onMapFeatureClick, window.clearAreaFocus.
  */
 (function () {
     'use strict';
@@ -24,13 +32,22 @@
     let requestNo = 0;
     let lastKey = '';
     let openTopic = null;
+    let shown = null; // [data, timeintervall, box] of the list on screen
+    // The station picked for a single analysis: {area, key, name, coordinates}, or null.
+    let focus = null;
 
     const esc = (v) => escapeText(v == null ? '' : v);
     const year = (iso) => String(iso).slice(0, 4);
     const fmtDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
+    // The area drawn or picked on the map (never the focused station).
+    function drawnArea() {
+        const get = window.getDrawnArea || window.getSelectedArea;
+        return get ? get() : null;
+    }
+
     function currentBox() {
-        const area = window.getSelectedArea && window.getSelectedArea();
+        const area = drawnArea();
         return area && area.properties && area.properties.shape === 'box' ? area : null;
     }
 
@@ -50,6 +67,7 @@
         card.hidden = true;
         card.innerHTML = '';
         lastKey = '';
+        shown = null;
         if (window.boxStationsLayer) {
             window.boxStationsLayer = null;
             window.refreshMapLayers();
@@ -115,13 +133,18 @@
         return ['bad', 'No data here'];
     }
 
+    const stationKey = (lon, lat) => `${Number(lon).toFixed(4)},${Number(lat).toFixed(4)}`;
+
     function stationRow(s) {
         const k = kind(s);
+        const key = stationKey(s.longitude, s.latitude);
+        const picked = focus && focus.key === key;
         const span = `${year(s.from)}–${year(s.to)}`;
         const note = k === 'full'
             ? ''
             : `<span class="bx-note bx-${k}" title="Record ${esc(fmtDay(s.first))} – ${esc(fmtDay(s.last))}">only ${esc(span)} · ${Math.round(s.coverage * 100)} %</span>`;
-        return `<li class="bx-row">
+        return `<li class="bx-row${picked ? ' is-focus' : ''}" role="button" tabindex="0" data-key="${esc(key)}" aria-pressed="${picked ? 'true' : 'false'}"
+            title="${picked ? 'Click again to go back to the whole box' : 'Click to analyse this station alone'}">
             <span class="bx-dot" style="background:${COLORS[k]}" aria-hidden="true"></span>
             <span class="bx-name" title="${esc(s.name)} (${esc(s.source)} ${esc(s.id)})">${esc(s.name)}</span>
             <span class="bx-src">${esc(s.source)}</span>
@@ -129,14 +152,18 @@
         </li>`;
     }
 
-    function render(data, timeintervall, box) {
+    function render(data, timeintervall, box, withDots = true) {
         const entries = Object.entries(data.topics || {});
         if (!openTopic || !(openTopic in (data.topics || {}))) openTopic = entries.length ? entries[0][0] : null;
         const period = `${timeintervall[0].slice(-4)}–${timeintervall[1].slice(-4)}`;
 
+        shown = [data, timeintervall, box];
         let html = `<div class="bx-head">
             <h3>Stations in the box</h3>
             <span class="bx-sub">${Math.round(box.properties.areaKm2 || data.area_km2 || 0).toLocaleString('en-US')} km² · data in ${esc(period)}</span>
+            ${focus
+        ? `<span class="bx-focus">Analysing only <strong>${esc(focus.name)}</strong> · <button type="button" class="bx-whole">Use whole area</button></span>`
+        : '<span class="bx-sub bx-hint">Click a station to analyse it alone</span>'}
         </div>`;
         if (data.problem) {
             html += `<p class="bx-empty bx-error">${esc(data.problem)}</p>`;
@@ -153,7 +180,7 @@
             if (info) {
                 const errors = (info.errors || []).length ? `<p class="bx-src-errors">Not reachable: ${esc(info.errors.join('; '))}</p>` : '';
                 if (info.stations && info.stations.length) {
-                    html += `<ul class="bx-list">${info.stations.map(stationRow).join('')}</ul>`;
+                    html += `<ul class="bx-list${focus ? ' has-focus' : ''}">${info.stations.map(stationRow).join('')}</ul>`;
                     if (info.total > info.stations.length) html += `<p class="bx-more">and ${info.total - info.stations.length} more with shorter records</p>`;
                     html += `<p class="bx-legend">
                         <span><span class="bx-dot" style="background:${COLORS.full}"></span>whole time frame</span>
@@ -173,7 +200,22 @@
             openTopic = tab.dataset.topic;
             render(data, timeintervall, box);
         }));
-        setMapDots(data);
+        const whole = card.querySelector('.bx-whole');
+        if (whole) whole.addEventListener('click', () => clearFocus());
+        const pick = (row) => {
+            const s = ((data.topics || {})[openTopic] || {}).stations || [];
+            const station = s.find((x) => stationKey(x.longitude, x.latitude) === row.dataset.key);
+            if (station) toggleFocus({ key: row.dataset.key, name: station.name, coordinates: [station.longitude, station.latitude] });
+        };
+        card.querySelectorAll('.bx-row[data-key]').forEach((row) => {
+            row.addEventListener('click', () => pick(row));
+            row.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                pick(row);
+            });
+        });
+        if (withDots) setMapDots(data);
     }
 
     function setMapDots(data) {
@@ -189,6 +231,8 @@
                     type: 'Feature',
                     geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
                     properties: {
+                        _key: stationKey(s.longitude, s.latitude),
+                        tooltip: `${s.name} (${s.source})\n${kind(s) === 'full' ? 'whole time frame' : `${year(s.from)}–${year(s.to)} · ${Math.round(s.coverage * 100)} %`}\nClick: analyse this station alone`,
                         Station: `${s.name} (${s.source})`,
                         Variable: topicLabel(openTopic),
                         Record: `${fmtDay(s.first)} – ${fmtDay(s.last)}`,
@@ -205,6 +249,99 @@
         window.refreshMapLayers();
     }
 
+    // ---- One station of the area, analysed alone ----
+
+    // Point at the focused station: what the analysis is run for while a station is picked.
+    window.areaFocusPoint = function () {
+        if (!focus) return null;
+        const [lon, lat] = focus.coordinates;
+        return {
+            type: 'Feature',
+            bbox: [lon, lat, lon, lat],
+            properties: {
+                selectionId: `station-${focus.key}`,
+                shape: 'point',
+                placeName: focus.name,
+                areaStation: true,
+                crossesAntimeridian: false,
+                areaKm2: 0,
+            },
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+        };
+    };
+
+    // An analysis is on screen, so a new pick re-runs it right away (else Analyze does).
+    function rerunIfShown() {
+        const apply = document.getElementById('apply');
+        if (!window.lastMapLayers || !window.lastMapLayers.length || !apply || apply.disabled) return;
+        if (typeof triggerButton === 'function') triggerButton('apply');
+    }
+
+    function applyFocus() {
+        if (window.trendMap && typeof window.trendMap.setFocus === 'function') {
+            window.trendMap.setFocus(focus ? {
+                coordinates: focus.coordinates,
+                label: focus.name,
+                dimLayers: ['box-stations', 'area-stations-*', 'area-result'],
+            } : null);
+        }
+        if (window.refreshMapLayers) window.refreshMapLayers();
+        if (shown) render(...shown, false); // only the list; the dots keep their state
+        window.dispatchEvent(new Event('trend:area')); // Analyze button and its status line
+    }
+
+    function toggleFocus(station) {
+        const area = drawnArea();
+        if (!area || !area.geometry || area.geometry.type !== 'Polygon') return;
+        if (focus && focus.key === station.key) {
+            clearFocus();
+            return;
+        }
+        focus = { ...station, area };
+        applyFocus();
+        rerunIfShown();
+    }
+
+    function clearFocus(rerun = true) {
+        if (!focus) return;
+        focus = null;
+        applyFocus();
+        if (rerun) rerunIfShown();
+    }
+    window.clearAreaFocus = () => clearFocus();
+
+    // A station dot on the map (box preview or area result) picks that station.
+    window.onMapFeatureClick = function (hit) {
+        const id = String(hit.layerId || '');
+        if (id !== 'box-stations' && !id.startsWith('area-stations-')) return false;
+        let coordinates = null;
+        let name = '';
+        if (id === 'box-stations') {
+            const feature = ((window.boxStationsLayer || {}).data || { features: [] }).features
+                .find((f) => f.properties._key === hit.properties._key);
+            if (feature) {
+                coordinates = feature.geometry.coordinates;
+                name = String(feature.properties.Station || '').replace(/ \([^()]*\)$/, '');
+            }
+        } else {
+            // Exact position from the result itself (rendered features are tile-rounded).
+            const layer = (window.lastMapLayers || []).find((l) => l.id === id);
+            const feature = layer && layer.data && layer.data.features
+                .find((f) => f.properties && f.properties.Station === hit.properties.Station);
+            if (feature) {
+                coordinates = feature.geometry.coordinates;
+                name = String(feature.properties.Station || '').replace(/ \([^()]*\)$/, '');
+            }
+        }
+        if (!coordinates) return false;
+        toggleFocus({ key: stationKey(coordinates[0], coordinates[1]), name: name || 'Station', coordinates: [coordinates[0], coordinates[1]] });
+        return true;
+    };
+
+    // A new or deleted area ends the focus on one of its stations.
+    window.addEventListener('trend:area', () => {
+        if (focus && drawnArea() !== focus.area) clearFocus(false);
+    });
     window.addEventListener('trend:area', schedule);
     window.addEventListener('trend:inputs', schedule);
 })();

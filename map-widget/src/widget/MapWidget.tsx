@@ -6,6 +6,7 @@ import type { Feature, Point, Polygon } from "geojson";
 import type { StyleSpecification } from "maplibre-gl";
 import { BASEMAPS, resolveBasemap } from "./basemaps";
 import { DataRenderer, DATA_LAYER_PREFIX } from "./DataRenderer";
+import { FocusLayer } from "./FocusLayer";
 import { MapEngine } from "./MapEngine";
 import { regionGeometry, RegionLayer, REGION_LAYER_PREFIX } from "./RegionLayer";
 import { SelectionManager, SELECTION_LAYER_PREFIX } from "./SelectionManager";
@@ -60,6 +61,7 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
   const {
     initialArea,
     resultData,
+    focus = null,
     loading = false,
     basemap: basemapProp = "streets",
     projection: projectionProp = "globe",
@@ -75,6 +77,7 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
   const selectionRef = useRef<SelectionManager | null>(null);
   const rendererRef = useRef<DataRenderer | null>(null);
   const regionLayerRef = useRef<RegionLayer | null>(null);
+  const focusLayerRef = useRef<FocusLayer | null>(null);
   // Latest callbacks without re-initialising the map.
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -136,18 +139,22 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
         (engine.map.getLayer(`${SELECTION_LAYER_PREFIX}-polygon`) ? `${SELECTION_LAYER_PREFIX}-polygon` : undefined),
       // Results lie inside the selection, so popups may open on top of it; only drawing tools suppress them.
       popupsEnabled: () => selection.currentTool === "select" && !showRegionsRef.current,
+      onFeatureClick: (hit) => propsRef.current.onFeatureClick?.(hit),
     });
+    const focusLayer = new FocusLayer(engine.map);
 
     let first = true;
     engine.onBeforeStyleChange(() => {
       selection.detach();
       renderer.suspend();
       regionLayer.suspend();
+      focusLayer.suspend();
     });
     engine.onStyleReady(() => {
       regionLayer.reapply();
       renderer.reapply();
       selection.attach(engine.map); // after data, so the selection is drawn on top
+      focusLayer.reapply(); // greys out the selection, so on top of it
       if (first) {
         first = false;
         const initial = propsRef.current.initialArea;
@@ -163,12 +170,15 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
     selectionRef.current = selection;
     rendererRef.current = renderer;
     regionLayerRef.current = regionLayer;
+    focusLayerRef.current = focusLayer;
 
     return () => {
       selection.detach();
       renderer.destroy();
       regionLayer.destroy();
       regionLayerRef.current = null;
+      focusLayer.destroy();
+      focusLayerRef.current = null;
       engine.destroy();
       engineRef.current = null;
       selectionRef.current = null;
@@ -203,7 +213,17 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
     const list = resultData == null ? [] : Array.isArray(resultData) ? resultData : [resultData];
     rendererRef.current?.setData(list);
     regionLayerRef.current?.setSelectedHidden(list.some((d) => d.id === "area-result"));
+    focusLayerRef.current?.raise();
   }, [resultData]);
+
+  // ---- Focus: one location inside the area; the area is greyed out ----
+  const focusKey = focus ? JSON.stringify(focus) : "";
+  useEffect(() => {
+    rendererRef.current?.setDimmed(focus?.dimLayers ?? []);
+    const polygon = focus && area?.geometry.type === "Polygon" ? area.geometry : null;
+    focusLayerRef.current?.set(focus, polygon);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focusKey stands for focus (a new object on every render)
+  }, [focusKey, area]);
 
   // ---- Imperative API ----
   useImperativeHandle(
@@ -366,7 +386,20 @@ export function MapWidget(props: MapWidgetProps & { ref?: Ref<MapWidgetHandle> }
           </div>
 
           <div className="mw-status" aria-live="polite">
-            {area ? (
+            {area && focus ? (
+              <span>
+                <strong>Station</strong> · {focus.label ?? formatPoint(focus.coordinates)}{" "}
+                <span className="mw-muted">in the {isRegion ? "area" : "box"}</span> ·{" "}
+                <button
+                  type="button"
+                  className="mw-link"
+                  title="Leave the single station and analyse the whole area again"
+                  onClick={() => propsRef.current.onFocusCleared?.()}
+                >
+                  Whole area
+                </button>
+              </span>
+            ) : area ? (
               <span>
                 {isRegion ? (
                   <>
