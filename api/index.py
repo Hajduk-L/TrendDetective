@@ -27,6 +27,13 @@ global_data.CACHE_DIR = _GRID_CACHE / "gistemp"
 global_data.GISTEMP_FILE = global_data.CACHE_DIR / global_data.GISTEMP_FILE.name
 global_data.GPCP_CACHE = _GRID_CACHE / "gpcp" / global_data.GPCP_CACHE.name
 
+# GPCP is fetched in many slow pieces, which exceeds Vercel's request time
+# limit. Use the copy bundled in vercel-data/ (refresh it by running the
+# download locally) and only fall back to downloading when it is missing.
+_BUNDLED_GPCP = Path(__file__).resolve().parent.parent / "vercel-data" / global_data.GPCP_CACHE.name
+if _BUNDLED_GPCP.exists():
+    global_data.GPCP_CACHE = _BUNDLED_GPCP
+
 from app import WebAppHandler  # noqa: E402
 
 
